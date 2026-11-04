@@ -53,6 +53,9 @@ const schema = z.object({
   R2_BUCKET: z.string().optional(),
   R2_PUBLIC_URL: z.string().url().optional(), // public base for reads: https://pub-xxxx.r2.dev or https://cdn.turfsides.com
 
+  // Sign-in / sign-up / code requests per IP per minute. Keep the default in production; tests raise it.
+  AUTH_RATE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
+
   SERVICE_FEE_POISHA: z.coerce.number().int().min(0).default(0),
   HOLD_MINUTES: z.coerce.number().int().min(2).max(30).default(10),
   BOOKING_HORIZON_DAYS: z.coerce.number().int().min(1).max(180).default(60),

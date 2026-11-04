@@ -19,6 +19,7 @@ import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presig
 import { verifyAccess, verifyPass } from './lib/tokens';
 import * as auth from './services/auth';
 import * as bookings from './services/bookings';
+import * as owner from './services/owner';
 import * as payments from './services/payments';
 import { allVenueRows, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
 
@@ -43,7 +44,12 @@ const email = z.string().trim().toLowerCase().email().max(254);
 
 function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const r = schema.safeParse(data);
-  if (!r.success) throw new ApiError('invalid', r.error.issues[0]?.message ?? 'Invalid request.');
+  if (!r.success) {
+    const i = r.error.issues[0];
+    // Name the field ("schedule.opens: …") so API clients like Postman see what to fix.
+    const at = i?.path?.length ? `${i.path.join('.')}: ` : '';
+    throw new ApiError('invalid', i ? `${at}${i.message}` : 'Invalid request.');
+  }
   return r.data;
 }
 
@@ -54,6 +60,10 @@ async function requireUser(req: FastifyRequest) {
   const h = req.headers.authorization;
   if (!h?.startsWith('Bearer ')) throw new ApiError('unauthorized', 'Please sign in.');
   req.user = await verifyAccess(h.slice(7));
+}
+async function requireOwner(req: FastifyRequest) {
+  await requireUser(req);
+  if (!req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'This needs a turf owner account.');
 }
 async function optionalUser(req: FastifyRequest) {
   if (req.headers.authorization?.startsWith('Bearer ')) await requireUser(req).catch(() => undefined);
@@ -128,7 +138,7 @@ export async function buildApp() {
   });
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const authLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+  const authLimit = { config: { rateLimit: { max: config.AUTH_RATE_LIMIT, timeWindow: '1 minute' } } };
   app.post('/v1/auth/signup/start', authLimit, async (req) => {
     const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email: email.optional().or(z.literal('').transform(() => undefined)), password, role: z.enum(['player', 'owner']).default('player') }), req.body);
     return auth.signupStart(b, req.ip);
@@ -249,6 +259,16 @@ export async function buildApp() {
     await q('delete from saved_venues where user_id = $1 and venue_id = $2', [req.user!.userId, venueId]);
     return { venueId, isSaved: false };
   });
+  // ── Owner: turfs (owner app; also handy for demo data from Postman) ────────
+  const venueId = (req: FastifyRequest) => parse(z.object({ id: z.string().regex(/^v_[A-Za-z0-9_]{1,40}$/, 'Unknown turf.') }), req.params).id;
+  app.get('/v1/owner/venues', { preHandler: requireOwner }, async (req) => owner.listOwnerVenues(req.user!.userId));
+  app.get('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.getOwnerVenue(req.user!.userId, venueId(req)));
+  app.post('/v1/owner/venues', { preHandler: requireOwner, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) =>
+    owner.createVenue(req.user!.userId, parse(owner.venueInput, req.body)),
+  );
+  app.put('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.updateVenue(req.user!.userId, venueId(req), parse(owner.venueInput, req.body)));
+  app.delete('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.removeVenue(req.user!.userId, venueId(req)));
+
   // ── Photo uploads (Cloudflare R2, direct from the app) ──────────────────────
   app.post('/v1/uploads', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const b = parse(
