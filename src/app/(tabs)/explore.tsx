@@ -18,7 +18,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { KNOWN_AREAS } from '@/features/api/mock-db';
+import { KNOWN_AREAS } from '@/lib/places';
 import { useExplore } from '@/features/api/queries';
 import type { PitchFormat, VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';

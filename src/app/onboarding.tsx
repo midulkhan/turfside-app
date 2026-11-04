@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Photo } from '@/components/ui/photo';
 import { Text } from '@/components/ui/text';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
-import { photos } from '@/features/api/mock-db';
+import { photos } from '@/lib/brand-photos';
 import { useSession } from '@/features/session/session';
 import { colors, gutter, radius, shadow, space } from '@/theme/tokens';
 

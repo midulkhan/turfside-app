@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight, ArrowUpRight } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line, Rect } from 'react-native-svg';
 
 import { AuthShell } from '@/components/auth/auth-shell';
@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input, PasswordInput, PhoneInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import * as api from '@/features/api/client';
+import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { isBdMobile, isEmail, isName, isStrongPassword } from '@/lib/validation';
 import { colors, radius, space } from '@/theme/tokens';
@@ -49,9 +51,17 @@ export default function OwnerSignUp() {
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setLoading(false);
-    router.push({ pathname: '/verify', params: { phone, name, role: 'owner' } });
+    const details = { name: name.trim(), phone, email: email.trim() || undefined, password, role: 'owner' as const };
+    try {
+      const res = await api.signupStart(details);
+      pendingSignup.set(details);
+      router.push({ pathname: '/verify', params: { phone, role: 'owner', devCode: res.devCode ?? '' } });
+    } catch (e) {
+      haptic.error();
+      Alert.alert('Couldn’t create your account', errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

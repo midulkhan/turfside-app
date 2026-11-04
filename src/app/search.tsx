@@ -11,7 +11,7 @@ import { Overline } from '@/components/ui/headers';
 import { EmptyState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
-import { KNOWN_AREAS } from '@/features/api/mock-db';
+import { KNOWN_AREAS } from '@/lib/places';
 import { useExplore } from '@/features/api/queries';
 import { useSession } from '@/features/session/session';
 import { useDebouncedValue } from '@/lib/use-debounced-value';

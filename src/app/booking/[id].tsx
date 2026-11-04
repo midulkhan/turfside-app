@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, MapPin, Navigation, Share2, X } from 'lucide-react-native';
+import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,9 +18,11 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
-import { useBooking } from '@/features/api/queries';
+import { useBooking, useCancelBooking } from '@/features/api/queries';
+import { errorMessage } from '@/features/session/pending-signup';
+import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
-import { formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
+import { dhakaInstant, formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -29,6 +32,8 @@ export default function BookingTicket() {
   const insets = useSafeAreaInsets();
   const { data: b, isError, error, refetch } = useBooking(id);
   const justBooked = fresh === '1';
+  const cancel = useCancelBooking();
+  const [openedAt] = useState(() => Date.now()); // fixed per visit; the server re-checks the 24 h rule
 
   const close = () => (justBooked ? router.dismissTo('/bookings') : router.back());
 
@@ -45,6 +50,27 @@ export default function BookingTicket() {
     Share.share({
       message: `Game on! ${b.venue.name}, ${weekday(b.day)} ${dayOfMonth(b.day)} · ${formatRange(b.start, b.end)}. Booking ${b.code} on TurfSides.`,
     });
+  const canCancel = !!b && b.status === 'confirmed' && dhakaInstant(b.day, b.start) - openedAt > 24 * 3600_000;
+  const askCancel = () =>
+    b &&
+    Alert.alert('Cancel this booking?', `The slot is released and ${formatTaka(b.amountPaid)} is refunded to your bKash account.`, [
+      { text: 'Keep booking', style: 'cancel' },
+      {
+        text: 'Cancel booking',
+        style: 'destructive',
+        onPress: () =>
+          cancel.mutate(
+            { id: b.id, venueId: b.venue.id, day: b.day },
+            {
+              onSuccess: () => haptic.success(),
+              onError: (e) => {
+                haptic.error();
+                Alert.alert('Couldn’t cancel', errorMessage(e));
+              },
+            },
+          ),
+      },
+    ]);
   const directions = () =>
     b && Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${b.venue.latitude},${b.venue.longitude}`);
 
@@ -142,7 +168,18 @@ export default function BookingTicket() {
                 </Text>
               </View>
               <View style={styles.passRule} />
-              {b ? <QRCode value={b.passToken} size={84} /> : <Skeleton width={96} height={96} />}
+              {b ? (
+                b.passToken ? (
+                  <QRCode value={b.passToken} size={84} />
+                ) : (
+                  // Cancelled or played: the pass is no longer valid, so no QR is shown.
+                  <View style={styles.noPass}>
+                    <X size={28} color={colors.textOnDarkMuted} />
+                  </View>
+                )
+              ) : (
+                <Skeleton width={96} height={96} />
+              )}
             </View>
           </TicketSurface>
         </Animated.View>
@@ -209,6 +246,13 @@ export default function BookingTicket() {
             Back to explore
           </Text>
         </Pressable>
+        {canCancel ? (
+          <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
+            <Text variant="label" color={colors.danger}>
+              {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -274,5 +318,6 @@ const styles = StyleSheet.create({
   tip: { flexDirection: 'row', alignItems: 'center', gap: space[4], paddingVertical: space[4] },
   darkArrow: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
   back: { alignSelf: 'center', minHeight: 44, justifyContent: 'center' },
+  noPass: { width: 96, height: 96, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderOnDark, alignItems: 'center', justifyContent: 'center' },
   u: { textDecorationLine: 'underline' },
 });

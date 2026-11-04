@@ -126,3 +126,16 @@ export function useReviews(venueId: string, enabled = true) {
     enabled,
   });
 }
+
+/** Player cancellation (server allows it up to 24 h before kick-off and flags the refund). */
+export function useCancelBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { id: string; venueId: string; day: DayKey }) => api.cancelBooking(b.id),
+    onSuccess: (_d, b) => {
+      qc.invalidateQueries({ queryKey: qk.booking(b.id) });
+      qc.invalidateQueries({ queryKey: qk.bookings });
+      qc.invalidateQueries({ queryKey: qk.slots(b.venueId, b.day) });
+    },
+  });
+}

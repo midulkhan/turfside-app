@@ -33,6 +33,7 @@ import { Stepper } from '@/components/ui/stepper';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { useHold } from '@/features/api/queries';
+import { ApiError } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { newIdempotencyKey } from '@/lib/ids';
@@ -71,29 +72,40 @@ export default function Checkout() {
     if (!hold.data || expired) return;
     setPaying(true);
     try {
-      const { paymentId, checkoutUrl } = await api.startPayment(hold.data.holdId, payKey.current);
+      const returnUrl = Linking.createURL('payment-return');
+      const { paymentId, checkoutUrl } = await api.startPayment(hold.data.holdId, payKey.current, returnUrl);
+      let cancelled = false;
       if (checkoutUrl) {
         // bKash hosted checkout. The redirect back is NOT proof of payment —
         // we only trust the server's verification below.
-        await WebBrowser.openAuthSessionAsync(checkoutUrl, Linking.createURL('/payment-return'));
+        const result = await WebBrowser.openAuthSessionAsync(checkoutUrl, returnUrl);
+        cancelled = result.type === 'success' && /[?&]status=cancel/.test(result.url);
       }
-      for (let i = 0; i < POLL_ATTEMPTS; i++) {
+      for (let i = 0; i < (cancelled ? 1 : POLL_ATTEMPTS); i++) {
         const res = await api.getPaymentStatus(paymentId);
         if (res.status === 'confirmed' && res.bookingId) {
           haptic.success();
           qc.invalidateQueries({ queryKey: ['bookings'] });
+          qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['slots', hold.data.venue.id] });
           qc.removeQueries({ queryKey: ['hold', hold.data.holdId] });
           router.dismissTo({ pathname: '/booking/[id]', params: { id: res.bookingId, fresh: '1' } });
           return;
         }
-        if (res.status === 'failed') throw new Error('bKash could not complete the payment. You have not been charged.');
+        if (res.status === 'failed' || cancelled) {
+          // That payment is closed for good, so a retry needs a fresh key.
+          payKey.current = newIdempotencyKey();
+          qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
+          throw new Error(cancelled ? 'You cancelled the bKash payment. Nothing was charged.' : 'bKash could not complete the payment. You have not been charged.');
+        }
         await new Promise((r) => setTimeout(r, Math.min(1000 * 1.5 ** i, 4000)));
       }
       throw new Error('We are still confirming your payment with bKash. Check My bookings in a minute — you will not be charged twice.');
     } catch (e) {
       haptic.error();
-      Alert.alert('Payment not completed', e instanceof Error ? e.message : 'Please try again.');
+      const title = e instanceof ApiError && e.code === 'not_configured' ? 'Payments are not live yet' : 'Payment not completed';
+      Alert.alert(title, e instanceof Error ? e.message : 'Please try again.');
+      if (e instanceof ApiError && e.code === 'hold_expired') qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
     } finally {
       setPaying(false);
     }

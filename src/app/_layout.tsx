@@ -58,6 +58,7 @@ function RootNavigator() {
             <Stack.Screen name="notifications" />
             <Stack.Screen name="requests" />
             <Stack.Screen name="owner" />
+            <Stack.Screen name="payment-return" options={{ animation: 'none' }} />
           </Stack.Protected>
         </Stack>
       ) : null}

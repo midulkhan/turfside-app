@@ -45,8 +45,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { haversineKm } from '@/features/api/mock-db';
+import { haversineKm } from '@/lib/places';
 import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
+import { useLiveSlots } from '@/features/api/realtime';
 import { ApiError, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
 import { useSession } from '@/features/session/session';
@@ -107,6 +108,7 @@ export default function VenueScreen() {
 
   const venue = useVenue(id);
   const slots = useSlots(id, day);
+  useLiveSlots(id, day); // instant updates when someone else books
   const reviews = useReviews(id, tab === 'reviews');
   const toggle = useToggleSaved();
   const v = venue.data;

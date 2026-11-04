@@ -23,7 +23,7 @@ export const persister = createAsyncStoragePersister({ storage: AsyncStorage, ke
 export const persistOptions = {
   persister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1',
+  buster: 'v2', // v2: live API (drops cached demo data)
   dehydrateOptions: {
     shouldDehydrateQuery: (q: { queryKey: readonly unknown[]; state: { status: string } }) =>
       q.state.status === 'success' && PERSISTED_ROOTS.has(String(q.queryKey[0])),

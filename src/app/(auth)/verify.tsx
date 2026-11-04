@@ -7,6 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Text } from '@/components/ui/text';
+import * as api from '@/features/api/client';
+import { ApiError } from '@/features/api/types';
+import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
@@ -17,11 +20,9 @@ const MAX_ATTEMPTS = 5;
 
 /** One-time SMS code. Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
 export default function Verify() {
-  const {
-    phone = '',
-    name = 'Player',
-    role = 'player',
-  } = useLocalSearchParams<{ phone: string; name: string; role: 'player' | 'owner' }>();
+  const params = useLocalSearchParams<{ phone: string; role: 'player' | 'owner'; devCode?: string }>();
+  const { phone = '', role = 'player' } = params;
+  const [devCode, setDevCode] = useState(params.devCode || '');
   const { signIn } = useSession();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
@@ -42,19 +43,37 @@ export default function Verify() {
   const submit = async (value = code) => {
     if (value.length !== LEN || locked) return;
     setLoading(true);
-    // TODO(api): POST /auth/verify { phone, code } → { user, accessToken }
-    await new Promise((r) => setTimeout(r, 500));
-    if (value !== '123456') {
+    try {
+      const auth = await api.signupVerify(phone, value);
+      haptic.success();
+      pendingSignup.clear();
+      await signIn(auth);
+      router.replace(role === 'owner' ? '/owner' : '/explore');
+    } catch (e) {
       haptic.error();
-      setAttempts((a) => a + 1);
-      setError(attempts + 1 >= MAX_ATTEMPTS ? 'Too many attempts. Request a new code.' : 'That code is not right. Try again.');
+      const tooMany = e instanceof ApiError && e.code === 'rate_limited';
+      setAttempts((a) => (tooMany ? MAX_ATTEMPTS : a + 1));
+      setError(errorMessage(e));
       setCode('');
       setLoading(false);
+    }
+  };
+
+  const resend = async () => {
+    const details = pendingSignup.get();
+    if (!details || details.phone !== phone) {
+      router.back(); // app was restarted: the form has to be filled in again
       return;
     }
-    haptic.success();
-    await signIn({ id: 'u_demo', name, phone, roles: role === 'owner' ? ['player', 'owner'] : ['player'] }, 'mock-token');
-    router.replace(role === 'owner' ? '/owner' : '/explore');
+    setLeft(RESEND_S);
+    setError(undefined);
+    try {
+      const res = await api.signupStart(details);
+      setAttempts(0);
+      setDevCode(res.devCode ?? '');
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   };
 
   return (
@@ -107,24 +126,26 @@ export default function Verify() {
           <Text variant="label" color="#FF8A80">
             {error}
           </Text>
-        ) : (
+        ) : devCode ? (
+          // Only test servers send this (no SMS gateway yet). Production never does.
           <Text variant="caption" color={colors.textOnDarkMuted}>
-            Demo code: 123456
+            Test code: {devCode}
           </Text>
-        )}
+        ) : null}
 
         <Button label="Verify and continue" onPress={() => submit()} loading={loading} disabled={code.length !== LEN || locked} />
         <Pressable
           disabled={left > 0}
-          onPress={() => {
-            setLeft(RESEND_S);
-            setAttempts(0);
-            setError(undefined);
-          }}
+          onPress={resend}
           style={styles.resend}
           accessibilityRole="button">
           <Text variant="bodyStrong" color={left > 0 ? colors.textOnDarkMuted : colors.lime}>
             {left > 0 ? `Resend code in 0:${String(left).padStart(2, '0')}` : 'Resend code'}
+          </Text>
+        </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => router.replace('/sign-in')} style={styles.resend}>
+          <Text variant="label" color={colors.textOnDarkMuted} align="center">
+            No code? If this number already has an account, sign in instead.
           </Text>
         </Pressable>
       </View>

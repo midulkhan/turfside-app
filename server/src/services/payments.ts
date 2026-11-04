@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config, isProd } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import * as bkash from '../lib/bkash';
@@ -23,7 +23,14 @@ const PAYMENT_WINDOW_MIN = 15; // time the user has on the bKash page
  * Start (or resume) a bKash payment for a hold. Idempotent per key: retrying after
  * a dropped connection returns the same payment instead of creating a second one.
  */
-export async function startPayment(userId: string, holdId: string, idemKey: string) {
+/** Where the browser goes after bKash: only our own app scheme (and Expo Go links outside production). */
+export function safeReturnUrl(url?: string) {
+  if (!url || url.length > 300) return null;
+  const ok = url.startsWith(`${config.APP_SCHEME}://`) || (!isProd && /^exps?:\/\//.test(url));
+  return ok ? url : null;
+}
+
+export async function startPayment(userId: string, holdId: string, idemKey: string, returnUrl?: string) {
   if (!bkash.bkashEnabled()) throw new ApiError('not_configured', 'Payments are not available yet.');
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(idemKey)) throw new ApiError('invalid', 'Missing or invalid Idempotency-Key header.');
 
@@ -73,11 +80,10 @@ export async function startPayment(userId: string, holdId: string, idemKey: stri
         callbackURL: `${config.PUBLIC_URL}/v1/payments/bkash/callback`,
       }));
     }
-    await q("update payments set provider_payment_id = $2, status = 'pending', last_response = jsonb_build_object('bkashURL', $3::text), updated_at = now() where id = $1", [
-      payment.id,
-      paymentID,
-      bkashURL,
-    ]);
+    await q(
+      "update payments set provider_payment_id = $2, status = 'pending', last_response = jsonb_build_object('bkashURL', $3::text, 'returnUrl', $4::text), updated_at = now() where id = $1",
+      [payment.id, paymentID, bkashURL, safeReturnUrl(returnUrl)],
+    );
     return { paymentId: payment.id, checkoutUrl: bkashURL };
   } catch (e) {
     // Couldn't reach bKash: release back to a held state so the user can retry with a new key.

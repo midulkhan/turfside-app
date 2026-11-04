@@ -1,10 +1,8 @@
-import type { ImageSourcePropType } from 'react-native';
-
 import type { Poisha } from '@/lib/money';
 import type { DayKey } from '@/lib/time';
 
 /**
- * API contracts shared by the mock and the real server client.
+ * API contracts — these mirror the TurfSides server responses (server/src).
  * The app never sends prices or totals to the server — only ids — and never
  * treats anything other than a server-verified payment as a confirmed booking.
  */
@@ -22,7 +20,7 @@ export type VenueSummary = {
   floodlit: boolean;
   hourlyFrom: Poisha;
   availableToday: boolean;
-  photo: ImageSourcePropType | null; // remote URI in production
+  photo: string | null; // absolute URL served by the API
   isSaved: boolean;
 };
 
@@ -30,7 +28,7 @@ export type VenueDetail = VenueSummary & {
   address: string;
   latitude: number;
   longitude: number;
-  photos: (ImageSourcePropType | null)[];
+  photos: (string | null)[];
   amenities: string[];
   rules: string[];
   about: string;
@@ -101,9 +99,23 @@ export type NotificationItem = {
   read: boolean;
 };
 
+export type ApiErrorCode =
+  | 'slot_taken'
+  | 'hold_expired'
+  | 'payment_failed'
+  | 'not_found'
+  | 'invalid'
+  | 'network'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'conflict'
+  | 'rate_limited'
+  | 'not_configured'
+  | 'internal';
+
 export class ApiError extends Error {
   constructor(
-    public code: 'slot_taken' | 'hold_expired' | 'payment_failed' | 'not_found' | 'invalid' | 'network' | 'unauthorized',
+    public code: ApiErrorCode,
     message: string,
   ) {
     super(message);
@@ -123,4 +135,17 @@ export type PlayerRequest = {
   spotsFilled: number;
   sharePerPlayer: Poisha;
   status: 'open' | 'full' | 'pending' | 'accepted' | 'declined';
+};
+
+/** Returned by sign-in, sign-up verification, password reset and token refresh. */
+export type AuthResult = { user: User; accessToken: string; refreshToken: string };
+
+/** Returned when the server texts a code. `devCode` is only sent by non-production servers. */
+export type CodeSent = { sent: true; devCode?: string };
+
+export type AppConfig = {
+  paymentsEnabled: boolean;
+  horizonDays: number;
+  horizonEnd: DayKey;
+  realtime: { url: string; anonKey: string; table: string } | null;
 };

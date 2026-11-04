@@ -267,8 +267,8 @@ export async function buildApp() {
   app.get('/v1/holds/:id', { preHandler: requireUser }, async (req) => bookings.getHold(req.user!.userId, (req.params as { id: string }).id));
 
   app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    const { holdId } = parse(z.object({ holdId: z.string().uuid() }), req.body);
-    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '');
+    const { holdId, returnUrl } = parse(z.object({ holdId: z.string().uuid(), returnUrl: z.string().max(300).optional() }), req.body);
+    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl);
   });
   app.get('/v1/payments/:id', { preHandler: requireUser }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
@@ -276,8 +276,12 @@ export async function buildApp() {
   });
 
   /** bKash redirects the user's browser here. We verify server-side, then hand back to the app. */
-  const backToApp = (reply: FastifyReply, paymentId: string, status: string) =>
-    reply.redirect(`${config.APP_SCHEME}://payment-return?paymentId=${encodeURIComponent(paymentId)}&status=${encodeURIComponent(status)}`, 302);
+  const backToApp = async (reply: FastifyReply, paymentId: string, status: string) => {
+    const r = await one<{ url: string | null }>("select last_response->>'returnUrl' url from payments where id = $1", [paymentId]).catch(() => null);
+    const base = payments.safeReturnUrl(r?.url ?? undefined) ?? `${config.APP_SCHEME}://payment-return`;
+    const sep = base.includes('?') ? '&' : '?';
+    return reply.redirect(`${base}${sep}paymentId=${encodeURIComponent(paymentId)}&status=${encodeURIComponent(status)}`, 302);
+  };
 
   app.get('/v1/payments/bkash/callback', async (req, reply) => {
     const { paymentID, status } = parse(z.object({ paymentID: z.string().max(100), status: z.enum(['success', 'failure', 'cancel']) }), req.query);
@@ -298,7 +302,8 @@ export async function buildApp() {
       const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
       const p = await one<{ amount: number; status: string }>('select amount, status from payments where id = $1', [id]);
       if (!p) throw new ApiError('not_found', 'Payment not found.');
-      reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'").type('text/html');
+      // form-action must also allow the app schemes: browsers apply it to the redirect after submit.
+      reply.header('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${config.APP_SCHEME}: exp: exps:`).type('text/html');
       return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Simulated bKash</title>
 <body style="font-family:system-ui;background:#FFF1F7;display:grid;place-items:center;min-height:100vh;margin:0">
 <form method="post" style="background:#fff;padding:28px;border-radius:24px;text-align:center;max-width:320px">

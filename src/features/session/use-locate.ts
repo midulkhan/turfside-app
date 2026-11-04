@@ -2,7 +2,7 @@ import * as Location from 'expo-location';
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 
-import { haversineKm, KNOWN_AREAS } from '@/features/api/mock-db';
+import { haversineKm, KNOWN_AREAS } from '@/lib/places';
 
 import { useSession } from './session';
 

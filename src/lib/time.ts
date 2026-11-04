@@ -83,3 +83,9 @@ export function dayPart(startMin: number): DayPart {
   if (startMin < 17 * 60) return 'afternoon';
   return 'evening';
 }
+
+/** Epoch ms for a Dhaka wall-clock time (Dhaka is UTC+6 all year, no DST). */
+export function dhakaInstant(day: DayKey, minutes: number) {
+  const [y, m, d] = day.split('-').map(Number);
+  return Date.UTC(y, m - 1, d, 0, minutes) - 6 * 3600_000;
+}

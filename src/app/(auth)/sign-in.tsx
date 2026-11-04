@@ -8,6 +8,8 @@ import { SocialButtons } from '@/components/auth/social-buttons';
 import { Button } from '@/components/ui/button';
 import { Input, PasswordInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import * as api from '@/features/api/client';
+import { errorMessage } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword, normaliseIdentifier } from '@/lib/validation';
@@ -31,20 +33,17 @@ export default function SignIn() {
       return;
     }
     setLoading(true);
-    // TODO(api): POST /auth/sign-in → { user, accessToken }. Generic errors only (no "user not found").
-    await new Promise((r) => setTimeout(r, 600));
-    await signIn(
-      {
-        id: 'u_demo',
-        name: 'Midul Hossen',
-        phone: ident.kind === 'phone' ? ident.value : '1712345678',
-        email: ident.kind === 'email' ? ident.value : undefined,
-        roles: ['player'],
-      },
-      'mock-token',
-    );
-    setLoading(false);
-    router.replace('/explore');
+    try {
+      const auth = await api.login(ident.value, password);
+      haptic.success();
+      await signIn(auth);
+      router.replace(auth.user.roles.includes('owner') ? '/owner' : '/explore');
+    } catch (e) {
+      haptic.error();
+      Alert.alert('Couldn’t sign in', errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

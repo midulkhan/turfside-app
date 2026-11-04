@@ -22,15 +22,15 @@ const otpSecret = () => {
 export const publicUser = (u: UserRow) => ({ id: u.id, name: u.name, phone: u.phone, email: u.email ?? undefined, roles: u.roles });
 
 /** Per-phone and per-IP limits on top of the global HTTP rate limit. */
-async function guardOtp(phone: string, ip: string) {
+async function guardOtp(phone: string, purpose: Purpose, ip: string) {
   if ((await hit(`otp:phone:${phone}`, 3600)) > 6) throw new ApiError('rate_limited', 'Too many codes requested. Try again in an hour.');
   if ((await hit(`otp:ip:${ip}`, 3600)) > 20) throw new ApiError('rate_limited', 'Too many requests. Try again later.');
-  const last = await one<{ created_at: Date }>('select created_at from otp_codes where phone = $1 order by created_at desc limit 1', [phone]);
+  const last = await one<{ created_at: Date }>('select created_at from otp_codes where phone = $1 and purpose = $2 order by created_at desc limit 1', [phone, purpose]);
   if (last && Date.now() - new Date(last.created_at).getTime() < OTP_RESEND_SECONDS * 1000) throw new ApiError('rate_limited', 'Please wait a few seconds before requesting another code.');
 }
 
 async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: string) {
-  await guardOtp(phone, ip);
+  await guardOtp(phone, purpose, ip);
   const code = otpCode();
   await q('update otp_codes set consumed_at = now() where phone = $1 and purpose = $2 and consumed_at is null', [phone, purpose]);
   await q("insert into otp_codes (phone, purpose, code_hash, payload, expires_at) values ($1,$2,$3,$4, now() + make_interval(mins => $5))", [
