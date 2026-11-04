@@ -8,6 +8,7 @@ jobs:
         run: |
           curl -sS -m 20 https://api.turfsides.com/health; echo
           curl -sS -m 20 https://api.turfsides.com/v1/config; echo
+          curl -sS -m 20 https://api.turfsides.com/v1/me/places; echo
           curl -sS -m 30 "https://api.turfsides.com/v1/venues/explore?lat=23.8191&lng=90.4526" | head -c 400; echo
           curl -sS -m 30 "https://api.turfsides.com/v1/venues/v_bashundhara" | head -c 300; echo
           curl -sS -m 30 "https://api.turfsides.com/v1/venues/v_bashundhara/slots?day=$(TZ=Asia/Dhaka date +%F)" | head -c 300; echo
