@@ -1,4 +1,5 @@
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
 import { memo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -209,11 +210,23 @@ export function DistanceWheel({
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.flex}>
+        {/* Pure blur (no white material), with soft fades only where text sits. */}
         {Platform.OS === 'ios' ? (
-          <BlurView intensity={40} tint="systemThinMaterialLight" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={55} style={StyleSheet.absoluteFill} />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.frost]} />
         )}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.veil]} />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(244,245,240,0.78)', 'rgba(244,245,240,0)']}
+          style={[styles.fadeTop, { height: insets.top + 140 }]}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(244,245,240,0)', 'rgba(244,245,240,0.8)']}
+          style={[styles.fadeBottom, { height: insets.bottom + 190 }]}
+        />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
 
         {/* the dial */}
@@ -287,7 +300,10 @@ export function DistanceWheel({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  frost: { backgroundColor: 'rgba(244,245,240,0.94)' },
+  frost: { backgroundColor: 'rgba(244,245,240,0.72)' }, // Android: no live blur behind a modal
+  veil: { backgroundColor: 'rgba(22,27,29,0.06)' },
+  fadeTop: { position: 'absolute', left: 0, right: 0, top: 0 },
+  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   top: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'flex-start', gap: space[3], paddingHorizontal: gutter },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: gutter, gap: space[3] },
   disc: {
