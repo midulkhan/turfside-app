@@ -1,5 +1,6 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Bell, ChevronDown, MapPin, Menu, Radar, Search, ShoppingBag } from 'lucide-react-native';
@@ -133,15 +134,25 @@ export default function Explore() {
       </View>
 
       <View style={styles.hero}>
-        {/* cut-out artwork (transparent), so it sits on the page with no box */}
         <Image
-          source={require('@/assets/photos/hero-ball-cut.webp')}
+          source={require('@/assets/photos/hero-ball.webp')}
           style={styles.heroImg}
-          contentFit="contain"
+          contentFit="cover"
+          contentPosition="right center"
           priority="high"
           cachePolicy="memory-disk"
           accessibilityIgnoresInvertColors
         />
+        {/* Feather the photo's edges into the page so it never shows a box. */}
+        <LinearGradient
+          pointerEvents="none"
+          colors={[colors.bg, 'rgba(244,245,240,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.fadeLeft}
+        />
+        <LinearGradient pointerEvents="none" colors={['rgba(244,245,240,0)', colors.bg]} style={styles.fadeBottom} />
+        <LinearGradient pointerEvents="none" colors={[colors.bg, 'rgba(244,245,240,0)']} style={styles.fadeTop} />
         <View style={styles.heroText}>
           <View style={styles.accent} />
           <Text variant="display" style={styles.display}>
@@ -224,8 +235,11 @@ const styles = StyleSheet.create({
   placeName: { flexShrink: 1 },
   actions: { flexDirection: 'row', gap: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
-  hero: { height: 164, justifyContent: 'center', marginTop: space[2], marginBottom: space[3] },
-  heroImg: { position: 'absolute', right: gutter - 8, top: 0, width: 160, height: 158 },
+  hero: { height: 172, justifyContent: 'center', marginTop: -space[2] },
+  heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
+  fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '55%' },
+  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 70 },
+  fadeTop: { position: 'absolute', left: 0, right: 0, top: -10, height: 50 },
   heroText: { paddingHorizontal: gutter, gap: space[2], maxWidth: 252 },
   accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
   display: { fontSize: 30, lineHeight: 32, letterSpacing: -0.9 },
