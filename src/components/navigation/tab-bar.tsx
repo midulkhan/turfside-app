@@ -1,6 +1,6 @@
 import { CalendarDays, Heart, House, ShoppingBag, UserRound, type LucideIcon } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -36,8 +36,8 @@ export function useTabBarSpace() {
 
 /**
  * One tab: fixed slot, icon above label — never changes size or position.
- * It draws a light and a dark version of its content; the dark one fades in as
- * the sliding pill arrives, so the colour change tracks the pill frame by frame.
+ * It draws a muted and a lime version of its content and cross-fades between
+ * them as the selection moves.
  */
 const TabItem = memo(function TabItem({
   name,
@@ -79,8 +79,8 @@ const TabItem = memo(function TabItem({
         </Text>
       </Animated.View>
       <Animated.View style={[styles.content, styles.overlay, onPill]}>
-        <Icon size={20} color={colors.ink} strokeWidth={2} />
-        <Text variant="caption" color={colors.ink} numberOfLines={1} style={[styles.label, styles.labelActive]}>
+        <Icon size={20} color={colors.lime} strokeWidth={2} />
+        <Text variant="caption" color={colors.lime} numberOfLines={1} style={[styles.label, styles.labelActive]}>
           {meta.label}
         </Text>
       </Animated.View>
@@ -98,7 +98,7 @@ const TabItem = memo(function TabItem({
 /**
  * Floating charcoal tab bar.
  * - Equal, fixed slots: tabs never move or resize when you switch.
- * - A single lime pill slides behind the active tab on the UI thread (no JS work per frame).
+ * - The active tab's icon and label turn lime (a quick cross-fade on the UI thread).
  * - Tapping the active tab again scrolls that screen to the top.
  */
 export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
@@ -110,29 +110,17 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
     routes.findIndex((r) => r.key === state.routes[state.index]?.key),
   );
 
-  const slot = useSharedValue(0); // width of one slot, measured once
   const position = useSharedValue(activeIndex);
 
   useEffect(() => {
     position.set(withSpring(activeIndex, INDICATOR_SPRING));
   }, [activeIndex, position]);
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    slot.set((e.nativeEvent.layout.width - PAD * 2) / routes.length);
-  };
 
-  const indicator = useAnimatedStyle(() => ({
-    width: slot.get(),
-    opacity: slot.get() > 0 ? 1 : 0,
-    transform: [{ translateX: position.get() * slot.get() }],
-  }));
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, space[3]) }]}>
-      <View style={[styles.bar, shadow.float]} onLayout={onLayout} accessibilityRole="tablist">
-        <Animated.View pointerEvents="none" style={[styles.indicator, indicator]}>
-          <View style={styles.pill} />
-        </Animated.View>
+      <View style={[styles.bar, shadow.float]} accessibilityRole="tablist">
         {routes.map((route, i) => {
           const focused = i === activeIndex;
           return (
@@ -176,8 +164,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderOnDark,
   },
-  indicator: { position: 'absolute', left: PAD, top: PAD, bottom: PAD, paddingHorizontal: 2, zIndex: 0 },
-  pill: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.lime },
   item: { flex: 1, height: '100%', zIndex: 1 },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   label: { fontSize: 11, lineHeight: 14 },

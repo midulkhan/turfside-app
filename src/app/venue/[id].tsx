@@ -28,8 +28,9 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { Alert, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import Animated, { Easing, FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -77,6 +78,8 @@ const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
   { key: 'evening', label: 'Evening', icon: Sunset },
   { key: 'night', label: 'Night', icon: Moon },
 ];
+const HERO_BTN = 40;
+
 const AMENITY_ICON: Record<string, LucideIcon> = {
   Floodlights: Lightbulb,
   Parking: Car,
@@ -105,6 +108,7 @@ export default function VenueScreen() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const holdKey = useRef<string | null>(null);
   const dateScroll = useRef<ScrollViewInstance>(null);
+  const galleryRef = useRef<ComponentRef<typeof View>>(null); // Android: what the photo buttons blur
 
   const venue = useVenue(id);
   const slots = useSlots(id, day);
@@ -171,6 +175,7 @@ export default function VenueScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}>
         {/* ── Gallery ─────────────────────────────────────────── */}
         <View style={[styles.hero, { height: heroH }]}>
+          <BlurTargetView ref={galleryRef} style={StyleSheet.absoluteFill}>
           <ScrollView
             horizontal
             pagingEnabled
@@ -180,20 +185,26 @@ export default function VenueScreen() {
               <Photo key={i} source={p} style={{ width, height: heroH }} rounded={0} priority={i === 0 ? 'high' : 'low'} />
             ))}
           </ScrollView>
+          </BlurTargetView>
           <View style={[styles.heroBar, { top: insets.top + space[2] }]}>
-            <IconButton icon={ArrowLeft} label="Go back" onPress={() => router.back()} style={styles.heroBtn} />
+            <IconButton icon={ArrowLeft} label="Go back" variant="blur" blurTarget={galleryRef} size={HERO_BTN} onPress={() => router.back()} />
             <View style={styles.row}>
               <IconButton
                 icon={Share2}
                 label="Share turf"
-                style={styles.heroBtn}
+                variant="blur"
+                blurTarget={galleryRef}
+                size={HERO_BTN}
                 onPress={() => v && Share.share({ message: `${v.name}, ${v.area} — book on TurfSides: https://turfsides.app/v/${v.id}` })}
               />
               <IconButton
                 icon={Heart}
                 label={isSaved ? 'Remove from saved' : 'Save turf'}
-                variant={isSaved ? 'lime' : 'light'}
-                style={isSaved ? undefined : styles.heroBtn}
+                variant="blur"
+                blurTarget={galleryRef}
+                size={HERO_BTN}
+                fill={isSaved ? colors.danger : undefined}
+                iconColor={isSaved ? colors.danger : undefined}
                 onPress={() => {
                   if (!v) return;
                   haptic.select();
@@ -203,6 +214,11 @@ export default function VenueScreen() {
             </View>
           </View>
           <View style={styles.counter}>
+            {Platform.OS === 'ios' ? (
+              <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+            ) : Platform.OS === 'android' && Number(Platform.Version) >= 31 ? (
+              <BlurView intensity={30} tint="dark" blurTarget={galleryRef} blurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+            ) : null}
             <Text variant="caption" color={colors.textOnDark}>
               {photoIndex + 1} / {gallery.length}
             </Text>
@@ -656,15 +672,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   heroBar: { position: 'absolute', left: gutter, right: gutter, flexDirection: 'row', justifyContent: 'space-between' },
-  heroBtn: { borderColor: colors.surface },
   counter: {
     position: 'absolute',
     right: space[5],
     bottom: space[4],
-    backgroundColor: 'rgba(22,27,29,0.72)',
+    backgroundColor: 'rgba(22,27,29,0.32)',
     borderRadius: radius.pill,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.3)',
     paddingHorizontal: space[3],
-    height: 28,
+    height: 26,
     justifyContent: 'center',
   },
 
