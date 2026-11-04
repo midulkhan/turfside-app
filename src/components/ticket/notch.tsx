@@ -58,15 +58,18 @@ export function TicketSurface({ fill, stroke, strokeWidth = 1, radius = radii.md
   const [dividerY, setDividerY] = useState<number | null>(null);
   const uid = useId().replace(/[^a-zA-Z0-9]/g, ''); // unique SVG ids (web shares one id space)
   const onLayout = (e: LayoutChangeEvent) => {
-    // Snap to whole device pixels: a fractional height made the bottom stroke straddle
-    // two pixel rows and look lighter than the other sides.
+    // Snap to whole device pixels. Round, don't floor: 112.3636 × 2.75 = 308.9999
+    // floored to 308 drew the outline one pixel short on the right and bottom.
     const pr = PixelRatio.get();
-    const width = Math.floor(e.nativeEvent.layout.width * pr) / pr;
-    const height = Math.floor(e.nativeEvent.layout.height * pr) / pr;
+    const width = Math.round(e.nativeEvent.layout.width * pr) / pr;
+    const height = Math.round(e.nativeEvent.layout.height * pr) / pr;
     if (width !== size.w || height !== size.h) setSize({ w: width, h: height });
   };
   const cy = notchY ?? dividerY ?? size.h / 2;
-  const sw = stroke ? strokeWidth : 0;
+  // Line width in whole device pixels (1pt on a 2.75x screen would smear across
+  // three pixel columns unevenly), so every side is equally crisp.
+  const pr = PixelRatio.get();
+  const sw = stroke ? Math.max(1, Math.round(strokeWidth * pr)) / pr : 0;
   const d = size.w ? ticketPath(size.w, size.h, radius, notch, cy, sw / 2) : '';
 
   return (

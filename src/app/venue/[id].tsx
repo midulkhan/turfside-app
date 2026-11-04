@@ -677,7 +677,8 @@ const styles = StyleSheet.create({
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: space[2] },
 
   strip: { flexDirection: 'row', paddingVertical: space[4] },
-  stripItem: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 2 },
+  // equal columns, equal inner padding: long labels wrap instead of touching the dividers
+  stripItem: { flex: 1, flexBasis: 0, alignItems: 'center', gap: 6, paddingHorizontal: space[2] },
   stripLabel: { fontSize: 11.5, lineHeight: 14 },
   stripDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
 
