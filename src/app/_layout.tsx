@@ -53,7 +53,6 @@ function RootNavigator() {
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen name="venue/[id]" />
             <Stack.Screen name="checkout" />
-            <Stack.Screen name="cart" />
             <Stack.Screen name="booking/[id]" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
             <Stack.Screen name="search" options={{ animation: 'fade' }} />
             <Stack.Screen name="notifications" />

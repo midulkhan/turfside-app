@@ -27,7 +27,7 @@ import { Text } from './text';
  * each step ticks a light haptic, and Apply sets the search radius.
  */
 export const DISTANCES = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
-export const DEFAULT_DISTANCE = 20;
+export const DEFAULT_DISTANCE = 5;
 const ROW = 68;
 const VISIBLE = 5; // rows on screen; the middle one is the pick
 

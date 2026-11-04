@@ -14,6 +14,8 @@ type Props = {
   badge?: boolean;
   /** Small count bubble (e.g. items in the cart). Hidden at 0. */
   count?: number;
+  /** Dimmed and not pressable (e.g. an empty cart). */
+  disabled?: boolean;
   size?: number;
   style?: StyleProp<ViewStyle>;
 };
@@ -25,16 +27,18 @@ const tones = {
   lime: { bg: colors.lime, fg: colors.ink, border: colors.lime },
 };
 
-export function IconButton({ icon: Icon, label, onPress, variant = 'light', badge, count, size: s = size.iconButton, style }: Props) {
+export function IconButton({ icon: Icon, label, onPress, variant = 'light', badge, count, disabled, size: s = size.iconButton, style }: Props) {
   const t = tones[variant];
   return (
     <PressableScale
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
       hitSlop={6}
+      disabled={disabled}
       onPress={onPress}
       scaleTo={0.92}
-      style={[styles.base, { width: s, height: s, backgroundColor: t.bg, borderColor: t.border }, style]}>
+      style={[styles.base, { width: s, height: s, backgroundColor: t.bg, borderColor: t.border }, disabled && styles.disabled, style]}>
       <Icon size={size.icon} color={t.fg} strokeWidth={2} />
       {badge ? <View style={styles.badge} /> : null}
       {count ? (
@@ -50,6 +54,7 @@ export function IconButton({ icon: Icon, label, onPress, variant = 'light', badg
 
 const styles = StyleSheet.create({
   base: { borderRadius: radius.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  disabled: { opacity: 0.45 },
   count: {
     position: 'absolute',
     top: 4,

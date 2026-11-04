@@ -2,6 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Bell, ChevronDown, MapPin, Menu, Radar, Search, ShoppingBag } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
@@ -12,17 +13,16 @@ import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Chip } from '@/components/ui/chip';
 import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
-import { OptionSheet } from '@/components/ui/option-sheet';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { DEFAULT_DISTANCE, DISTANCES, DistanceWheel } from '@/components/ui/distance-wheel';
+import { DEFAULT_DISTANCE, DistanceWheel } from '@/components/ui/distance-wheel';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { useExplore, useMyHolds } from '@/features/api/queries';
+import { qk, useExplore, useMyHolds } from '@/features/api/queries';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
-import { addDays, dhakaToday, formatDay, type DayKey } from '@/lib/time';
+import { dhakaToday } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, size, space } from '@/theme/tokens';
 
@@ -37,13 +37,19 @@ export default function Explore() {
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
   const { place } = useSession();
-  const today = dhakaToday();
-  const [day, setDay] = useState<DayKey>(today);
+  const day = dhakaToday(); // Explore shows today's availability; the turf page picks other days
   const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
-  const cartCount = useMyHolds().data?.length ?? 0; // the server lists only unexpired holds
-  // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
-  const [nearbyOnly, setNearbyOnly] = useState(false);
-  const [sheet, setSheet] = useState<null | 'day' | 'menu' | 'distance'>(null);
+  const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
+
+  // Cart = the slot you're holding. The icon goes straight to its checkout.
+  const qc = useQueryClient();
+  const holds = useMyHolds().data ?? []; // the server lists only unexpired holds
+  const latestHold = holds.reduce<(typeof holds)[number] | undefined>((a, h) => (!a || h.expiresAt > a.expiresAt ? h : a), undefined);
+  const openCart = () => {
+    if (!latestHold) return;
+    qc.setQueryData(qk.hold(latestHold.holdId), latestHold);
+    router.push({ pathname: '/checkout', params: { holdId: latestHold.holdId } });
+  };
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
@@ -56,15 +62,10 @@ export default function Explore() {
     if (!data) return [];
     const out: Row[] = [];
     if (data.near.length) {
-      out.push({
-        type: 'header',
-        key: 'h-near',
-        title: nearbyOnly ? 'Within 5 km' : 'Recommended nearby',
-        hint: nearbyOnly ? undefined : `Within ${radiusKm} km`,
-      });
+      out.push({ type: 'header', key: 'h-near', title: 'Recommended nearby', hint: `Within ${radiusKm} km` });
       data.near.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
-    if (data.further.length && !nearbyOnly) {
+    if (data.further.length) {
       out.push({
         type: 'header',
         key: 'h-far',
@@ -74,17 +75,7 @@ export default function Explore() {
       data.further.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     return out;
-  }, [data, nearbyOnly, radiusKm]);
-
-  const dayOptions = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, i) => addDays(today, i)).map((d, i) => ({
-        value: d,
-        label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : formatDay(d, { year: false }),
-      })),
-    [today],
-  );
-  const dayLabel = dayOptions.find((o) => o.value === day)?.label ?? 'Today';
+  }, [data, radiusKm]);
 
   const renderItem = useCallback(({ item }: { item: Row }) => {
     if (item.type === 'header')
@@ -129,9 +120,10 @@ export default function Explore() {
         <View style={styles.actions}>
           <IconButton
             icon={ShoppingBag}
-            label={cartCount ? `Cart, ${cartCount} slot${cartCount > 1 ? 's' : ''} held` : 'Cart'}
-            count={cartCount}
-            onPress={() => router.push('/cart')}
+            label={latestHold ? `Cart, continue to checkout for ${latestHold.venue.name}` : 'Cart is empty'}
+            count={holds.length}
+            disabled={!latestHold}
+            onPress={openCart}
           />
           <IconButton icon={Bell} label="Notifications" badge onPress={() => router.push('/notifications')} />
         </View>
@@ -181,15 +173,12 @@ export default function Explore() {
       </View>
 
       <View style={styles.chips}>
-        <Chip label={dayLabel} dropdown onPress={() => setSheet('day')} style={styles.chip} />
         <Chip
-          label="Distance"
+          label={`Distance · ${radiusKm} km`}
           icon={Radar}
           active={radiusKm !== DEFAULT_DISTANCE}
           onPress={() => setSheet('distance')}
-          style={styles.chip}
         />
-        <Chip label="Nearby" icon={MapPin} active={nearbyOnly} onPress={() => setNearbyOnly((v) => !v)} style={styles.chip} />
       </View>
     </View>
   );
@@ -218,17 +207,10 @@ export default function Explore() {
           ) : (
             <EmptyState
               icon={MapPin}
-              title={nearbyOnly && data?.further.length ? 'Nothing within 5 km' : 'No turfs here yet'}
-              body={
-                nearbyOnly && data?.further.length
-                  ? `There are ${data.further.length} turf${data.further.length > 1 ? 's' : ''} a little further away.`
-                  : `Nothing within ${radiusKm} km yet. Widen the search radius or try another location.`
-              }
-              action={nearbyOnly && data?.further.length ? 'Show all turfs' : 'Clear filters'}
-              onAction={() => {
-                setNearbyOnly(false);
-                if (!(nearbyOnly && data?.further.length)) setRadiusKm(DISTANCES[DISTANCES.length - 1]);
-              }}
+              title={`Nothing within ${radiusKm} km`}
+              body="Widen the distance or try another location."
+              action="Change distance"
+              onAction={() => setSheet('distance')}
             />
           )
         }
@@ -236,14 +218,6 @@ export default function Explore() {
 
       <DistanceWheel visible={sheet === 'distance'} value={radiusKm} onApply={setRadiusKm} onClose={() => setSheet(null)} />
       <SideMenu visible={sheet === 'menu'} onClose={() => setSheet(null)} />
-      <OptionSheet
-        visible={sheet === 'day'}
-        title="When do you want to play?"
-        options={dayOptions}
-        value={day}
-        onSelect={setDay}
-        onClose={() => setSheet(null)}
-      />
     </View>
   );
 }
@@ -277,7 +251,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[5],
   },
   chips: { flexDirection: 'row', gap: space[2], paddingHorizontal: gutter, marginTop: space[3] },
-  chip: { flex: 1, paddingHorizontal: space[3] },
   flex: { flex: 1, gap: 2 },
   section: { paddingHorizontal: gutter, paddingTop: space[6], paddingBottom: space[3] },
   card: { paddingHorizontal: gutter, paddingBottom: space[4] },
