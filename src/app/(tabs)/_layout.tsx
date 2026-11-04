@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router/js-tabs';
 import { TabBar } from '@/components/navigation/tab-bar';
 import { colors } from '@/theme/tokens';
 
-export const unstable_settings = { initialRouteName: 'explore' };
+export const unstable_settings = { anchor: 'explore' };
 
 export default function TabsLayout() {
   return (
