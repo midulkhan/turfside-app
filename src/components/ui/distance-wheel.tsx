@@ -3,7 +3,7 @@ import { X } from 'lucide-react-native';
 import { memo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { Extrapolation, FadeIn, interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -18,20 +18,21 @@ import { Text } from './text';
  * Distance picker modelled on the camera zoom dial, turned on its side: a big
  * dark disc against the right edge that the right thumb rolls up and down.
  *
- * Like the camera dial the scale is uneven: short distances get more room,
- * long ones bunch up (angle ∝ km^0.7), so 5→50 km is about a 90° turn.
- * Labels thin out where the scale tightens (every 5 km up to 20, then every
- * 10); 25/35/45 are plain marks, the pointer and the readout name them.
- * The face runs from 0 so the top never looks empty, but you can't pick
- * below 5 km. Everything during a drag runs on the UI thread; React only
- * re-renders when the value crosses a 5 km detent.
+ * Like the camera dial the scale is gently uneven (angle ∝ km^0.8): early
+ * kilometres get a little more room, later ones tighten, but the rhythm
+ * never breaks. Every 5 km is numbered with a two-level hierarchy — tens big
+ * with a KM caption, fives small and lighter — and the numbers fall off in
+ * size and brightness away from the pointer, like a curved bezel catching
+ * light. The face runs from 0 so the top never looks empty, but you can't
+ * pick below 5 km. Dragging runs on the UI thread only; React re-renders
+ * just when the value crosses a 5 km detent.
  */
 export const DISTANCES = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
 export const DEFAULT_DISTANCE = 5;
 const MIN = DISTANCES[0];
 const MAX = DISTANCES[DISTANCES.length - 1];
-const POW = 0.7;
-const SPAN_DEG = 115; // 0 → 50 km
+const POW = 0.8;
+const SPAN_DEG = 100; // 0 → 50 km
 const K = SPAN_DEG / Math.pow(MAX, POW);
 
 /** km → dial angle (deg) */
@@ -50,8 +51,8 @@ const TICKS = [
   ...Array.from({ length: 20 }, (_, i) => i / 2),
   ...Array.from({ length: MAX - 10 + 1 }, (_, i) => 10 + i),
 ];
-const labelled = (km: number) => km <= 20 || km % 10 === 0;
-const LABELS = [0, ...DISTANCES].filter(labelled);
+const LABELS = [0, ...DISTANCES];
+const isTen = (km: number) => km % 10 === 0;
 const SPRING = { damping: 22, stiffness: 220, mass: 0.7 };
 
 /** The static face: built once, then only the whole layer rotates. */
@@ -59,7 +60,7 @@ const DialFace = memo(function DialFace({ R }: { R: number }) {
   return (
     <>
       {TICKS.map((km) => {
-        const major = km % 5 === 0 && labelled(km);
+        const major = isTen(km);
         const mid = km % 5 === 0 && !major;
         const whole = Number.isInteger(km);
         return (
@@ -84,18 +85,27 @@ const DialFace = memo(function DialFace({ R }: { R: number }) {
 
 const Label = memo(function Label({ km, R, a, active }: { km: number; R: number; a: SharedValue<number>; active: boolean }) {
   const at = angleOf(km);
-  // keep the number upright while the disc turns
-  const upright = useAnimatedStyle(() => ({ transform: [{ rotate: `${at - a.get()}deg` }] }));
-  const dim = km < MIN;
+  const ten = isTen(km);
+  // Upright while the disc turns, and falling off away from the pointer.
+  const style = useAnimatedStyle(() => {
+    const off = Math.abs(at - a.get());
+    return {
+      opacity: interpolate(off, [0, 30, 70], [1, 0.72, 0.18], Extrapolation.CLAMP) * (km < MIN ? 0.55 : 1),
+      transform: [{ rotate: `${at - a.get()}deg` }, { scale: interpolate(off, [0, 60], [1, 0.86], Extrapolation.CLAMP) }],
+    };
+  });
+  const fg = active ? colors.lime : ten ? colors.textOnDark : 'rgba(255,255,255,0.62)';
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-at}deg` }] }]}>
-      <Animated.View style={[styles.label, { top: R - 22 }, upright]}>
-        <Text variant="h3" color={active ? colors.lime : dim ? colors.textOnDarkMuted : colors.textOnDark} style={styles.labelText}>
+      <Animated.View style={[styles.label, { top: R - 22 }, style]}>
+        <Text variant={ten ? 'h3' : 'labelStrong'} color={fg} style={ten ? styles.tenText : styles.fiveText}>
           {km}
         </Text>
-        <Text variant="caption" color={active ? colors.lime : colors.textOnDarkMuted} style={styles.labelUnit}>
-          KM
-        </Text>
+        {ten ? (
+          <Text variant="caption" color={active ? colors.lime : colors.textOnDarkMuted} style={styles.labelUnit}>
+            KM
+          </Text>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -211,6 +221,7 @@ export function DistanceWheel({
           <View
             pointerEvents="none"
             style={[styles.disc, { left: pointerX, top: cy - R, width: R * 2, height: R * 2, borderRadius: R }]}>
+            <View style={[styles.innerRing, { borderRadius: R - 92, top: 92, left: 92, right: 92, bottom: 92 }]} />
             <Animated.View style={[StyleSheet.absoluteFill, discStyle]}>
               <DialFace R={R} />
               {LABELS.map((km) => (
@@ -279,15 +290,23 @@ const styles = StyleSheet.create({
   frost: { backgroundColor: 'rgba(244,245,240,0.94)' },
   top: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'flex-start', gap: space[3], paddingHorizontal: gutter },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: gutter, gap: space[3] },
-  disc: { position: 'absolute', backgroundColor: 'rgba(22,27,29,0.72)', overflow: 'hidden' },
+  disc: {
+    position: 'absolute',
+    backgroundColor: 'rgba(22,27,29,0.74)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.16)',
+    overflow: 'hidden',
+  },
+  innerRing: { position: 'absolute', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)' },
   tick: { position: 'absolute', left: 0, backgroundColor: colors.textOnDark },
-  tickMajor: { width: 26, height: 2, opacity: 1 },
-  tickMid: { width: 20, height: 2, opacity: 0.9 },
-  tickWhole: { width: 12, height: 1, opacity: 0.7 },
-  tickHalf: { width: 8, height: 1, opacity: 0.4 },
+  tickMajor: { width: 24, height: 2, borderRadius: 1, opacity: 1 },
+  tickMid: { width: 17, height: 1.5, borderRadius: 1, opacity: 0.8 },
+  tickWhole: { width: 10, height: 1, opacity: 0.5 },
+  tickHalf: { width: 6, height: 1, opacity: 0.32 },
   tickDim: { opacity: 0.25 },
   label: { position: 'absolute', left: 34, width: 48, height: 44, alignItems: 'center', justifyContent: 'center' },
-  labelText: { lineHeight: 24 },
+  tenText: { lineHeight: 24, fontVariant: ['tabular-nums'] },
+  fiveText: { lineHeight: 18, fontVariant: ['tabular-nums'] },
   labelUnit: { fontSize: 9, letterSpacing: 1, lineHeight: 12 },
   pointer: {
     position: 'absolute',
