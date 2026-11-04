@@ -1,4 +1,4 @@
-import { CalendarDays, Heart, House, UserRound, type LucideIcon } from 'lucide-react-native';
+import { CalendarDays, Heart, House, ShoppingBag, UserRound, type LucideIcon } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
@@ -13,12 +13,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 
 import { Text } from '@/components/ui/text';
+import { useCart } from '@/features/api/use-cart';
 import { haptic } from '@/lib/haptics';
 import { colors, radius, shadow, size, space } from '@/theme/tokens';
 
 const TABS: Record<string, { icon: LucideIcon; label: string }> = {
   explore: { icon: House, label: 'Explore' },
   bookings: { icon: CalendarDays, label: 'Bookings' },
+  cart: { icon: ShoppingBag, label: 'Cart' },
   saved: { icon: Heart, label: 'Saved' },
   profile: { icon: UserRound, label: 'Profile' },
 };
@@ -42,12 +44,14 @@ const TabItem = memo(function TabItem({
   index,
   focused,
   position,
+  count,
   onPress,
   onLongPress,
 }: {
   name: string;
   index: number;
   focused: boolean;
+  count?: number;
   position: SharedValue<number>;
   onPress: () => void;
   onLongPress: () => void;
@@ -64,7 +68,7 @@ const TabItem = memo(function TabItem({
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
-      accessibilityLabel={meta.label}
+      accessibilityLabel={count ? `${meta.label}, ${count}` : meta.label}
       onPress={onPress}
       onLongPress={onLongPress}
       style={styles.item}>
@@ -80,18 +84,26 @@ const TabItem = memo(function TabItem({
           {meta.label}
         </Text>
       </Animated.View>
+      {count ? (
+        <View pointerEvents="none" style={styles.badge}>
+          <Text variant="caption" color={colors.ink} style={styles.badgeText}>
+            {count > 9 ? '9+' : count}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 });
 
 /**
  * Floating charcoal tab bar.
- * - Four equal, fixed slots: tabs never move or resize when you switch.
+ * - Equal, fixed slots: tabs never move or resize when you switch.
  * - A single lime pill slides behind the active tab on the UI thread (no JS work per frame).
  * - Tapping the active tab again scrolls that screen to the top.
  */
 export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const cart = useCart();
   const routes = state.routes.filter((r) => TABS[r.name]);
   const activeIndex = Math.max(
     0,
@@ -130,7 +142,13 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
               index={i}
               focused={focused}
               position={position}
+              count={route.name === 'cart' ? cart.count : undefined}
               onPress={() => {
+                // Cart: with a slot held, go straight to its checkout instead of the tab.
+                if (route.name === 'cart' && cart.open()) {
+                  haptic.select();
+                  return;
+                }
                 const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
                 if (!focused && !event.defaultPrevented) {
                   haptic.select();
@@ -165,4 +183,20 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, lineHeight: 14 },
   overlay: { ...StyleSheet.absoluteFill },
   labelActive: { fontFamily: 'Geist_600SemiBold' },
+  badge: {
+    position: 'absolute',
+    top: 6,
+    left: '50%',
+    marginLeft: 4,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: colors.lime,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { fontSize: 10, lineHeight: 12, fontFamily: 'Geist_700Bold' },
 });

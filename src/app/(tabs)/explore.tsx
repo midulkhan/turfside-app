@@ -2,8 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
-import { Bell, ChevronDown, MapPin, Menu, Radar, Search, ShoppingBag } from 'lucide-react-native';
+import { Bell, ChevronDown, MapPin, Menu, Radar, Search } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +17,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { qk, useExplore, useMyHolds } from '@/features/api/queries';
+import { useExplore } from '@/features/api/queries';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { dhakaToday } from '@/lib/time';
@@ -42,15 +41,6 @@ export default function Explore() {
   const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
   const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
 
-  // Cart = the slot you're holding. The icon goes straight to its checkout.
-  const qc = useQueryClient();
-  const holds = useMyHolds().data ?? []; // the server lists only unexpired holds
-  const latestHold = holds.reduce<(typeof holds)[number] | undefined>((a, h) => (!a || h.expiresAt > a.expiresAt ? h : a), undefined);
-  const openCart = () => {
-    if (!latestHold) return;
-    qc.setQueryData(qk.hold(latestHold.holdId), latestHold);
-    router.push({ pathname: '/checkout', params: { holdId: latestHold.holdId } });
-  };
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
@@ -121,14 +111,6 @@ export default function Explore() {
           </View>
         </Pressable>
         <View style={styles.actions}>
-          <IconButton
-            icon={ShoppingBag}
-            label={latestHold ? `Cart, continue to checkout for ${latestHold.venue.name}` : 'Cart is empty'}
-            count={holds.length}
-            disabled={!latestHold}
-            size={HEADER_BTN}
-            onPress={openCart}
-          />
           <IconButton icon={Bell} label="Notifications" badge size={HEADER_BTN} onPress={() => router.push('/notifications')} />
         </View>
       </View>
