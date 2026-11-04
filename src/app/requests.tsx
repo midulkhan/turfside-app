@@ -66,7 +66,7 @@ function RequestCard({ r }: { r: PlayerRequest }) {
   );
 }
 
-/** Requests the player posted ("need 2 players") or asked to join. Preview of a phase-3 feature. */
+/** "Player calls": calls the player posted ("need 2 players") or asked to join. Preview of a phase-3 feature. */
 export default function Requests() {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'posted' | 'joined'>('posted');
@@ -75,7 +75,7 @@ export default function Requests() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Your requests" />
+      <ScreenHeader title="My calls" />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[6] }]}>
         <View style={styles.tabs}>
           <Chip label="Posted by me" active={tab === 'posted'} tone="dark" onPress={() => setTab('posted')} />

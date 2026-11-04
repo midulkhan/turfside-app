@@ -1,22 +1,10 @@
 import { router, type Href } from 'expo-router';
-import {
-  Bell,
-  CalendarDays,
-  ChevronRight,
-  CircleHelp,
-  Heart,
-  LogOut,
-  Settings,
-  UsersRound,
-  X,
-  type LucideIcon,
-} from 'lucide-react-native';
+import { ChevronRight, CircleHelp, LogOut, UsersRound, X, type LucideIcon } from 'lucide-react-native';
 import { useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/brand/logo';
-import { Avatar } from '@/components/ui/avatar';
 import { Divider } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';
 import { Sheet } from '@/components/ui/sheet';
@@ -25,16 +13,11 @@ import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 
-type Item = { icon: LucideIcon; label: string; href: Href; badge?: string };
+type Item = { icon: LucideIcon; label: string; href: Href };
 
-const MAIN: Item[] = [
-  { icon: CalendarDays, label: 'My bookings', href: '/bookings' },
-  { icon: UsersRound, label: 'Your requests', href: '/requests', badge: '1' },
-  { icon: Heart, label: 'Saved turfs', href: '/saved' },
-  { icon: Bell, label: 'Notifications', href: '/notifications' },
-];
-const MORE: Item[] = [
-  { icon: Settings, label: 'Account & settings', href: '/profile' },
+// Bookings, saved turfs, notifications and the profile live in the tab bar and header.
+const ITEMS: Item[] = [
+  { icon: UsersRound, label: 'Player calls', href: '/requests' },
   { icon: CircleHelp, label: 'Help & support', href: '/profile' },
 ];
 
@@ -42,7 +25,7 @@ const MORE: Item[] = [
 export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { user, signOut } = useSession();
+  const { signOut } = useSession();
   const pending = useRef<(() => void) | null>(null);
 
   const go = (fn: () => void) => {
@@ -62,13 +45,6 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
       <Text variant="bodyStrong" style={styles.flex}>
         {item.label}
       </Text>
-      {item.badge ? (
-        <View style={styles.badge}>
-          <Text variant="caption" style={styles.badgeText}>
-            {item.badge}
-          </Text>
-        </View>
-      ) : null}
       <ChevronRight size={18} color={colors.textSubtle} />
     </Pressable>
   );
@@ -92,33 +68,26 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
           <IconButton icon={X} label="Close menu" size={40} onPress={onClose} />
         </View>
 
-        <Pressable accessibilityRole="button" onPress={() => go(() => router.push('/profile'))} style={styles.me}>
-          <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={52} />
-          <View style={styles.flex}>
-            <Text variant="title">{user?.name}</Text>
-            <Text variant="label" color={colors.textMuted}>
-              +880 {user?.phone}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={colors.textSubtle} />
-        </Pressable>
-
         <View style={styles.group}>
-          {MAIN.map((it) => (
+          {ITEMS.map((it) => (
             <Row key={it.label} item={it} />
           ))}
         </View>
         <Divider />
-        <View style={styles.group}>
-          {MORE.map((it) => (
-            <Row key={it.label} item={it} />
-          ))}
-        </View>
-
-        <Pressable accessibilityRole="button" onPress={() => go(() => signOut())} style={styles.signOut}>
-          <LogOut size={20} color={colors.danger} strokeWidth={1.9} />
-          <Text variant="bodyStrong" color={colors.danger}>
-            Sign out
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            Alert.alert('Log out?', 'You can sign back in any time.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Logout', style: 'destructive', onPress: () => go(() => signOut()) },
+            ])
+          }
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+          <View style={[styles.rowIcon, styles.logoutIcon]}>
+            <LogOut size={20} color={colors.danger} strokeWidth={1.9} />
+          </View>
+          <Text variant="bodyStrong" color={colors.danger} style={styles.flex}>
+            Logout
           </Text>
         </Pressable>
       </ScrollView>
@@ -130,7 +99,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: gutter, gap: space[4] },
   flex: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  me: { flexDirection: 'row', alignItems: 'center', gap: space[3], backgroundColor: colors.bg, borderRadius: radius.lg, padding: space[3] },
   group: { gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 52, borderRadius: radius.md, paddingHorizontal: space[2] },
   pressed: { backgroundColor: colors.bg },
@@ -142,15 +110,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  badgeText: { color: colors.lime, fontFamily: 'Geist_700Bold' },
-  signOut: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 48, paddingHorizontal: space[2] },
+  logoutIcon: { backgroundColor: colors.dangerSoft },
 });
