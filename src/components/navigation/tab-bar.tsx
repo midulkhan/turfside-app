@@ -69,14 +69,14 @@ const TabItem = memo(function TabItem({
       onLongPress={onLongPress}
       style={styles.item}>
       <Animated.View style={[styles.content, offPill]}>
-        <Icon size={24} color={colors.textOnDark} strokeWidth={1.8} />
-        <Text variant="caption" color={colors.textOnDarkMuted} numberOfLines={1}>
+        <Icon size={20} color={colors.textOnDarkMuted} strokeWidth={1.6} />
+        <Text variant="caption" color={colors.textOnDarkMuted} numberOfLines={1} style={styles.label}>
           {meta.label}
         </Text>
       </Animated.View>
       <Animated.View style={[styles.content, styles.overlay, onPill]}>
-        <Icon size={24} color={colors.ink} strokeWidth={2.3} />
-        <Text variant="caption" color={colors.ink} numberOfLines={1} style={styles.labelActive}>
+        <Icon size={20} color={colors.ink} strokeWidth={2} />
+        <Text variant="caption" color={colors.ink} numberOfLines={1} style={[styles.label, styles.labelActive]}>
           {meta.label}
         </Text>
       </Animated.View>
@@ -161,7 +161,8 @@ const styles = StyleSheet.create({
   indicator: { position: 'absolute', left: PAD, top: PAD, bottom: PAD, paddingHorizontal: 2, zIndex: 0 },
   pill: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.lime },
   item: { flex: 1, height: '100%', zIndex: 1 },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  label: { fontSize: 11, lineHeight: 14 },
   overlay: { ...StyleSheet.absoluteFill },
-  labelActive: { fontFamily: 'Geist_700Bold' },
+  labelActive: { fontFamily: 'Geist_600SemiBold' },
 });

@@ -41,7 +41,7 @@ export function ScreenHeader({
 export function SectionTitle({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <View style={styles.section}>
-      <Text variant="h3" style={styles.sectionTitle} numberOfLines={1}>
+      <Text variant="title" style={styles.sectionTitle} numberOfLines={1}>
         {title}
       </Text>
       {right}
@@ -62,5 +62,5 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center' },
   side: { width: 48, alignItems: 'flex-end' },
   section: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[3] },
-  sectionTitle: { flex: 1, fontSize: 20, lineHeight: 26 },
+  sectionTitle: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.2 },
 });

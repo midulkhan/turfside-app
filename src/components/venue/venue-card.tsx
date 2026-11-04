@@ -46,7 +46,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
           <View style={styles.body}>
             <View style={styles.titleRow}>
               <View style={styles.flex}>
-                <Text variant="h3" numberOfLines={1}>
+                <Text variant="title" numberOfLines={1}>
                   {venue.name}
                 </Text>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
@@ -55,7 +55,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
                 </Text>
               </View>
               <View style={styles.price}>
-                <Text variant="h3">{formatTaka(venue.hourlyFrom)}</Text>
+                <Text variant="title">{formatTaka(venue.hourlyFrom)}</Text>
                 <Text variant="caption" color={colors.textMuted}>
                   / hour
                 </Text>

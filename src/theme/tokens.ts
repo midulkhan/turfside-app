@@ -74,7 +74,7 @@ export const size = {
   control: 56, // buttons, inputs
   controlSm: 44, // chips, small buttons (min tap target)
   iconButton: 48,
-  tabBar: 76,
+  tabBar: 64,
   icon: 22,
   iconSm: 18,
 } as const;
