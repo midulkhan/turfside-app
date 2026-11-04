@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 const API = process.env.API_URL;
 const d = API ? describe : describe.skip;
 type Json = Record<string, any>;
-const demo: Json[] = JSON.parse(readFileSync(join(__dirname, '..', '..', 'docs', 'postman', 'demo-turfs.json'), 'utf8'));
+// The demo photos live on images.turfsides.com; point them at this server's R2 domain (a stand-in in CI).
+const R2 = (process.env.R2_PUBLIC_URL ?? 'https://images.turfsides.com').replace(/\/+$/, '');
+const demo: Json[] = JSON.parse(readFileSync(join(__dirname, '..', '..', 'docs', 'postman', 'demo-turfs.json'), 'utf8').replaceAll('https://images.turfsides.com', R2));
 
 async function call(method: string, path: string, body?: unknown, token?: string) {
   const res = await fetch(`${API}${path}`, {
@@ -40,7 +42,7 @@ d('owner turfs', () => {
     // Players see it (prices in poisha), with slots running past midnight.
     const banani = made[0];
     const v = (await call('GET', `/v1/venues/${banani.id}`)).json;
-    expect(v.photos[0]).toMatch(/^https?:\/\/.+\/static\/seed\/venue-floodlit\.webp$/);
+    expect(v.photos).toEqual(demo[0].photos);
     const slots = (await call('GET', `/v1/venues/${banani.id}/slots?day=${tomorrow()}`)).json.slots;
     expect(slots).toHaveLength(20); // 06:00 → 02:00, 60 min
     expect(slots.at(-1).end).toBe(26 * 60);
