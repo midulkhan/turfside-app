@@ -80,7 +80,7 @@ d('mobile app client ↔ live API', () => {
     expect(await api.createHold(slot.id, key)).toEqual(hold); // idempotent retry
     expect(hold.total).toBeGreaterThan(0);
     expect((await api.getHold(hold.holdId)).holdId).toBe(hold.holdId);
-    expect((await api.getSlots(venueId, day)).slots.find((s) => s.id === slot.id)?.status).toBe('booked');
+    expect((await api.getSlots(venueId, day)).slots.find((s) => s.id === slot.id)).toMatchObject({ status: 'mine', holdId: hold.holdId });
 
     const returnUrl = 'exp://192.168.0.5:8081/--/payment-return';
     const pay = await api.startPayment(hold.holdId, `pay-${Date.now()}`, returnUrl);

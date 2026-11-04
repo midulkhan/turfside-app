@@ -29,6 +29,10 @@ const TONES = {
     sub: colors.textSubtle,
     dash: colors.borderStrong,
   },
+  // Another player is paying for it right now: warm, clearly "not yours", no hatch.
+  held: { fill: '#FFF6E5', stroke: '#F2C46D', sw: 1, fg: '#8A5A00', sub: '#8A5A00', dash: '#F2C46D' },
+  // Your own hold (back from checkout): pick it again to continue to checkout.
+  mine: { fill: colors.limeSoft, stroke: colors.limeText, sw: 1.5, fg: colors.ink, sub: colors.limeText, dash: colors.lime },
   blocked: {
     fill: colors.surfaceMuted,
     stroke: colors.border,
@@ -52,13 +56,17 @@ export const SlotTicket = memo(function SlotTicket({
   selected?: boolean;
   onPress?: (s: Slot) => void;
 }) {
-  const disabled = slot.status !== 'available';
+  const disabled = slot.status === 'booked' || slot.status === 'blocked' || slot.status === 'held';
   const tone = TONES[selected ? 'selected' : slot.status];
   const range = formatRangeSpaced(slot.start, slot.end);
   // Size by length so long ranges ("11:00 PM – 12:00 AM") fit identically on iOS, Android and web.
   const timeSize = range.length <= 15 ? 13.5 : range.length <= 17 ? 12.5 : 11.5;
   const minutes = slot.end - slot.start;
-  const status = selected ? 'Selected' : slot.status === 'booked' ? 'Booked' : slot.status === 'blocked' ? 'Unavailable' : `${minutes} min`;
+  const status = selected
+    ? 'Selected'
+    : ({ booked: 'Booked', blocked: 'Unavailable', held: 'Being booked', mine: 'In your cart', available: `${minutes} min` } as const)[
+        slot.status
+      ];
 
   return (
     <PressableScale
@@ -77,7 +85,7 @@ export const SlotTicket = memo(function SlotTicket({
         strokeWidth={tone.sw}
         radius={radius.sm}
         notch={6}
-        hatch={disabled}
+        hatch={slot.status === 'booked' || slot.status === 'blocked'}
         style={styles.base}>
         <Text
           variant="labelStrong"

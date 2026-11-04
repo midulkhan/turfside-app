@@ -58,28 +58,42 @@ export function getVenueRow(id: string) {
 export const allVenueRows = () => cached('venues:all', 120, () => q<VenueRow>(VENUE_SELECT));
 export const invalidateVenue = (id: string) => cacheDel(`venue:${id}`, 'venues:all');
 
-export type SlotOut = { id: string; start: number; end: number; price: number; status: 'available' | 'booked' | 'blocked' };
+/**
+ * held = someone is checking out right now (10-minute hold or bKash in progress);
+ * mine = the signed-in player's own hold, which they can resume (holdId).
+ */
+export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
+export type SlotOut = { id: string; start: number; end: number; price: number; status: SlotStatus; holdId?: string };
 
 /**
  * Slots for one day, computed from the schedule (no pre-generated slot rows) and
  * overlaid with active bookings and owner blocks. Cached 15 s and invalidated on
  * every booking change, so availability is fresh but cheap under load.
  */
-export async function daySlots(v: VenueRow, day: string): Promise<SlotOut[]> {
+export async function daySlots(v: VenueRow, day: string, viewerId?: string): Promise<SlotOut[]> {
   const today = dhakaToday();
   if (day < today || day > addDays(today, config.BOOKING_HORIZON_DAYS)) return [];
   const taken = await cached(`taken:${v.id}:${day}`, 15, async () => {
     const from = instant(day, 0);
     const to = instant(day, v.close_min + 60);
-    const rows = await q<{ s: Date; e: Date; kind: string }>(
-      `select lower(during) s, upper(during) e, 'booked' kind from bookings
+    const rows = await q<{ s: Date; e: Date; kind: string; id: string | null; user_id: string | null; until: Date | null }>(
+      `select lower(during) s, upper(during) e,
+              case when status in ('held','pending') then 'held' else 'booked' end kind, id, user_id, hold_expires_at until
+         from bookings
         where pitch_id = $1 and during && tstzrange($2, $3) and status in ('held','pending','confirmed','checked_in')
-          and not (status = 'held' and hold_expires_at < now())
+          and not (status in ('held','pending') and hold_expires_at < now())
        union all
-       select lower(during), upper(during), 'blocked' from venue_blocks where pitch_id = $1 and during && tstzrange($2, $3)`,
+       select lower(during), upper(during), 'blocked', null, null, null from venue_blocks where pitch_id = $1 and during && tstzrange($2, $3)`,
       [v.pitch_id, from, to],
     );
-    return rows.map((r) => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), kind: r.kind }));
+    return rows.map((r) => ({
+      s: new Date(r.s).getTime(),
+      e: new Date(r.e).getTime(),
+      kind: r.kind,
+      id: r.id,
+      userId: r.user_id,
+      until: r.until ? new Date(r.until).getTime() : null,
+    }));
   });
   const hourly = hourlyFor(rules(v), day);
   const nowMin = minutesNowInDhaka();
@@ -88,8 +102,12 @@ export async function daySlots(v: VenueRow, day: string): Promise<SlotOut[]> {
     .map(({ start, end }) => {
       const s = instant(day, start).getTime();
       const e = instant(day, end).getTime();
-      const clash = taken.find((t) => t.s < e && t.e > s);
-      return { id: `${v.id}:${day}:${start}`, start, end, price: sessionPrice(hourly, v.session_min), status: clash ? (clash.kind as 'booked' | 'blocked') : 'available' };
+      // Holds stay cached up to 15 s; drop any that ran out in the meantime.
+      const clash = taken.find((t) => t.s < e && t.e > s && !(t.kind === 'held' && t.until !== null && t.until < Date.now()));
+      const base = { id: `${v.id}:${day}:${start}`, start, end, price: sessionPrice(hourly, v.session_min) };
+      if (!clash) return { ...base, status: 'available' as const };
+      if (clash.kind === 'held' && viewerId && clash.userId === viewerId) return { ...base, status: 'mine' as const, holdId: clash.id! };
+      return { ...base, status: clash.kind as SlotStatus };
     });
 }
 

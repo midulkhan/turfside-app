@@ -215,12 +215,12 @@ export async function buildApp() {
     return detail(v, saved);
   });
 
-  app.get('/v1/venues/:id/slots', async (req, reply) => {
+  app.get('/v1/venues/:id/slots', { preHandler: optionalUser }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const { day } = parse(z.object({ day: z.string().refine(isDayKey, 'Invalid date.') }), req.query);
     const v = await getVenueRow(id);
     reply.header('Cache-Control', 'no-store');
-    return { venueId: id, day, slots: await daySlots(v, day), fetchedAt: Date.now() };
+    return { venueId: id, day, slots: await daySlots(v, day, req.user?.userId), fetchedAt: Date.now() };
   });
 
   app.get('/v1/venues/:id/reviews', async (req) => {
@@ -382,6 +382,12 @@ export async function buildApp() {
     return bookings.remembered(idem(req), req.user!.userId, 'hold', () => bookings.createHold(req.user!.userId, slotId));
   });
   app.get('/v1/holds/:id', { preHandler: requireUser }, async (req) => bookings.getHold(req.user!.userId, (req.params as { id: string }).id));
+  /** Leaving checkout without paying frees the slot for everyone straight away. */
+  app.delete('/v1/holds/:id', { preHandler: requireUser }, async (req) => {
+    const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+    return bookings.releaseHold(req.user!.userId, id);
+  });
+  app.get('/v1/me/holds', { preHandler: requireUser }, async (req) => bookings.listHolds(req.user!.userId));
 
   app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const { holdId, returnUrl } = parse(z.object({ holdId: z.string().uuid(), returnUrl: z.string().max(300).optional() }), req.body);

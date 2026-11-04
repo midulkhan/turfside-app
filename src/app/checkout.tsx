@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import {
   CalendarDays,
@@ -32,7 +32,7 @@ import { ErrorState } from '@/components/ui/states';
 import { Stepper } from '@/components/ui/stepper';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { useHold } from '@/features/api/queries';
+import { qk, useHold } from '@/features/api/queries';
 import { ApiError } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
@@ -65,6 +65,29 @@ export default function Checkout() {
   const [paying, setPaying] = useState(false);
   // One idempotency key per hold: a retry after a network drop can never charge twice.
   const payKey = useRef(newIdempotencyKey());
+  const paid = useRef(false);
+
+  // Leaving without paying gives the slot back to everyone right away instead of
+  // blocking it for the rest of the 10-minute hold. (A payment already in progress
+  // with bKash is kept by the server; only a plain hold is released.)
+  // The route-typed navigator doesn't list 'beforeRemove'; the stack does emit it.
+  const navigation = useNavigation() as unknown as { addListener: (e: 'beforeRemove', cb: () => void) => () => void };
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', () => {
+        if (paid.current) return;
+        const venueId = hold.data?.venue.id;
+        api
+          .releaseHold(holdId)
+          .catch(() => {}) // offline: the hold simply expires on its own
+          .finally(() => {
+            qc.invalidateQueries({ queryKey: qk.myHolds });
+            if (venueId) qc.invalidateQueries({ queryKey: ['slots', venueId] });
+            qc.removeQueries({ queryKey: qk.hold(holdId) });
+          });
+      }),
+    [navigation, holdId, hold.data?.venue.id, qc],
+  );
 
   const expired = !!hold.data && left === 0;
 
@@ -84,7 +107,9 @@ export default function Checkout() {
       for (let i = 0; i < (cancelled ? 1 : POLL_ATTEMPTS); i++) {
         const res = await api.getPaymentStatus(paymentId);
         if (res.status === 'confirmed' && res.bookingId) {
+          paid.current = true;
           haptic.success();
+          qc.invalidateQueries({ queryKey: qk.myHolds });
           qc.invalidateQueries({ queryKey: ['bookings'] });
           qc.invalidateQueries({ queryKey: ['notifications'] });
           qc.invalidateQueries({ queryKey: ['slots', hold.data.venue.id] });
@@ -96,7 +121,11 @@ export default function Checkout() {
           // That payment is closed for good, so a retry needs a fresh key.
           payKey.current = newIdempotencyKey();
           qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
-          throw new Error(cancelled ? 'You cancelled the bKash payment. Nothing was charged.' : 'bKash could not complete the payment. You have not been charged.');
+          throw new Error(
+            cancelled
+              ? 'You cancelled the bKash payment. Nothing was charged.'
+              : 'bKash could not complete the payment. You have not been charged.',
+          );
         }
         await new Promise((r) => setTimeout(r, Math.min(1000 * 1.5 ** i, 4000)));
       }

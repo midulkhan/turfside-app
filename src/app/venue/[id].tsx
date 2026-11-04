@@ -124,7 +124,8 @@ export default function VenueScreen() {
 
   // If the selected slot gets booked by someone else while we look at it, drop it.
   const live = selected ? slots.data?.slots.find((s) => s.id === selected.id) : undefined;
-  const chosen = live && live.status === 'available' ? selected : null;
+  // Your own hold counts as selectable: continuing resumes it instead of starting over.
+  const chosen = live && (live.status === 'available' || live.status === 'mine') ? selected : null;
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';
 
   const hold = useMutation({
@@ -135,6 +136,8 @@ export default function VenueScreen() {
     onSuccess: (h) => {
       holdKey.current = null;
       qc.setQueryData(qk.hold(h.holdId), h);
+      qc.invalidateQueries({ queryKey: qk.myHolds });
+      qc.invalidateQueries({ queryKey: qk.slots(id, day) }); // shows as "In your cart" when you come back
       router.push({ pathname: '/checkout', params: { holdId: h.holdId } });
     },
     onError: (e) => {
@@ -343,7 +346,7 @@ export default function VenueScreen() {
                 ) : (
                   <Timeline grouped={grouped} selectedId={chosen?.id} onPick={(s) => setSelected((cur) => (cur?.id === s.id ? null : s))} />
                 )}
-                {slots.data && !slots.data.slots.some((s) => s.status === 'available') ? (
+                {slots.data && !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
                   <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
                     No open sessions on this day. Try another date.
                   </Text>

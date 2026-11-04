@@ -41,8 +41,9 @@ export type VenueDetail = VenueSummary & {
 export type Review = { id: string; author: string; rating: number; at: number; text: string };
 export type ReviewSummary = { average: number; count: number; histogram: Record<1 | 2 | 3 | 4 | 5, number>; items: Review[] };
 
-export type SlotStatus = 'available' | 'booked' | 'blocked';
-export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus };
+/** held = another player is checking out (up to 10 min); mine = your own hold, resumable via holdId. */
+export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
+export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string };
 export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number };
 
 export type QuoteLine = { label: string; detail?: string; amount: Poisha };

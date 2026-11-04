@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { Bell, ChevronDown, MapPin, Menu, Search } from 'lucide-react-native';
+import { Bell, ChevronDown, MapPin, Menu, Search, ShoppingBag } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +19,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { useExplore } from '@/features/api/queries';
+import { useExplore, useMyHolds } from '@/features/api/queries';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { addDays, dhakaToday, formatDay, type DayKey } from '@/lib/time';
@@ -40,6 +40,7 @@ export default function Explore() {
   const today = dhakaToday();
   const [day, setDay] = useState<DayKey>(today);
   const [radiusKm, setRadiusKm] = useState(20);
+  const cartCount = useMyHolds().data?.length ?? 0; // the server lists only unexpired holds
   // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
   const [nearbyOnly, setNearbyOnly] = useState(false);
   const [sheet, setSheet] = useState<null | 'day' | 'menu'>(null);
@@ -111,7 +112,15 @@ export default function Explore() {
             <ChevronDown size={18} color={colors.ink} strokeWidth={2.2} />
           </View>
         </Pressable>
-        <IconButton icon={Bell} label="Notifications" badge onPress={() => router.push('/notifications')} />
+        <View style={styles.actions}>
+          <IconButton
+            icon={ShoppingBag}
+            label={cartCount ? `Cart, ${cartCount} slot${cartCount > 1 ? 's' : ''} held` : 'Cart'}
+            count={cartCount}
+            onPress={() => router.push('/cart')}
+          />
+          <IconButton icon={Bell} label="Notifications" badge onPress={() => router.push('/notifications')} />
+        </View>
       </View>
 
       <View style={styles.hero}>
@@ -225,6 +234,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, zIndex: 2 },
   place: { alignItems: 'center', gap: 2, minHeight: 48, justifyContent: 'center' },
+  actions: { flexDirection: 'row', gap: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   hero: { height: 172, justifyContent: 'center', marginTop: -space[2] },
   heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },

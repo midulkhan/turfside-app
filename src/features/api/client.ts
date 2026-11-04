@@ -65,7 +65,7 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
 export const getVenue = (id: string, signal?: AbortSignal) => request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
 
 export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal) =>
-  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { query: { day }, signal });
+  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { auth: 'optional', query: { day }, signal });
 
 export const getReviews = (venueId: string, signal?: AbortSignal) => request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { signal });
 
@@ -80,6 +80,13 @@ export const createHold = (slotId: string, idempotencyKey: string) =>
   request<Hold>('POST', '/v1/holds', { auth: 'required', body: { slotId }, idempotencyKey });
 
 export const getHold = (holdId: string, signal?: AbortSignal) => request<Hold>('GET', `/v1/holds/${enc(holdId)}`, { auth: 'required', signal });
+
+/** Give the slot back (leaving checkout without paying). Holds with a payment in progress are kept. */
+export const releaseHold = (holdId: string) =>
+  request<{ released: boolean }>('DELETE', `/v1/holds/${enc(holdId)}`, { auth: 'required', timeoutMs: 8000 });
+
+/** Active holds: the cart. */
+export const getMyHolds = (signal?: AbortSignal) => request<Hold[]>('GET', '/v1/me/holds', { auth: 'required', signal });
 
 /**
  * Start a bKash payment for a hold. The server calls bKash "create payment" and

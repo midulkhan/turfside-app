@@ -94,6 +94,15 @@ export async function createHold(userId: string, slotId: string) {
     // racing for one slot can deadlock inside the exclusion-constraint check instead of one
     // cleanly getting "slot taken". The exclusion constraint remains the real guarantee.
     await c.query('select pg_advisory_xact_lock(hashtext($1))', [`pitch:${v.pitch_id}`]);
+    // Picking a slot you already hold (e.g. back from checkout) resumes that hold.
+    const mine = (
+      await c.query<BookingRow>(
+        `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings
+          where user_id = $1 and pitch_id = $2 and during = tstzrange($3, $4) and status in ('held','pending') and hold_expires_at > now()`,
+        [userId, v.pitch_id, from, to],
+      )
+    ).rows[0];
+    if (mine) return mine;
     const active = await c.query("select count(*)::int n from bookings where user_id = $1 and status = 'held' and hold_expires_at > now()", [userId]);
     if (active.rows[0].n >= MAX_ACTIVE_HOLDS) throw new ApiError('rate_limited', 'You already have slots on hold. Finish or wait for them to expire.');
     // Lazily release stale holds on this exact range so they never block a new booking.
@@ -116,6 +125,26 @@ export async function createHold(userId: string, slotId: string) {
   });
   await invalidateDay(v.id, day);
   return holdShape(row);
+}
+
+/** Give a held slot back. Holds with a bKash payment in progress are left alone. */
+export async function releaseHold(userId: string, holdId: string) {
+  const b = await one<{ venue_id: string; day: string }>(
+    "update bookings set status = 'expired', hold_expires_at = now() where id = $1 and user_id = $2 and status = 'held' returning venue_id, day::text",
+    [holdId, userId],
+  );
+  if (b) await invalidateDay(b.venue_id, b.day);
+  return { released: !!b };
+}
+
+/** The player's active holds (the cart). */
+export async function listHolds(userId: string) {
+  const rows = await q<BookingRow>(
+    `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings
+      where user_id = $1 and status in ('held','pending') and hold_expires_at > now() order by hold_expires_at`,
+    [userId],
+  );
+  return Promise.all(rows.map(holdShape));
 }
 
 export async function getHold(userId: string, holdId: string) {

@@ -25,6 +25,7 @@ export const qk = {
   requests: ['requests'] as const,
   reviews: (id: string) => ['reviews', id] as const,
   places: ['places'] as const,
+  myHolds: ['my-holds'] as const,
 };
 
 export const PERSISTED_ROOTS = new Set(['venue', 'saved', 'bookings', 'booking', 'places']);
@@ -166,4 +167,9 @@ export function useDeletePlace() {
     onMutate: (id) => qc.setQueryData<SavedPlace[]>(qk.places, (old) => old?.filter((p) => p.id !== id)),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.places }),
   });
+}
+
+/** Slots on hold for this player (the cart). Light polling keeps the badge honest as holds expire. */
+export function useMyHolds(enabled = true) {
+  return useQuery({ queryKey: qk.myHolds, queryFn: ({ signal }) => api.getMyHolds(signal), staleTime: 10_000, refetchInterval: 30_000, enabled });
 }

@@ -224,3 +224,35 @@ d('explore radius', () => {
     expect((await call('GET', '/v1/venues/explore?lat=23.8&lng=90.4&radius=500')).status).toBe(400);
   });
 });
+
+d('holds: someone booking vs your cart', () => {
+  it('shows a hold as "held" to others and "mine" to its owner, resumes it, and releases it', async () => {
+    const a = await newUser('Holder A');
+    const b = await newUser('Watcher B');
+    const day = new Date(Date.now() + 6 * 3600_000 + 5 * 86400_000).toISOString().slice(0, 10);
+    const slotsFor = async (token?: string) => (await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`, undefined, token)).json.slots as Json[];
+    const slot = (await slotsFor()).find((s) => s.status === 'available')!;
+
+    const hold = await call('POST', '/v1/holds', { slotId: slot.id }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(hold.status).toBe(200);
+    const mine = (await slotsFor(a.accessToken)).find((s) => s.id === slot.id)!;
+    expect(mine).toMatchObject({ status: 'mine', holdId: hold.json.holdId });
+    expect((await slotsFor(b.accessToken)).find((s) => s.id === slot.id)!.status).toBe('held');
+    expect((await slotsFor()).find((s) => s.id === slot.id)!.status).toBe('held');
+
+    // Back from checkout and picking it again resumes the same hold (no "slot taken").
+    const again = await call('POST', '/v1/holds', { slotId: slot.id }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(again.json.holdId).toBe(hold.json.holdId);
+    // B can't take it while it's held.
+    expect((await call('POST', '/v1/holds', { slotId: slot.id }, b.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(409);
+
+    const cart = await call('GET', '/v1/me/holds', undefined, a.accessToken);
+    expect(cart.json.map((h: Json) => h.holdId)).toEqual([hold.json.holdId]);
+    // Only the holder can release it.
+    expect((await call('DELETE', `/v1/holds/${hold.json.holdId}`, undefined, b.accessToken)).json.released).toBe(false);
+    expect((await call('DELETE', `/v1/holds/${hold.json.holdId}`, undefined, a.accessToken)).json.released).toBe(true);
+    expect((await slotsFor(b.accessToken)).find((s) => s.id === slot.id)!.status).toBe('available');
+    expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toEqual([]);
+    expect((await call('POST', '/v1/holds', { slotId: slot.id }, b.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(200);
+  });
+});
