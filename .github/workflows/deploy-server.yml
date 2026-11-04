@@ -79,9 +79,8 @@ jobs:
           protocol: ftps
           port: 21
           local-dir: ./server/deploy/
-          # Main cPanel FTP login lands in your home folder → upload into the subdomain folder.
-          # If your FTP account is already scoped to that folder, set repo variable FTP_SERVER_DIR to ./
-          server-dir: ${{ vars.FTP_SERVER_DIR || './api.turfsides.com/' }}
+          # The FTP account opens directly in ~/api.turfsides.com (the app root), so upload to its root.
+          server-dir: ./
           exclude: |
             **/.git*
             **/.git*/**
