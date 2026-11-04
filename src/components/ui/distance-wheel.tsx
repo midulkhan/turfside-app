@@ -1,10 +1,10 @@
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
-import { memo, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { memo, useEffect, useState } from 'react';
+import { BackHandler, Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { Extrapolation, FadeIn, interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { Extrapolation, FadeIn, FadeOut, interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -13,6 +13,7 @@ import { colors, gutter, space } from '@/theme/tokens';
 
 import { Button } from './button';
 import { IconButton } from './icon-button';
+import { Overlay, useBlurTarget } from './overlay-host';
 import { Text } from './text';
 
 /**
@@ -112,6 +113,21 @@ const Label = memo(function Label({ km, R, a, active }: { km: number; R: number;
   );
 });
 
+// Real blur needs Android 12+ (RenderNode); older phones get the frosted layer.
+const androidBlur = Platform.OS === 'android' && Number(Platform.Version) >= 31;
+
+/** Hardware back closes the overlay (a Modal would do this for us). */
+function AndroidBack({ onBack }: { onBack: () => void }) {
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onBack]);
+  return null;
+}
+
 export function DistanceWheel({
   visible,
   value,
@@ -124,6 +140,7 @@ export function DistanceWheel({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const blurTarget = useBlurTarget();
   const { width, height } = useWindowDimensions();
   const R = Math.round(Math.min(height * 0.42, 380)); // disc radius
   const pointerX = Math.round(width * 0.44); // where the rim (and pointer) sits
@@ -207,12 +224,19 @@ export function DistanceWheel({
     settle(km);
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
-      <GestureHandlerRootView style={styles.flex}>
+  const content = (
+    <>
         {/* Pure blur (no white material), with soft fades only where text sits. */}
         {Platform.OS === 'ios' ? (
           <BlurView intensity={55} style={StyleSheet.absoluteFill} />
+        ) : androidBlur && blurTarget ? (
+          <BlurView
+            intensity={55}
+            blurTarget={blurTarget}
+            blurMethod="dimezisBlurView"
+            blurReductionFactor={2.2}
+            style={StyleSheet.absoluteFill}
+          />
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.frost]} />
         )}
@@ -293,9 +317,26 @@ export function DistanceWheel({
             }}
           />
         </View>
-      </GestureHandlerRootView>
-    </Modal>
+    </>
   );
+
+  // iOS: a native modal blurs whatever is underneath.
+  if (Platform.OS === 'ios') {
+    return (
+      <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+        <GestureHandlerRootView style={styles.flex}>{content}</GestureHandlerRootView>
+      </Modal>
+    );
+  }
+  // Android: render in the app's overlay layer (same window), so the BlurView can blur the app.
+  return visible ? (
+    <Overlay>
+      <AndroidBack onBack={onClose} />
+      <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={StyleSheet.absoluteFill}>
+        {content}
+      </Animated.View>
+    </Overlay>
+  ) : null;
 }
 
 const styles = StyleSheet.create({

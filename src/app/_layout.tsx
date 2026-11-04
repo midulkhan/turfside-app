@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { VideoSplash } from '@/components/splash/video-splash';
+import { OverlayProvider } from '@/components/ui/overlay-host';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors } from '@/theme/tokens';
@@ -75,7 +76,10 @@ export default function RootLayout() {
         <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
           <SessionProvider>
             <StatusBar style="dark" />
-            <RootNavigator />
+            {/* whole app = Android blur source; full-screen overlays render above it */}
+            <OverlayProvider>
+              <RootNavigator />
+            </OverlayProvider>
           </SessionProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>
