@@ -90,6 +90,10 @@ export async function createHold(userId: string, slotId: string) {
   const to = instant(day, session.end);
 
   const row = await tx(async (c) => {
+    // Queue concurrent holds on the same pitch (released at commit). Without this, two players
+    // racing for one slot can deadlock inside the exclusion-constraint check instead of one
+    // cleanly getting "slot taken". The exclusion constraint remains the real guarantee.
+    await c.query('select pg_advisory_xact_lock(hashtext($1))', [`pitch:${v.pitch_id}`]);
     const active = await c.query("select count(*)::int n from bookings where user_id = $1 and status = 'held' and hold_expires_at > now()", [userId]);
     if (active.rows[0].n >= MAX_ACTIVE_HOLDS) throw new ApiError('rate_limited', 'You already have slots on hold. Finish or wait for them to expire.');
     // Lazily release stale holds on this exact range so they never block a new booking.
@@ -104,7 +108,9 @@ export async function createHold(userId: string, slotId: string) {
       );
       return r.rows[0];
     } catch (e) {
-      if ((e as { code?: string }).code === '23P01') throw new ApiError('slot_taken', 'Slot just got taken. Pick another time.'); // exclusion violation
+      const code = (e as { code?: string }).code;
+      // 23P01 exclusion violation; 40P01 deadlock as a last-resort safety net.
+      if (code === '23P01' || code === '40P01') throw new ApiError('slot_taken', 'Slot just got taken. Pick another time.');
       throw e;
     }
   });
