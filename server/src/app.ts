@@ -91,7 +91,13 @@ export async function buildApp() {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', async () => {
     let db = 'not_configured';
-    if (config.DATABASE_URL) db = await one('select 1 ok').then(() => 'ok').catch((e) => `error: ${String(e.message).slice(0, 80)}`);
+    if (config.DATABASE_URL) db = await one('select 1 ok')
+        .then(() => 'ok')
+        .catch((e: Error & { code?: string; errors?: { code?: string; address?: string; port?: number }[] }) => {
+          // Connection failures arrive as an AggregateError with an empty message; show the socket codes instead.
+          const inner = e.errors?.map((x) => `${x.code ?? '?'} ${x.address ?? ''}:${x.port ?? ''}`).join(', ');
+          return `error: ${(e.message || e.code || inner || 'unknown').slice(0, 120)}${inner && e.message ? ` (${inner})` : ''}`;
+        });
     return {
       status: db === 'ok' ? 'ok' : 'degraded',
       env: config.NODE_ENV,
