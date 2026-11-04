@@ -235,10 +235,10 @@ const styles = StyleSheet.create({
   placeName: { flexShrink: 1 },
   actions: { flexDirection: 'row', gap: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
-  hero: { height: 172, justifyContent: 'center', marginTop: -space[2] },
+  hero: { height: 172, justifyContent: 'center', marginTop: -space[2], overflow: 'hidden' }, // keep the photo (and its pitch base) inside the fades
   heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
   fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '55%' },
-  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 70 },
+  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 },
   fadeTop: { position: 'absolute', left: 0, right: 0, top: -10, height: 50 },
   heroText: { paddingHorizontal: gutter, gap: space[2], maxWidth: 252 },
   accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
