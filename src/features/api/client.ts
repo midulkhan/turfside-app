@@ -59,7 +59,7 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
   request<ExploreResult>('GET', '/v1/venues/explore', {
     auth: 'optional',
     signal,
-    query: { lat: p.lat, lng: p.lng, day: p.day, format: p.format, floodlit: p.floodlitOnly ? 'true' : undefined, q: p.query?.trim() },
+    query: { lat: p.lat, lng: p.lng, day: p.day, format: p.format, floodlit: p.floodlitOnly ? 'true' : undefined, q: p.query?.trim(), radius: p.radiusKm },
   });
 
 export const getVenue = (id: string, signal?: AbortSignal) => request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });

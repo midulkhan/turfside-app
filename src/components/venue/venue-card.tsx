@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ArrowUpRight, Heart, Lightbulb, Star, UsersRound } from 'lucide-react-native';
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { Card, Divider } from '@/components/ui/card';
 import { Photo } from '@/components/ui/photo';
@@ -34,10 +35,12 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
         <Card padded={false} elevated style={styles.card}>
           <View>
             <Photo source={venue.photo} style={styles.photo} recyclingKey={venue.id} />
-            <View style={styles.rating}>
-              <Star size={16} color="#F5B301" fill="#F5B301" />
-              <Text variant="labelStrong">{venue.rating.toFixed(1)}</Text>
-            </View>
+            {venue.reviewCount > 0 ? (
+              <View style={styles.rating}>
+                <Star size={16} color="#F5B301" fill="#F5B301" />
+                <Text variant="labelStrong">{venue.rating.toFixed(1)}</Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.body}>
@@ -80,7 +83,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
             <Divider />
             <View style={styles.footer}>
               <View style={styles.tag}>
-                <View style={[styles.avail, !venue.availableToday && styles.availOff]} />
+                {venue.availableToday ? <LiveDot /> : <View style={[styles.avail, styles.availOff]} />}
                 <Text variant="labelStrong" color={venue.availableToday ? colors.text : colors.textMuted}>
                   {venue.availableToday ? 'Available today' : 'Fully booked today'}
                 </Text>
@@ -112,7 +115,25 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
   );
 });
 
+/** "Available today" dot: a soft heartbeat, run on the UI thread. */
+function LiveDot() {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.set(withRepeat(withTiming(1, { duration: 1300, easing: Easing.out(Easing.quad) }), -1, false));
+  }, [t]);
+  const ring = useAnimatedStyle(() => ({ opacity: 0.55 * (1 - t.get()), transform: [{ scale: 1 + t.get() * 1.4 }] }));
+  const core = useAnimatedStyle(() => ({ opacity: t.get() < 0.5 ? 1 : 0.55 + 0.45 * Math.abs(Math.cos(t.get() * Math.PI)) }));
+  return (
+    <View style={styles.liveWrap} accessibilityElementsHidden importantForAccessibility="no">
+      <Animated.View style={[styles.liveRing, ring]} />
+      <Animated.View style={[styles.avail, core]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  liveWrap: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
+  liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: '#A8D52B' },
   card: { padding: 6 },
   photo: { width: '100%', aspectRatio: 16 / 7.4 },
   rating: {

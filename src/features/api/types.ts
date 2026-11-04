@@ -80,6 +80,8 @@ export type ExploreParams = {
   format: PitchFormat | 'any';
   floodlitOnly?: boolean;
   query?: string;
+  /** Fixed search radius from the distance slider (km). */
+  radiusKm?: number;
 };
 
 export type ExploreResult = {

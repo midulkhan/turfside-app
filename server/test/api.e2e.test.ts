@@ -211,3 +211,16 @@ d('saved locations', () => {
     expect((await call('GET', '/v1/me/places', undefined, a.accessToken)).json).toEqual([]);
   });
 });
+
+d('explore radius', () => {
+  it('honours a fixed radius from the distance slider', async () => {
+    const all = (r: Json) => [...r.json.near, ...r.json.further];
+    const tight = await call('GET', '/v1/venues/explore?lat=23.8191&lng=90.4526&radius=1');
+    expect(tight.json.radiusKm).toBe(1);
+    expect(all(tight).every((v: Json) => v.distanceKm <= 1)).toBe(true);
+    const wide = await call('GET', '/v1/venues/explore?lat=23.8191&lng=90.4526&radius=50');
+    expect(wide.json.radiusKm).toBe(50);
+    expect(all(wide).length).toBeGreaterThanOrEqual(6);
+    expect((await call('GET', '/v1/venues/explore?lat=23.8&lng=90.4&radius=500')).status).toBe(400);
+  });
+});

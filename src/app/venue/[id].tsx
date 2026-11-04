@@ -216,13 +216,15 @@ export default function VenueScreen() {
               <Text variant="h2" style={styles.name} numberOfLines={2}>
                 {v.name}
               </Text>
-              <Pressable accessibilityRole="button" onPress={() => setTab('reviews')} style={styles.row} hitSlop={6}>
-                <Star size={18} color="#F5B301" fill="#F5B301" />
-                <Text variant="bodyStrong">{v.rating.toFixed(1)}</Text>
-                <Text variant="body" color={colors.textMuted} style={styles.underline}>
-                  ({v.reviewCount} reviews)
-                </Text>
-              </Pressable>
+              {v.reviewCount > 0 ? (
+                <Pressable accessibilityRole="button" onPress={() => setTab('reviews')} style={styles.row} hitSlop={6}>
+                  <Star size={18} color="#F5B301" fill="#F5B301" />
+                  <Text variant="bodyStrong">{v.rating.toFixed(1)}</Text>
+                  <Text variant="body" color={colors.textMuted} style={styles.underline}>
+                    ({v.reviewCount} reviews)
+                  </Text>
+                </Pressable>
+              ) : null}
               <View style={styles.addressRow}>
                 <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
                 <Text variant="label" color={colors.textMuted} style={styles.flex} numberOfLines={1}>
@@ -254,29 +256,32 @@ export default function VenueScreen() {
                 ['details', 'Details'],
                 ['reviews', 'Reviews'],
               ] as const
-            ).map(([key, label]) => {
-              const active = tab === key;
-              return (
-                <Pressable
-                  key={key}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => {
-                    haptic.select();
-                    setTab(key);
-                  }}
-                  style={styles.tab}>
-                  <Text variant={active ? 'bodyStrong' : 'body'} color={active ? colors.text : colors.textMuted}>
-                    {label}
-                  </Text>
-                  {active ? (
-                    <Animated.View layout={LinearTransition.duration(200)} style={styles.tabLine} />
-                  ) : (
-                    <View style={styles.tabLineOff} />
-                  )}
-                </Pressable>
-              );
-            })}
+            )
+              // No reviews yet: no Reviews tab.
+              .filter(([key]) => key !== 'reviews' || (v?.reviewCount ?? 0) > 0)
+              .map(([key, label]) => {
+                const active = tab === key;
+                return (
+                  <Pressable
+                    key={key}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => {
+                      haptic.select();
+                      setTab(key);
+                    }}
+                    style={styles.tab}>
+                    <Text variant={active ? 'bodyStrong' : 'body'} color={active ? colors.text : colors.textMuted}>
+                      {label}
+                    </Text>
+                    {active ? (
+                      <Animated.View layout={LinearTransition.duration(200)} style={styles.tabLine} />
+                    ) : (
+                      <View style={styles.tabLineOff} />
+                    )}
+                  </Pressable>
+                );
+              })}
           </View>
 
           {tab === 'book' ? (

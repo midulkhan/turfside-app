@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { ArrowRight, Bell, ChevronDown, MapPin, Menu, Moon, Search, SlidersHorizontal } from 'lucide-react-native';
+import { Bell, ChevronDown, MapPin, Menu, Search } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,12 +14,13 @@ import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { OptionSheet } from '@/components/ui/option-sheet';
 import { PressableScale } from '@/components/ui/pressable-scale';
+import { RADIUS_MAX, useRadiusSlider } from '@/components/ui/radius-slider';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { useExplore } from '@/features/api/queries';
-import type { PitchFormat, VenueSummary } from '@/features/api/types';
+import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { addDays, dhakaToday, formatDay, type DayKey } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
@@ -30,13 +31,6 @@ const NO_ANCHOR = { disabled: true };
 
 type Row = { type: 'header'; key: string; title: string } | { type: 'venue'; key: string; venue: VenueSummary };
 
-const FORMAT_OPTIONS = [
-  { value: 'any', label: 'Any format' },
-  { value: '5-a-side', label: '5-a-side' },
-  { value: '6-a-side', label: '6-a-side' },
-  { value: '7-a-side', label: '7-a-side' },
-] as const;
-
 export default function Explore() {
   const listRef = useRef<FlashListRef<Row>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
@@ -45,15 +39,15 @@ export default function Explore() {
   const { place } = useSession();
   const today = dhakaToday();
   const [day, setDay] = useState<DayKey>(today);
-  const [format, setFormat] = useState<PitchFormat | 'any'>('5-a-side');
-  const [floodlitOnly, setFloodlitOnly] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(20);
   // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
   const [nearbyOnly, setNearbyOnly] = useState(false);
-  const [sheet, setSheet] = useState<null | 'day' | 'format' | 'filters' | 'menu'>(null);
+  const [sheet, setSheet] = useState<null | 'day' | 'menu'>(null);
+  const radiusFilter = useRadiusSlider(radiusKm, setRadiusKm);
 
   const params = useMemo(
-    () => ({ lat: place.lat, lng: place.lng, day, format, floodlitOnly }),
-    [place.lat, place.lng, day, format, floodlitOnly],
+    () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
+    [place.lat, place.lng, day, radiusKm],
   );
   const { data, isPending, isError, error, refetch } = useExplore(params);
   const pull = usePullToRefresh(refetch);
@@ -161,37 +155,14 @@ export default function Explore() {
             Search turfs or areas
           </Text>
         </PressableScale>
-        <IconButton icon={SlidersHorizontal} label="Filters" variant="dark" size={size.control} onPress={() => setSheet('filters')} />
       </View>
 
       <View style={styles.chips}>
         <Chip label={dayLabel} dropdown onPress={() => setSheet('day')} style={styles.chip} />
-        <Chip label={format === 'any' ? 'Any format' : format} dropdown onPress={() => setSheet('format')} style={styles.chip} />
         <Chip label="Nearby" icon={MapPin} active={nearbyOnly} onPress={() => setNearbyOnly((v) => !v)} style={styles.chip} />
       </View>
 
-      <PressableScale
-        accessibilityRole="button"
-        accessibilityLabel="Play under the lights. Find a slot for tonight"
-        onPress={() => {
-          setDay(today);
-          setFloodlitOnly(true);
-        }}
-        style={styles.banner}>
-        <Moon size={30} color={colors.lime} fill={colors.lime} strokeWidth={1.5} />
-        <View style={styles.bannerRule} />
-        <View style={styles.flex}>
-          <Text variant="title" color={colors.textOnDark} numberOfLines={1} adjustsFontSizeToFit style={styles.bannerTitle}>
-            Play under the lights.
-          </Text>
-          <Text variant="label" color={colors.textOnDarkMuted}>
-            {floodlitOnly ? 'Showing floodlit turfs only' : 'Find a slot for tonight'}
-          </Text>
-        </View>
-        <View style={styles.bannerArrow}>
-          <ArrowRight size={20} color={colors.ink} strokeWidth={2.6} />
-        </View>
-      </PressableScale>
+      <View style={styles.radius}>{radiusFilter.slider}</View>
     </View>
   );
 
@@ -223,21 +194,19 @@ export default function Explore() {
               body={
                 nearbyOnly && data?.further.length
                   ? `There are ${data.further.length} turf${data.further.length > 1 ? 's' : ''} a little further away.`
-                  : 'We’re adding venues in new areas every week. Try a different format or location.'
+                  : `Nothing within ${radiusKm} km yet. Widen the search radius or try another location.`
               }
               action={nearbyOnly && data?.further.length ? 'Show all turfs' : 'Clear filters'}
               onAction={() => {
                 setNearbyOnly(false);
-                if (!(nearbyOnly && data?.further.length)) {
-                  setFormat('any');
-                  setFloodlitOnly(false);
-                }
+                if (!(nearbyOnly && data?.further.length)) setRadiusKm(RADIUS_MAX);
               }}
             />
           )
         }
       />
 
+      {radiusFilter.overlay}
       <SideMenu visible={sheet === 'menu'} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'day'}
@@ -245,25 +214,6 @@ export default function Explore() {
         options={dayOptions}
         value={day}
         onSelect={setDay}
-        onClose={() => setSheet(null)}
-      />
-      <OptionSheet
-        visible={sheet === 'format'}
-        title="Pitch format"
-        options={[...FORMAT_OPTIONS]}
-        value={format}
-        onSelect={(v) => setFormat(v as PitchFormat | 'any')}
-        onClose={() => setSheet(null)}
-      />
-      <OptionSheet
-        visible={sheet === 'filters'}
-        title="Filters"
-        options={[
-          { value: 'all', label: 'All turfs' },
-          { value: 'floodlit', label: 'Floodlit only', detail: 'For night games' },
-        ]}
-        value={floodlitOnly ? 'floodlit' : 'all'}
-        onSelect={(v) => setFloodlitOnly(v === 'floodlit')}
         onClose={() => setSheet(null)}
       />
     </View>
@@ -276,7 +226,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, zIndex: 2 },
   place: { alignItems: 'center', gap: 2, minHeight: 48, justifyContent: 'center' },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  hero: { height: 205, justifyContent: 'center', marginTop: -space[2] },
+  hero: { height: 172, justifyContent: 'center', marginTop: -space[2] },
   heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
   fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '55%' },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 70 },
@@ -284,7 +234,8 @@ const styles = StyleSheet.create({
   heroText: { paddingHorizontal: gutter, gap: space[2] },
   accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
   display: { marginBottom: space[1] },
-  searchRow: { flexDirection: 'row', gap: space[3], paddingHorizontal: gutter, marginTop: space[2] },
+  searchRow: { flexDirection: 'row', gap: space[3], paddingHorizontal: gutter },
+  radius: { paddingHorizontal: gutter, marginTop: space[3] },
   search: {
     flex: 1,
     height: size.control,
@@ -299,20 +250,6 @@ const styles = StyleSheet.create({
   },
   chips: { flexDirection: 'row', gap: space[2], paddingHorizontal: gutter, marginTop: space[3] },
   chip: { flex: 1, paddingHorizontal: space[3] },
-  banner: {
-    marginHorizontal: gutter,
-    marginTop: space[4],
-    height: 84,
-    borderRadius: radius.lg,
-    backgroundColor: colors.ink,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: space[5],
-    gap: space[4],
-  },
-  bannerTitle: { fontFamily: 'Geist_700Bold' },
-  bannerRule: { width: 1, height: 40, backgroundColor: colors.borderOnDark },
-  bannerArrow: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, gap: 2 },
   section: { paddingHorizontal: gutter, paddingTop: space[6], paddingBottom: space[3] },
   card: { paddingHorizontal: gutter, paddingBottom: space[4] },

@@ -171,6 +171,8 @@ export async function buildApp() {
         format: z.enum(['any', '5-a-side', '6-a-side', '7-a-side']).default('any'),
         floodlit: z.enum(['true', 'false']).optional(),
         q: z.string().trim().max(60).optional(),
+        /** Fixed search radius in km (the app's distance slider). Omit for the adaptive 5→30 km search. */
+        radius: z.coerce.number().int().min(1).max(50).optional(),
       }),
       req.query,
     );
@@ -178,7 +180,7 @@ export async function buildApp() {
     // Round to ~1 km so nearby users share cache entries.
     const lat = Math.round(p.lat * 100) / 100;
     const lng = Math.round(p.lng * 100) / 100;
-    const key = `explore:${lat}:${lng}:${day}:${p.format}:${p.floodlit ?? ''}:${(p.q ?? '').toLowerCase()}`;
+    const key = `explore:${lat}:${lng}:${day}:${p.format}:${p.floodlit ?? ''}:${p.radius ?? ''}:${(p.q ?? '').toLowerCase()}`;
     const base = await cached(key, 60, async () => {
       const ql = p.q?.toLowerCase();
       const rows = (await allVenueRows())
@@ -187,14 +189,14 @@ export async function buildApp() {
         .filter((v) => (ql ? `${v.name} ${v.area}`.toLowerCase().includes(ql) : true))
         .map((v) => ({ v, d: haversineKm(lat, lng, v.lat, v.lng) }))
         .sort((a, b) => a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
-      let radiusKm = RADIUS_STEPS[RADIUS_STEPS.length - 1];
-      for (const r of RADIUS_STEPS) {
+      let radiusKm = p.radius ?? RADIUS_STEPS[RADIUS_STEPS.length - 1];
+      if (!p.radius) for (const r of RADIUS_STEPS) {
         if (rows.filter((x) => x.d <= r).length >= MIN_RESULTS) {
           radiusKm = r;
           break;
         }
       }
-      const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 40);
+      const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 60);
       const withAvail = await Promise.all(
         inRange.map(async ({ v }) => ({ ...summary(v, { lat, lng, availableToday: (await daySlots(v, day)).some((s) => s.status === 'available') }) })),
       );
