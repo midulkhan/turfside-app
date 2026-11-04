@@ -1,66 +1,36 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { PixelRatio } from 'react-native';
 
 /**
- * Image pipeline helpers.
+ * Photo compression before upload.
  *
- * 1. Display: request the smallest server variant that is still sharp on this
- *    screen (width buckets keep the CDN cache hit-rate high).
- * 2. Upload: downscale while decoding + re-encode as WebP before upload, so a
- *    6 MB camera photo becomes ~150–300 KB.
- * 3. Upload queue: parallel (3 at a time) with retry + exponential backoff.
+ * 1. Decode downsampled: the picture is decoded straight to at most `maxEdge`
+ *    pixels on its longest side, so a 48 MP camera photo never fills memory.
+ * 2. Encode as WebP, starting at high quality (0.82, visually lossless for
+ *    photos) and stepping down only if the file is still over the size target.
+ *    The decoded image is reused for every attempt, so retries are cheap.
+ * 3. Re-encoding drops EXIF metadata, including the GPS position some cameras
+ *    write into photos, so we never upload where a photo was taken.
+ *
+ * Typical result: a 4–8 MB phone photo becomes 150–400 KB with no visible loss.
  */
-const WIDTH_BUCKETS = [160, 320, 480, 720, 1080, 1440];
+export type CompressPreset = { maxEdge: number; targetBytes: number };
+export const PRESETS = {
+  avatar: { maxEdge: 640, targetBytes: 120 * 1024 },
+  photo: { maxEdge: 1600, targetBytes: 400 * 1024 },
+} satisfies Record<string, CompressPreset>;
 
-export function variantWidth(displayWidth: number) {
-  const px = Math.ceil(displayWidth * PixelRatio.get());
-  return WIDTH_BUCKETS.find((w) => w >= px) ?? WIDTH_BUCKETS[WIDTH_BUCKETS.length - 1];
-}
+const QUALITY_STEPS = [0.82, 0.74, 0.66, 0.58];
 
-/** Build a CDN URL for an uploaded photo key (e.g. Cloudflare R2 + resizing). */
-export function photoUrl(cdnBase: string, key: string, displayWidth: number) {
-  return `${cdnBase}/${encodeURIComponent(key)}?w=${variantWidth(displayWidth)}&f=webp`;
-}
+export type Compressed = { uri: string; width: number; height: number; bytes: number; blob: Blob };
 
-export async function compressForUpload(uri: string, maxWidth = 1600, quality = 0.72) {
-  const context = ImageManipulator.manipulate(uri, { maxWidth });
-  const ref = await context.renderAsync();
-  const result = await ref.saveAsync({ compress: quality, format: SaveFormat.WEBP });
-  return result; // { uri, width, height }
-}
-
-type UploadTask = { uri: string; getSignedUrl: () => Promise<string> };
-
-async function putWithRetry(task: UploadTask, attempts = 4) {
-  let lastError: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const compressed = await compressForUpload(task.uri);
-      const url = await task.getSignedUrl(); // short-lived URL from our API; no storage keys in the app
-      const body = await (await fetch(compressed.uri)).blob();
-      const res = await fetch(url, { method: 'PUT', body, headers: { 'Content-Type': 'image/webp' } });
-      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-      return url.split('?')[0];
-    } catch (e) {
-      lastError = e;
-      await new Promise((r) => setTimeout(r, 400 * 2 ** i + Math.random() * 200));
-    }
+export async function compressImage(uri: string, { maxEdge, targetBytes }: CompressPreset = PRESETS.photo): Promise<Compressed> {
+  const image = await ImageManipulator.manipulate(uri, { maxWidth: maxEdge, maxHeight: maxEdge }).renderAsync();
+  let best: Compressed | null = null;
+  for (const quality of QUALITY_STEPS) {
+    const out = await image.saveAsync({ compress: quality, format: SaveFormat.WEBP });
+    const blob = await (await fetch(out.uri)).blob();
+    best = { uri: out.uri, width: out.width, height: out.height, bytes: blob.size, blob };
+    if (blob.size <= targetBytes) break; // good enough: keep the highest quality that fits
   }
-  throw lastError;
-}
-
-/** Upload many photos with bounded concurrency. Results keep the input order. */
-export async function uploadAll(tasks: UploadTask[], concurrency = 3, onProgress?: (done: number) => void) {
-  const results: string[] = new Array(tasks.length);
-  let next = 0;
-  let done = 0;
-  const worker = async () => {
-    while (next < tasks.length) {
-      const i = next++;
-      results[i] = await putWithRetry(tasks[i]);
-      onProgress?.(++done);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
-  return results;
+  return best!;
 }

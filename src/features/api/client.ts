@@ -24,6 +24,7 @@ import type {
   PlayerRequest,
   SavedPlace,
   SavedPlaceInput,
+  UploadTicket,
   ReviewSummary,
   User,
   VenueDetail,
@@ -110,6 +111,12 @@ export const cancelBooking = (id: string) => request<{ ok: true }>('POST', `/v1/
 export const getNotifications = (signal?: AbortSignal) => request<NotificationItem[]>('GET', '/v1/me/notifications', { auth: 'required', signal });
 
 export const getRequests = (signal?: AbortSignal) => request<PlayerRequest[]>('GET', '/v1/me/requests', { auth: 'required', signal });
+
+// ---- photos (Cloudflare R2) ---------------------------------------------------
+export const requestUpload = (b: { purpose: 'avatar'; contentType: 'image/webp' | 'image/jpeg' | 'image/png'; size: number }) =>
+  request<UploadTicket>('POST', '/v1/uploads', { auth: 'required', body: b });
+export const setAvatar = (key: string) => request<User>('PUT', '/v1/me/avatar', { auth: 'required', body: { key } });
+export const removeAvatar = () => request<User>('DELETE', '/v1/me/avatar', { auth: 'required' });
 
 // ---- saved locations --------------------------------------------------------
 export const getPlaces = (signal?: AbortSignal) => request<SavedPlace[]>('GET', '/v1/me/places', { auth: 'required', signal });

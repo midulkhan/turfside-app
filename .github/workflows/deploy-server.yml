@@ -56,7 +56,15 @@ jobs:
           OTP_SECRET: ci_otp_secret_0123456789abcdefghijklmnopq
           CRON_SECRET: ci_cron_secret_0123456789abcd
           BKASH_MODE: simulate
+          # Local S3-compatible stand-in for Cloudflare R2 (scripts/s3-local.mjs)
+          R2_ENDPOINT: http://127.0.0.1:4569
+          R2_ACCESS_KEY_ID: S3RVER
+          R2_SECRET_ACCESS_KEY: S3RVER
+          R2_BUCKET: turfsides-test
+          R2_PUBLIC_URL: https://pub-test.r2.dev
+          STORAGE_TEST: '1'
         run: |
+          node scripts/s3-local.mjs /tmp/s3-local > /tmp/s3.log 2>&1 &
           # The app-client tests compile ../src, whose tsconfig extends Expo's base config.
           # Only the server's packages are installed here, so give that file an empty stand-in.
           [ -f ../node_modules/expo/tsconfig.base.json ] || { mkdir -p ../node_modules/expo && echo '{}' > ../node_modules/expo/tsconfig.base.json; }

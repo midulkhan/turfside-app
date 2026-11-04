@@ -46,6 +46,13 @@ const schema = z.object({
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
 
+  // Cloudflare R2 (S3-compatible) for user photos. Secrets live only in the server environment.
+  R2_ENDPOINT: z.string().url().optional(), // https://<account-id>.r2.cloudflarestorage.com
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  R2_PUBLIC_URL: z.string().url().optional(), // public base for reads: https://pub-xxxx.r2.dev or https://cdn.turfsides.com
+
   SERVICE_FEE_POISHA: z.coerce.number().int().min(0).default(0),
   HOLD_MINUTES: z.coerce.number().int().min(2).max(30).default(10),
   BOOKING_HORIZON_DAYS: z.coerce.number().int().min(1).max(180).default(60),
@@ -78,5 +85,7 @@ export function missingConfig() {
   if (config.SMS_PROVIDER === 'http' && !config.SMS_HTTP_URL) missing.push('SMS_HTTP_URL');
   if ((config.BKASH_MODE === 'sandbox' || config.BKASH_MODE === 'live') && !(config.BKASH_APP_KEY && config.BKASH_APP_SECRET && config.BKASH_USERNAME && config.BKASH_PASSWORD))
     missing.push('BKASH_* credentials');
+  if (!(config.R2_ENDPOINT && config.R2_ACCESS_KEY_ID && config.R2_SECRET_ACCESS_KEY && config.R2_BUCKET && config.R2_PUBLIC_URL))
+    missing.push('R2_* (photo uploads disabled)');
   return missing;
 }

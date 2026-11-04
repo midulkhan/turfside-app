@@ -15,6 +15,7 @@ import { ApiError } from './errors';
 import { bkashEnabled, isSimulated } from './lib/bkash';
 import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
+import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
 import { verifyAccess, verifyPass } from './lib/tokens';
 import * as auth from './services/auth';
 import * as bookings from './services/bookings';
@@ -105,6 +106,7 @@ export async function buildApp() {
       db,
       schema: schema.state === 'error' ? `error: ${schema.error}` : schema.state,
       cache: `${cacheBackend}:${(await pingCache()) ? 'ok' : 'error'}`,
+      storage: await pingStorage(),
       payments: config.BKASH_MODE,
       missing: missingConfig(),
       time: new Date().toISOString(),
@@ -245,6 +247,42 @@ export async function buildApp() {
     await q('delete from saved_venues where user_id = $1 and venue_id = $2', [req.user!.userId, venueId]);
     return { venueId, isSaved: false };
   });
+  // ── Photo uploads (Cloudflare R2, direct from the app) ──────────────────────
+  app.post('/v1/uploads', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
+    const b = parse(
+      z.object({
+        purpose: z.enum(['avatar']),
+        contentType: z.enum(Object.keys(UPLOAD_TYPES) as [UploadType, ...UploadType[]]),
+        size: z.number().int().min(1).max(MAX_UPLOAD_BYTES, 'Photos must be under 5 MB.'),
+      }),
+      req.body,
+    );
+    const key = newKey(`avatars/${req.user!.userId}`, b.contentType);
+    return { key, ...(await presignPut(key, b.contentType, b.size)) };
+  });
+
+  app.put('/v1/me/avatar', { preHandler: requireUser }, async (req) => {
+    const { key } = parse(z.object({ key: z.string().max(200) }), req.body);
+    // Only keys we issued to this user, and only once the file is really in R2.
+    if (!key.startsWith(`avatars/${req.user!.userId}/`)) throw new ApiError('forbidden', 'That photo doesn’t belong to you.');
+    const obj = await headObject(key);
+    if (!obj) throw new ApiError('invalid', 'The photo hasn’t finished uploading. Try again.');
+    if (obj.size > MAX_UPLOAD_BYTES || !obj.type.startsWith('image/')) {
+      await deleteObject(key).catch(() => {});
+      throw new ApiError('invalid', 'That file isn’t a valid photo.');
+    }
+    const prev = await one<{ avatar_key: string | null }>('select avatar_key from users where id = $1', [req.user!.userId]);
+    await q('update users set avatar_key = $2, updated_at = now() where id = $1', [req.user!.userId, key]);
+    if (prev?.avatar_key && prev.avatar_key !== key) await deleteObject(prev.avatar_key).catch(() => {});
+    return auth.me(req.user!.userId);
+  });
+
+  app.delete('/v1/me/avatar', { preHandler: requireUser }, async (req) => {
+    const prev = await one<{ avatar_key: string | null }>('update users u set avatar_key = null, updated_at = now() from (select avatar_key from users where id = $1) old where u.id = $1 returning old.avatar_key', [req.user!.userId]);
+    if (prev?.avatar_key) await deleteObject(prev.avatar_key).catch(() => {});
+    return auth.me(req.user!.userId);
+  });
+
   // ── Saved locations ─────────────────────────────────────────────────────────
   const MAX_PLACES = 20;
   const round3 = (n: number) => Math.round(n * 1000) / 1000; // ~100 m: never store a precise position

@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { colors, radius } from '@/theme/tokens';
@@ -13,7 +14,18 @@ export function initialsOf(name: string) {
     .join('');
 }
 
-export function Avatar({ name, size = 48, ring }: { name: string; size?: number; ring?: string }) {
+export function Avatar({ name, size = 48, ring, uri }: { name: string; size?: number; ring?: string; uri?: string | null }) {
+  if (uri) {
+    return (
+      <Image
+        source={uri}
+        accessibilityLabel={name}
+        cachePolicy="memory-disk"
+        transition={150}
+        style={[styles.base, { width: size, height: size, borderRadius: size / 2 }, ring ? { borderWidth: 2, borderColor: ring } : null]}
+      />
+    );
+  }
   return (
     <View
       style={[styles.base, { width: size, height: size, borderRadius: size / 2 }, ring ? { borderWidth: 2, borderColor: ring } : null]}

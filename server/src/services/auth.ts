@@ -4,6 +4,7 @@ import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import { getDummyHash, hashPassword, hmac, otpCode, randomToken, safeEqual, sha256, verifyPassword } from '../lib/crypto';
 import { sendSms } from '../lib/sms';
+import { publicUrl, storageEnabled } from '../lib/storage';
 import { signAccess } from '../lib/tokens';
 
 const OTP_TTL_MIN = 5;
@@ -12,14 +13,21 @@ const OTP_RESEND_SECONDS = 30;
 const REFRESH_DAYS = 30;
 
 type Purpose = 'signup' | 'reset';
-type UserRow = { id: string; name: string; phone: string; email: string | null; roles: string[]; password_hash: string };
+type UserRow = { id: string; name: string; phone: string; email: string | null; roles: string[]; password_hash: string; avatar_key?: string | null };
 
 const otpSecret = () => {
   if (!config.OTP_SECRET) throw new ApiError('not_configured', 'Server secrets are not configured yet.');
   return config.OTP_SECRET;
 };
 
-export const publicUser = (u: UserRow) => ({ id: u.id, name: u.name, phone: u.phone, email: u.email ?? undefined, roles: u.roles });
+export const publicUser = (u: UserRow) => ({
+  id: u.id,
+  name: u.name,
+  phone: u.phone,
+  email: u.email ?? undefined,
+  roles: u.roles,
+  avatarUrl: u.avatar_key && storageEnabled() ? publicUrl(u.avatar_key) : null,
+});
 
 /** Per-phone and per-IP limits on top of the global HTTP rate limit. */
 async function guardOtp(phone: string, purpose: Purpose, ip: string) {
@@ -88,7 +96,7 @@ export async function signupVerify(phone: string, code: string, meta: { ip: stri
   const roles = p.role === 'owner' ? ['player', 'owner'] : ['player'];
   try {
     const u = await one<UserRow>(
-      'insert into users (name, phone, email, password_hash, roles, phone_verified_at) values ($1,$2,$3,$4,$5, now()) returning id, name, phone, email, roles, password_hash',
+      'insert into users (name, phone, email, password_hash, roles, phone_verified_at) values ($1,$2,$3,$4,$5, now()) returning id, name, phone, email, roles, password_hash, avatar_key',
       [p.name, phone, p.email, p.passwordHash, roles],
     );
     return createSession(u!, meta);
@@ -101,7 +109,7 @@ export async function signupVerify(phone: string, code: string, meta: { ip: stri
 // ── Sign in ─────────────────────────────────────────────────────────────────
 export async function login(identifier: { kind: 'phone' | 'email'; value: string }, password: string, meta: { ip: string; ua?: string }) {
   if ((await hit(`login:${identifier.value}`, 900)) > 10) throw new ApiError('rate_limited', 'Too many attempts. Try again in 15 minutes.');
-  const u = await one<UserRow>(`select id, name, phone, email, roles, password_hash from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`, [identifier.value]);
+  const u = await one<UserRow>(`select id, name, phone, email, roles, password_hash, avatar_key from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`, [identifier.value]);
   const ok = await verifyPassword(password, u?.password_hash ?? (await getDummyHash()));
   if (!u || !ok) throw new ApiError('unauthorized', 'Mobile number, email or password is incorrect.');
   return createSession(u, meta);
@@ -119,7 +127,7 @@ export async function refresh(token: string, meta: { ip: string; ua?: string }) 
     throw new ApiError('unauthorized', 'Please sign in again.');
   }
   if (new Date(s.expires_at) < new Date()) throw new ApiError('unauthorized', 'Please sign in again.');
-  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash from users where id = $1', [s.user_id]);
+  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1', [s.user_id]);
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   const next = await createSession(u, meta);
   const nextId = await one<{ id: string }>('select id from sessions where refresh_hash = $1', [sha256(next.refreshToken)]);
@@ -142,14 +150,14 @@ export async function resetStart(phone: string, ip: string) {
 export async function resetVerify(phone: string, code: string, newPassword: string, meta: { ip: string; ua?: string }) {
   await consumeOtp(phone, 'reset', code);
   const hash = await hashPassword(newPassword);
-  const u = await one<UserRow>('update users set password_hash = $2, updated_at = now() where phone = $1 returning id, name, phone, email, roles, password_hash', [phone, hash]);
+  const u = await one<UserRow>('update users set password_hash = $2, updated_at = now() where phone = $1 returning id, name, phone, email, roles, password_hash, avatar_key', [phone, hash]);
   if (!u) throw new ApiError('invalid', 'Account not found.');
   await q('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [u.id]); // sign out everywhere
   return createSession(u, meta);
 }
 
 export async function me(userId: string) {
-  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash from users where id = $1', [userId]);
+  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1', [userId]);
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   return publicUser(u);
 }

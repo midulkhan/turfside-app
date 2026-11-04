@@ -6,12 +6,14 @@ import m001 from '../db/migrations/001_init.sql';
 import m002 from '../db/migrations/002_seed.sql';
 import m003 from '../db/migrations/003_security_realtime.sql';
 import m004 from '../db/migrations/004_user_places.sql';
+import m005 from '../db/migrations/005_avatars.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
   ['002_seed', m002],
   ['003_security_realtime', m003],
   ['004_user_places', m004],
+  ['005_avatars', m005],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

@@ -1,7 +1,8 @@
 import { router, useScrollToTop } from 'expo-router';
-import { useRef } from 'react';
-import { Bell, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react-native';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { Bell, Camera, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LogoMark } from '@/components/brand/logo';
@@ -10,7 +11,12 @@ import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { Overline } from '@/components/ui/headers';
 import { Text } from '@/components/ui/text';
+import * as api from '@/features/api/client';
 import { useBookings } from '@/features/api/queries';
+import { uploadPhoto } from '@/features/api/uploads';
+import { errorMessage } from '@/features/session/pending-signup';
+import { haptic } from '@/lib/haptics';
+import { PRESETS } from '@/lib/images';
 import { useSession } from '@/features/session/session';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import Constants from 'expo-constants';
@@ -51,7 +57,45 @@ export default function Profile() {
   useScrollToTop(scrollRef as never);
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
-  const { user, place, signOut } = useSession();
+  const { user, place, signOut, updateUser } = useSession();
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  const pickPhoto = async () => {
+    // The system photo picker needs no library permission on iOS 14+ / Android 13+.
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [1, 1], quality: 1 });
+    if (res.canceled || !res.assets[0]) return;
+    setPhotoBusy(true);
+    try {
+      const key = await uploadPhoto('avatar', res.assets[0].uri, PRESETS.avatar);
+      updateUser(await api.setAvatar(key));
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      Alert.alert('Couldn’t update your photo', errorMessage(e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const removePhoto = async () => {
+    setPhotoBusy(true);
+    try {
+      updateUser(await api.removeAvatar());
+    } catch (e) {
+      Alert.alert('Couldn’t remove your photo', errorMessage(e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const editPhoto = () =>
+    user?.avatarUrl
+      ? Alert.alert('Profile photo', undefined, [
+          { text: 'Choose a new photo', onPress: pickPhoto },
+          { text: 'Remove photo', style: 'destructive', onPress: removePhoto },
+          { text: 'Cancel', style: 'cancel' },
+        ])
+      : pickPhoto();
   const { data } = useBookings();
   const played = data?.filter((b) => b.status === 'completed').length ?? 0;
   const upcoming = data?.filter((b) => b.status === 'confirmed').length ?? 0;
@@ -64,7 +108,18 @@ export default function Profile() {
       <Text variant="pageTitle">Profile</Text>
 
       <Card style={styles.me}>
-        <Avatar name={user?.name ?? 'Player'} size={64} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={user?.avatarUrl ? 'Change profile photo' : 'Add profile photo'}
+          onPress={editPhoto}
+          disabled={photoBusy}
+          hitSlop={6}>
+          <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={64} />
+          <View style={styles.camera}>
+            {photoBusy ? <ActivityIndicator size="small" color={colors.ink} /> : <Camera size={14} color={colors.ink} strokeWidth={2.4} />}
+          </View>
+          {photoBusy ? <View style={styles.dim} /> : null}
+        </Pressable>
         <View style={styles.flex}>
           <Text variant="h3">{user?.name}</Text>
           <Text variant="label" color={colors.textMuted}>
@@ -129,6 +184,20 @@ export default function Profile() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
+  camera: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.lime,
+    borderWidth: 2,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dim: { position: 'absolute', left: 0, top: 0, width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.45)' },
   me: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   stats: { flexDirection: 'row', gap: space[3] },
   stat: { flex: 1, gap: 2 },

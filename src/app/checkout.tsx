@@ -188,7 +188,7 @@ export default function Checkout() {
             Your details
           </Text>
           <Card style={styles.details}>
-            <Avatar name={user?.name ?? 'Player'} size={52} />
+            <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={52} />
             <View style={styles.flex}>
               <Text variant="bodyStrong">{user?.name}</Text>
               <Text variant="label" color={colors.textMuted}>

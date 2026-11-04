@@ -19,6 +19,8 @@ type SessionState = {
   /** Store the tokens from sign-in / sign-up / password reset and enter the app. */
   signIn: (auth: AuthResult) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Replace the cached profile after an edit (e.g. a new photo). */
+  updateUser: (u: User) => void;
   setPlace: (p: Place) => void;
 };
 
@@ -97,14 +99,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const updateUser = useCallback((u: User) => {
+    setUser(u);
+    prefs.set('ts.user', JSON.stringify(u));
+  }, []);
+
   const setPlace = useCallback((p: Place) => {
     setPlaceState(p);
     prefs.set('ts.place', JSON.stringify(p));
   }, []);
 
   const value = useMemo(
-    () => ({ ready, onboarded, user, place, completeOnboarding, signIn, signOut, setPlace }),
-    [ready, onboarded, user, place, completeOnboarding, signIn, signOut, setPlace],
+    () => ({ ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace }),
+    [ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace],
   );
   return <SessionContext value={value}>{children}</SessionContext>;
 }

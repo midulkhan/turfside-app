@@ -88,7 +88,7 @@ export type ExploreResult = {
   further: VenueSummary[];
 };
 
-export type User = { id: string; name: string; phone: string; email?: string; roles: ('player' | 'owner')[] };
+export type User = { id: string; name: string; phone: string; email?: string; roles: ('player' | 'owner')[]; avatarUrl?: string | null };
 
 export type NotificationItem = {
   id: string;
@@ -153,3 +153,6 @@ export type AppConfig = {
 /** A location the player saved ("Home", "Work", …). Coordinates are rounded to ~100 m. */
 export type SavedPlace = { id: string; label: string; name: string; city: string; address: string; lat: number; lng: number; createdAt: number };
 export type SavedPlaceInput = Omit<SavedPlace, 'id' | 'createdAt'>;
+
+/** A short-lived signed upload to Cloudflare R2. Send exactly these headers with the PUT. */
+export type UploadTicket = { key: string; uploadUrl: string; headers: Record<string, string>; expiresAt: number };

@@ -93,7 +93,7 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
         </View>
 
         <Pressable accessibilityRole="button" onPress={() => go(() => router.push('/profile'))} style={styles.me}>
-          <Avatar name={user?.name ?? 'Player'} size={52} />
+          <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={52} />
           <View style={styles.flex}>
             <Text variant="title">{user?.name}</Text>
             <Text variant="label" color={colors.textMuted}>
