@@ -57,6 +57,9 @@ jobs:
           CRON_SECRET: ci_cron_secret_0123456789abcd
           BKASH_MODE: simulate
         run: |
+          # The app-client tests compile ../src, whose tsconfig extends Expo's base config.
+          # Only the server's packages are installed here, so give that file an empty stand-in.
+          [ -f ../node_modules/expo/tsconfig.base.json ] || { mkdir -p ../node_modules/expo && echo '{}' > ../node_modules/expo/tsconfig.base.json; }
           node dist/index.js > /tmp/api.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://localhost:4010/health > /dev/null && break; sleep 1; done
           API_URL=http://localhost:4010 npx vitest run || (cat /tmp/api.log; exit 1)
