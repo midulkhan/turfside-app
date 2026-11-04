@@ -12,6 +12,9 @@ const MIGRATIONS: [string, string][] = [
   ['003_security_realtime', m003],
 ];
 
+/** Reported on /health: 'pending' until migrations have run on this process. */
+export const schema = { state: 'pending' as 'pending' | 'ok' | 'skipped' | 'error', error: '' };
+
 /**
  * Applies pending migrations once, inside a transaction each, guarded by an
  * advisory lock so several Node processes starting together can't race.
@@ -35,6 +38,12 @@ export async function migrate(log: (m: string) => void = console.info) {
         throw e;
       }
     }
+    schema.state = 'ok';
+    schema.error = '';
+  } catch (e) {
+    schema.state = 'error';
+    schema.error = String((e as Error).message || (e as { code?: string }).code || 'unknown').slice(0, 120);
+    throw e;
   } finally {
     await client.query('select pg_advisory_unlock(727001)').catch(() => {});
     client.release();

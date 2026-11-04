@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { cached, cacheBackend, pingCache } from './cache';
 import { config, isProd, missingConfig } from './config';
 import { one, q } from './db';
+import { schema } from './migrations';
 import { ApiError } from './errors';
 import { bkashEnabled, isSimulated } from './lib/bkash';
 import { safeEqual } from './lib/crypto';
@@ -99,9 +100,10 @@ export async function buildApp() {
           return `error: ${(e.message || e.code || inner || 'unknown').slice(0, 120)}${inner && e.message ? ` (${inner})` : ''}`;
         });
     return {
-      status: db === 'ok' ? 'ok' : 'degraded',
+      status: db === 'ok' && (schema.state === 'ok' || schema.state === 'skipped') ? 'ok' : 'degraded',
       env: config.NODE_ENV,
       db,
+      schema: schema.state === 'error' ? `error: ${schema.error}` : schema.state,
       cache: `${cacheBackend}:${(await pingCache()) ? 'ok' : 'error'}`,
       payments: config.BKASH_MODE,
       missing: missingConfig(),

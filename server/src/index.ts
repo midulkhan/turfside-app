@@ -2,7 +2,7 @@ import { config, missingConfig } from './config';
 import { buildApp } from './app';
 import { closeDb } from './db';
 import { ensureCronJobs } from './jobs';
-import { migrate } from './migrations';
+import { migrate, schema } from './migrations';
 import { reconcile } from './services/payments';
 
 async function main() {
@@ -11,15 +11,6 @@ async function main() {
   const missing = missingConfig();
   if (missing.length) app.log.warn({ missing }, 'Some configuration is missing — see /health');
 
-  if (config.DATABASE_URL && process.env.AUTO_MIGRATE !== 'false') {
-    try {
-      await migrate((m) => app.log.info(m));
-      await ensureCronJobs((m) => app.log.info(m)).catch((e) => app.log.warn(e, 'could not schedule jobs'));
-    } catch (e) {
-      app.log.error(e, 'Migration failed — API keeps running so /health can report it');
-    }
-  }
-
   // Fallback while the process is awake. The reliable schedule is Supabase pg_cron
   // calling POST /internal/reconcile (works even if shared hosting put Node to sleep).
   if (config.DATABASE_URL) {
@@ -27,6 +18,24 @@ async function main() {
   }
 
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
+
+  // Migrate after listening, and keep retrying: if the database is unreachable at
+  // start-up (e.g. a firewall), the tables still get created as soon as it's reachable.
+  if (config.DATABASE_URL && process.env.AUTO_MIGRATE !== 'false') {
+    const run = async (attempt = 1): Promise<void> => {
+      try {
+        await migrate((m) => app.log.info(m));
+        await ensureCronJobs((m) => app.log.info(m)).catch((e) => app.log.warn(e, 'could not schedule jobs'));
+      } catch (e) {
+        const wait = Math.min(15_000 * attempt, 120_000);
+        app.log.error(e, `Migration failed — retrying in ${wait / 1000}s`);
+        setTimeout(() => void run(attempt + 1), wait).unref();
+      }
+    };
+    void run();
+  } else {
+    schema.state = 'skipped'; // migrations are run separately (npm run migrate)
+  }
 
   const stop = async () => {
     await app.close().catch(() => {});
