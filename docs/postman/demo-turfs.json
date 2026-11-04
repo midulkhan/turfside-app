@@ -6,14 +6,45 @@
     "address": "Road 11, Block E, Banani, Dhaka 1213",
     "lat": 23.7937,
     "lng": 90.4045,
-    "formats": ["5-a-side", "6-a-side"],
+    "formats": [
+      "5-a-side",
+      "6-a-side"
+    ],
     "floodlit": true,
-    "amenities": ["Floodlights", "Changing room", "Showers", "Parking", "Drinking water"],
-    "rules": ["Arrive 15 minutes early", "Turf boots or flat trainers only", "No smoking on the pitch"],
+    "amenities": [
+      "Floodlights",
+      "Changing room",
+      "Showers",
+      "Parking",
+      "Drinking water"
+    ],
+    "rules": [
+      "Arrive 15 minutes early",
+      "Turf boots or flat trainers only",
+      "No smoking on the pitch"
+    ],
     "about": "Rooftop 5- and 6-a-side pitch in the heart of Banani with bright LED floodlights for late-night games.",
-    "schedule": { "opens": "06:00", "closes": "02:00", "sessionMinutes": 60, "breakMinutes": 0 },
-    "pricing": { "hourly": 2000, "byWeekday": { "fri": 2500, "sat": 2500 }, "specialDates": { "2026-12-16": 3000 } },
-    "photos": ["/static/seed/venue-floodlit.webp", "/static/seed/venue-arena.webp", "/static/seed/venue-sunset.webp"]
+    "schedule": {
+      "opens": "06:00",
+      "closes": "02:00",
+      "sessionMinutes": 60,
+      "breakMinutes": 0
+    },
+    "pricing": {
+      "hourly": 2000,
+      "byWeekday": {
+        "fri": 2500,
+        "sat": 2500
+      },
+      "specialDates": {
+        "2026-12-16": 3000
+      }
+    },
+    "photos": [
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/8b1fa25d-ad3f-4580-a5f2-657fd70a573f.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a125d3ca-4de3-479a-9753-603cb358c6df.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a7fed785-8e39-44cb-8c27-69824d156a4d.webp"
+    ]
   },
   {
     "name": "Mohammadpur Football Hub",
@@ -22,14 +53,39 @@
     "address": "Ring Road, Shyamoli, Mohammadpur, Dhaka 1207",
     "lat": 23.7662,
     "lng": 90.3589,
-    "formats": ["5-a-side"],
+    "formats": [
+      "5-a-side"
+    ],
     "floodlit": true,
-    "amenities": ["Floodlights", "Washroom", "Drinking water", "Seating area"],
-    "rules": ["Arrive 15 minutes early", "No studs"],
+    "amenities": [
+      "Floodlights",
+      "Washroom",
+      "Drinking water",
+      "Seating area"
+    ],
+    "rules": [
+      "Arrive 15 minutes early",
+      "No studs"
+    ],
     "about": "Friendly 5-a-side turf near Ring Road. Great value for weekday evening games.",
-    "schedule": { "opens": "07:00", "closes": "00:00", "sessionMinutes": 60, "breakMinutes": 0 },
-    "pricing": { "hourly": 1200, "byWeekday": { "fri": 1500, "sat": 1500 } },
-    "photos": ["/static/seed/venue-evening.webp", "/static/seed/venue-dusk.webp"]
+    "schedule": {
+      "opens": "07:00",
+      "closes": "00:00",
+      "sessionMinutes": 60,
+      "breakMinutes": 0
+    },
+    "pricing": {
+      "hourly": 1200,
+      "byWeekday": {
+        "fri": 1500,
+        "sat": 1500
+      }
+    },
+    "photos": [
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/73993526-9b62-4e5c-aa78-581f1120439f.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/d6a566a1-ed95-47b0-9d8f-99bfa9647081.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/4bf81c09-c6f8-4c25-9728-0b4f89e4133c.webp"
+    ]
   },
   {
     "name": "Tejgaon Sports Box",
@@ -38,14 +94,43 @@
     "address": "Bir Uttam Mir Shawkat Sarak, Tejgaon I/A, Dhaka 1208",
     "lat": 23.7639,
     "lng": 90.3984,
-    "formats": ["6-a-side", "7-a-side"],
+    "formats": [
+      "6-a-side",
+      "7-a-side"
+    ],
     "floodlit": true,
-    "amenities": ["Floodlights", "Changing room", "Parking", "Café", "First aid"],
-    "rules": ["Arrive 15 minutes early", "Turf boots or flat trainers only", "Maximum 14 players on the pitch"],
+    "amenities": [
+      "Floodlights",
+      "Changing room",
+      "Parking",
+      "Café",
+      "First aid"
+    ],
+    "rules": [
+      "Arrive 15 minutes early",
+      "Turf boots or flat trainers only",
+      "Maximum 14 players on the pitch"
+    ],
     "about": "Large 6- and 7-a-side pitch in Tejgaon with 90-minute sessions — perfect for full squads and office leagues.",
-    "schedule": { "opens": "06:00", "closes": "01:30", "sessionMinutes": 90, "breakMinutes": 0 },
-    "pricing": { "hourly": 2400, "byWeekday": { "thu": 2800, "fri": 3200, "sat": 3200 } },
-    "photos": ["/static/seed/venue-arena.webp", "/static/seed/venue-floodlit.webp"]
+    "schedule": {
+      "opens": "06:00",
+      "closes": "01:30",
+      "sessionMinutes": 90,
+      "breakMinutes": 0
+    },
+    "pricing": {
+      "hourly": 2400,
+      "byWeekday": {
+        "thu": 2800,
+        "fri": 3200,
+        "sat": 3200
+      }
+    },
+    "photos": [
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/af6550e1-15e9-41b1-a089-8071f561b19a.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a125d3ca-4de3-479a-9753-603cb358c6df.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a7fed785-8e39-44cb-8c27-69824d156a4d.webp"
+    ]
   },
   {
     "name": "Khilgaon Green Turf",
@@ -54,14 +139,37 @@
     "address": "Khilgaon Taltola, Khilgaon, Dhaka 1219",
     "lat": 23.7516,
     "lng": 90.4252,
-    "formats": ["5-a-side"],
+    "formats": [
+      "5-a-side"
+    ],
     "floodlit": false,
-    "amenities": ["Parking", "Drinking water", "Washroom"],
-    "rules": ["Arrive 15 minutes early", "Day games only"],
+    "amenities": [
+      "Parking",
+      "Drinking water",
+      "Washroom"
+    ],
+    "rules": [
+      "Arrive 15 minutes early",
+      "Day games only"
+    ],
     "about": "Open-air 5-a-side pitch in Khilgaon for morning and afternoon games at a lower price.",
-    "schedule": { "opens": "06:00", "closes": "18:00", "sessionMinutes": 60, "breakMinutes": 0 },
-    "pricing": { "hourly": 1000, "byWeekday": { "fri": 1200, "sat": 1200 } },
-    "photos": ["/static/seed/venue-sunset.webp"]
+    "schedule": {
+      "opens": "06:00",
+      "closes": "18:00",
+      "sessionMinutes": 60,
+      "breakMinutes": 0
+    },
+    "pricing": {
+      "hourly": 1000,
+      "byWeekday": {
+        "fri": 1200,
+        "sat": 1200
+      }
+    },
+    "photos": [
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/66ec79bb-2d23-49bf-ba68-642e87443422.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/4bf81c09-c6f8-4c25-9728-0b4f89e4133c.webp"
+    ]
   },
   {
     "name": "Uttara Sector 4 Arena",
@@ -70,13 +178,42 @@
     "address": "Road 7, Sector 4, Uttara, Dhaka 1230",
     "lat": 23.8635,
     "lng": 90.4006,
-    "formats": ["5-a-side", "7-a-side"],
+    "formats": [
+      "5-a-side",
+      "7-a-side"
+    ],
     "floodlit": true,
-    "amenities": ["Floodlights", "Roof", "Changing room", "Showers", "Parking", "Café"],
-    "rules": ["Arrive 15 minutes early", "Turf boots or flat trainers only", "No food on the pitch"],
+    "amenities": [
+      "Floodlights",
+      "Roof",
+      "Changing room",
+      "Showers",
+      "Parking",
+      "Café"
+    ],
+    "rules": [
+      "Arrive 15 minutes early",
+      "Turf boots or flat trainers only",
+      "No food on the pitch"
+    ],
     "about": "Covered arena in Uttara — play rain or shine. 5-a-side and 7-a-side pitches with a 15-minute break between sessions.",
-    "schedule": { "opens": "06:00", "closes": "03:00", "sessionMinutes": 60, "breakMinutes": 15 },
-    "pricing": { "hourly": 1800, "byWeekday": { "fri": 2200, "sat": 2200 } },
-    "photos": ["/static/seed/venue-dusk.webp", "/static/seed/venue-evening.webp", "/static/seed/venue-arena.webp"]
+    "schedule": {
+      "opens": "06:00",
+      "closes": "03:00",
+      "sessionMinutes": 60,
+      "breakMinutes": 15
+    },
+    "pricing": {
+      "hourly": 1800,
+      "byWeekday": {
+        "fri": 2200,
+        "sat": 2200
+      }
+    },
+    "photos": [
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a125d3ca-4de3-479a-9753-603cb358c6df.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/8b1fa25d-ad3f-4580-a5f2-657fd70a573f.webp",
+      "https://images.turfsides.com/venues/1d85c7b4-3c44-4b1b-ab34-3b8f246ebaef/a7fed785-8e39-44cb-8c27-69824d156a4d.webp"
+    ]
   }
 ]
