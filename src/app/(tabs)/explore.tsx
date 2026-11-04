@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { Bell, ChevronDown, MapPin, Menu, Search, ShoppingBag } from 'lucide-react-native';
+import { Bell, ChevronDown, MapPin, Menu, Radar, Search, ShoppingBag } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { OptionSheet } from '@/components/ui/option-sheet';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { RADIUS_MAX, useRadiusSlider } from '@/components/ui/radius-slider';
+import { DEFAULT_DISTANCE, DISTANCES, DistanceWheel } from '@/components/ui/distance-wheel';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
@@ -29,7 +29,7 @@ import { colors, gutter, radius, size, space } from '@/theme/tokens';
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
 
-type Row = { type: 'header'; key: string; title: string } | { type: 'venue'; key: string; venue: VenueSummary };
+type Row = { type: 'header'; key: string; title: string; hint?: string } | { type: 'venue'; key: string; venue: VenueSummary };
 
 export default function Explore() {
   const listRef = useRef<FlashListRef<Row>>(null);
@@ -39,12 +39,11 @@ export default function Explore() {
   const { place } = useSession();
   const today = dhakaToday();
   const [day, setDay] = useState<DayKey>(today);
-  const [radiusKm, setRadiusKm] = useState(20);
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
   const cartCount = useMyHolds().data?.length ?? 0; // the server lists only unexpired holds
   // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
   const [nearbyOnly, setNearbyOnly] = useState(false);
-  const [sheet, setSheet] = useState<null | 'day' | 'menu'>(null);
-  const radiusFilter = useRadiusSlider(radiusKm, setRadiusKm);
+  const [sheet, setSheet] = useState<null | 'day' | 'menu' | 'distance'>(null);
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
@@ -57,7 +56,12 @@ export default function Explore() {
     if (!data) return [];
     const out: Row[] = [];
     if (data.near.length) {
-      out.push({ type: 'header', key: 'h-near', title: nearbyOnly ? 'Within 5 km' : 'Recommended nearby' });
+      out.push({
+        type: 'header',
+        key: 'h-near',
+        title: nearbyOnly ? 'Within 5 km' : 'Recommended nearby',
+        hint: nearbyOnly ? undefined : `Within ${radiusKm} km`,
+      });
       data.near.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     if (data.further.length && !nearbyOnly) {
@@ -65,11 +69,12 @@ export default function Explore() {
         type: 'header',
         key: 'h-far',
         title: data.near.length ? 'A bit further' : 'Closest to you',
+        hint: data.near.length ? undefined : `Within ${radiusKm} km`,
       });
       data.further.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     return out;
-  }, [data, nearbyOnly]);
+  }, [data, nearbyOnly, radiusKm]);
 
   const dayOptions = useMemo(
     () =>
@@ -85,7 +90,16 @@ export default function Explore() {
     if (item.type === 'header')
       return (
         <View style={styles.section}>
-          <SectionTitle title={item.title} />
+          <SectionTitle
+            title={item.title}
+            right={
+              item.hint ? (
+                <Text variant="label" color={colors.textMuted}>
+                  {item.hint}
+                </Text>
+              ) : undefined
+            }
+          />
         </View>
       );
     return (
@@ -168,10 +182,15 @@ export default function Explore() {
 
       <View style={styles.chips}>
         <Chip label={dayLabel} dropdown onPress={() => setSheet('day')} style={styles.chip} />
+        <Chip
+          label="Distance"
+          icon={Radar}
+          active={radiusKm !== DEFAULT_DISTANCE}
+          onPress={() => setSheet('distance')}
+          style={styles.chip}
+        />
         <Chip label="Nearby" icon={MapPin} active={nearbyOnly} onPress={() => setNearbyOnly((v) => !v)} style={styles.chip} />
       </View>
-
-      <View style={styles.radius}>{radiusFilter.slider}</View>
     </View>
   );
 
@@ -208,14 +227,14 @@ export default function Explore() {
               action={nearbyOnly && data?.further.length ? 'Show all turfs' : 'Clear filters'}
               onAction={() => {
                 setNearbyOnly(false);
-                if (!(nearbyOnly && data?.further.length)) setRadiusKm(RADIUS_MAX);
+                if (!(nearbyOnly && data?.further.length)) setRadiusKm(DISTANCES[DISTANCES.length - 1]);
               }}
             />
           )
         }
       />
 
-      {radiusFilter.overlay}
+      <DistanceWheel visible={sheet === 'distance'} value={radiusKm} onApply={setRadiusKm} onClose={() => setSheet(null)} />
       <SideMenu visible={sheet === 'menu'} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'day'}
@@ -245,7 +264,6 @@ const styles = StyleSheet.create({
   accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
   display: { marginBottom: space[1] },
   searchRow: { flexDirection: 'row', gap: space[3], paddingHorizontal: gutter },
-  radius: { paddingHorizontal: gutter, marginTop: space[3] },
   search: {
     flex: 1,
     height: size.control,
