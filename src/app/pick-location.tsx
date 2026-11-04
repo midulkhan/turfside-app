@@ -1,14 +1,18 @@
 import { AppleMaps, GoogleMaps, type CameraMoveEvent } from 'expo-maps';
-import { router } from 'expo-router';
-import { ArrowLeft, LocateFixed, MapPin } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { ArrowLeft, LocateFixed, MapPin, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
+import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { useDeletePlace, usePlaces, useSavePlace } from '@/features/api/queries';
+import { errorMessage } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { currentPosition, describePlace, round3 } from '@/features/session/use-locate';
 import { haptic } from '@/lib/haptics';
@@ -20,18 +24,33 @@ type Label = { name: string; city: string; full: string };
 const ZOOM = 16;
 const SETTLE_MS = 450; // wait for the map to stop before looking up the address
 
+const PRESETS = ['Home', 'Work'] as const;
+
 /**
  * Foodpanda-style location picker: the pin stays in the middle of the screen
  * and the map moves underneath it. When the map settles we look up the address
- * of the centre point; "Confirm location" saves it.
+ * of the centre point.
+ *  - mode=new  → name it (Home / Work / Other), save it, use it, back to Explore
+ *  - mode=edit → move the pin or rename it; or delete it
  */
 export default function PickLocation() {
   const insets = useSafeAreaInsets();
+  const { mode = 'new', id } = useLocalSearchParams<{ mode?: 'new' | 'edit'; id?: string }>();
   const { place, setPlace } = useSession();
+  const existing = usePlaces().data?.find((p) => p.id === id);
+  const editing = mode === 'edit' && !!existing;
+  const save = useSavePlace();
+  const remove = useDeletePlace();
+  const start = editing ? { lat: existing.lat, lng: existing.lng } : { lat: place.lat, lng: place.lng };
+
+  const initialLabel = existing?.label ?? 'Home';
+  const [preset, setPreset] = useState<string>(PRESETS.includes(initialLabel as never) ? initialLabel : 'Other');
+  const [custom, setCustom] = useState(PRESETS.includes(initialLabel as never) ? '' : initialLabel);
+  const labelText = preset === 'Other' ? custom.trim() : preset;
   const apple = useRef<AppleMaps.MapView>(null);
   const google = useRef<GoogleMaps.MapView>(null);
 
-  const [center, setCenter] = useState<Coords>({ latitude: place.lat, longitude: place.lng });
+  const [center, setCenter] = useState<Coords>({ latitude: start.lat, longitude: start.lng });
   const [label, setLabel] = useState<Label | null>(null);
   const [resolving, setResolving] = useState(true);
   const [locating, setLocating] = useState(false);
@@ -60,7 +79,7 @@ export default function PickLocation() {
   // Address of the starting point (skipped if the user has already moved the map).
   useEffect(() => {
     let live = true;
-    describePlace(place.lat, place.lng).then((l) => {
+    describePlace(start.lat, start.lng).then((l) => {
       if (live && seq.current === 0) {
         setLabel(l);
         setResolving(false);
@@ -70,7 +89,7 @@ export default function PickLocation() {
       live = false;
       clearTimeout(lookup.current);
     };
-  }, [place.lat, place.lng]);
+  }, [start.lat, start.lng]);
 
   const onCameraMove = (e: CameraMoveEvent) => {
     const c = e.coordinates;
@@ -101,13 +120,62 @@ export default function PickLocation() {
   };
 
   const confirm = () => {
-    if (!label) return;
-    haptic.success();
-    setPlace({ name: label.name, city: label.city, lat: round3(center.latitude), lng: round3(center.longitude), source: 'map' });
-    router.back();
+    if (!label || !labelText) return;
+    const input = {
+      label: labelText,
+      name: label.name,
+      city: label.city,
+      address: label.full,
+      lat: round3(center.latitude),
+      lng: round3(center.longitude),
+    };
+    save.mutate(
+      { id: editing ? existing.id : undefined, place: input },
+      {
+        onSuccess: (saved) => {
+          haptic.success();
+          const asPlace = {
+            name: saved.name,
+            city: saved.city,
+            lat: saved.lat,
+            lng: saved.lng,
+            source: 'saved' as const,
+            savedId: saved.id,
+            label: saved.label,
+          };
+          if (!editing) {
+            // A new location is used straight away: close the picker and the list, Explore refilters.
+            setPlace(asPlace);
+            router.dismissTo('/explore');
+          } else {
+            if (place.savedId === saved.id) setPlace(asPlace);
+            router.back();
+          }
+        },
+        onError: (e) => {
+          haptic.error();
+          Alert.alert('Couldn’t save this location', errorMessage(e));
+        },
+      },
+    );
   };
 
-  const camera = { coordinates: { latitude: place.lat, longitude: place.lng }, zoom: ZOOM };
+  const askDelete = () =>
+    editing &&
+    Alert.alert(`Delete “${existing.label}”?`, 'You can add it again any time.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          remove.mutate(existing.id);
+          if (place.savedId === existing.id) setPlace({ ...place, source: 'map', savedId: undefined, label: undefined });
+          router.back();
+        },
+      },
+    ]);
+
+  const camera = { coordinates: { latitude: start.lat, longitude: start.lng }, zoom: ZOOM };
   const mapProps = {
     style: StyleSheet.absoluteFill,
     cameraPosition: camera,
@@ -128,7 +196,13 @@ export default function PickLocation() {
         <GoogleMaps.View
           ref={google}
           {...mapProps}
-          uiSettings={{ compassEnabled: false, myLocationButtonEnabled: false, mapToolbarEnabled: false, zoomControlsEnabled: false, tiltGesturesEnabled: false }}
+          uiSettings={{
+            compassEnabled: false,
+            myLocationButtonEnabled: false,
+            mapToolbarEnabled: false,
+            zoomControlsEnabled: false,
+            tiltGesturesEnabled: false,
+          }}
           properties={{ isMyLocationEnabled: true, selectionEnabled: false, isBuildingEnabled: false }}
         />
       )}
@@ -147,30 +221,56 @@ export default function PickLocation() {
       <View style={[styles.top, { paddingTop: insets.top + space[2] }]}>
         <IconButton icon={ArrowLeft} label="Go back" onPress={() => router.back()} />
         <View style={styles.hint}>
-          <Text variant="labelStrong">Move the map to set your location</Text>
+          <Text variant="labelStrong">{editing ? 'Move the map to adjust' : 'Move the map to set the pin'}</Text>
         </View>
+        {editing ? <IconButton icon={Trash2} label={`Delete ${existing.label}`} onPress={askDelete} /> : null}
       </View>
 
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + space[4] }]}>
-        <View style={styles.locateWrap}>
-          <IconButton icon={LocateFixed} label="Use my current location" onPress={locateMe} />
-          {locating ? <ActivityIndicator style={styles.locateSpin} color={colors.ink} /> : null}
-        </View>
-        <View style={styles.addressRow}>
-          <View style={styles.addressIcon}>
-            <MapPin size={20} color={colors.ink} strokeWidth={2} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap} pointerEvents="box-none">
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + space[4] }]}>
+          <View style={styles.locateWrap}>
+            <IconButton icon={LocateFixed} label="Use my current location" onPress={locateMe} />
+            {locating ? <ActivityIndicator style={styles.locateSpin} color={colors.ink} /> : null}
           </View>
-          <View style={styles.flex}>
-            <Text variant="bodyStrong" numberOfLines={1} color={resolving ? colors.textSubtle : colors.text}>
-              {label ? [label.name, label.city].filter(Boolean).join(', ') : 'Finding address…'}
-            </Text>
-            <Text variant="label" color={colors.textMuted} numberOfLines={2}>
-              {label?.full ?? ' '}
-            </Text>
+          <View style={styles.addressRow}>
+            <View style={styles.addressIcon}>
+              <MapPin size={20} color={colors.ink} strokeWidth={2} />
+            </View>
+            <View style={styles.flex}>
+              <Text variant="bodyStrong" numberOfLines={1} color={resolving ? colors.textSubtle : colors.text}>
+                {label ? [label.name, label.city].filter(Boolean).join(', ') : 'Finding address…'}
+              </Text>
+              <Text variant="label" color={colors.textMuted} numberOfLines={2}>
+                {label?.full ?? ' '}
+              </Text>
+            </View>
           </View>
+          <View style={styles.labels}>
+            <Text variant="labelStrong">Save as</Text>
+            <View style={styles.chips}>
+              {[...PRESETS, 'Other'].map((p) => (
+                <Chip key={p} label={p} active={preset === p} onPress={() => setPreset(p)} style={styles.chip} />
+              ))}
+            </View>
+            {preset === 'Other' ? (
+              <Input
+                placeholder="Name this place, e.g. Friend’s house"
+                value={custom}
+                onChangeText={setCustom}
+                maxLength={30}
+                autoFocus={!editing}
+                returnKeyType="done"
+              />
+            ) : null}
+          </View>
+          <Button
+            label={editing ? 'Save changes' : 'Save location'}
+            onPress={confirm}
+            loading={save.isPending}
+            disabled={!label || resolving || !labelText}
+          />
         </View>
-        <Button label="Confirm location" onPress={confirm} disabled={!label || resolving} />
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -197,7 +297,16 @@ const styles = StyleSheet.create({
   },
   pinStem: { width: 3, height: STEM, backgroundColor: colors.ink, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
   pinShadow: { position: 'absolute', width: 14, height: 6, borderRadius: 7, backgroundColor: colors.ink },
-  top: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter },
+  top: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    paddingHorizontal: gutter,
+  },
   hint: {
     flex: 1,
     height: 44,
@@ -208,11 +317,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  sheetWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  labels: { gap: space[2] },
+  chips: { flexDirection: 'row', gap: space[2] },
+  chip: { flex: 1 },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
@@ -224,5 +333,12 @@ const styles = StyleSheet.create({
   locateWrap: { position: 'absolute', right: gutter, top: -64 },
   locateSpin: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   addressRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  addressIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.limeSoft, alignItems: 'center', justifyContent: 'center' },
+  addressIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.limeSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

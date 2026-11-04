@@ -149,3 +149,7 @@ export type AppConfig = {
   horizonEnd: DayKey;
   realtime: { url: string; anonKey: string; table: string } | null;
 };
+
+/** A location the player saved ("Home", "Work", …). Coordinates are rounded to ~100 m. */
+export type SavedPlace = { id: string; label: string; name: string; city: string; address: string; lat: number; lng: number; createdAt: number };
+export type SavedPlaceInput = Omit<SavedPlace, 'id' | 'createdAt'>;

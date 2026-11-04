@@ -22,6 +22,8 @@ import type {
   Hold,
   NotificationItem,
   PlayerRequest,
+  SavedPlace,
+  SavedPlaceInput,
   ReviewSummary,
   User,
   VenueDetail,
@@ -108,5 +110,11 @@ export const cancelBooking = (id: string) => request<{ ok: true }>('POST', `/v1/
 export const getNotifications = (signal?: AbortSignal) => request<NotificationItem[]>('GET', '/v1/me/notifications', { auth: 'required', signal });
 
 export const getRequests = (signal?: AbortSignal) => request<PlayerRequest[]>('GET', '/v1/me/requests', { auth: 'required', signal });
+
+// ---- saved locations --------------------------------------------------------
+export const getPlaces = (signal?: AbortSignal) => request<SavedPlace[]>('GET', '/v1/me/places', { auth: 'required', signal });
+export const createPlace = (p: SavedPlaceInput) => request<SavedPlace>('POST', '/v1/me/places', { auth: 'required', body: p });
+export const updatePlace = (id: string, p: SavedPlaceInput) => request<SavedPlace>('PUT', `/v1/me/places/${enc(id)}`, { auth: 'required', body: p });
+export const deletePlace = (id: string) => request<{ ok: true }>('DELETE', `/v1/me/places/${enc(id)}`, { auth: 'required' });
 
 export type ExploreLike = ExploreResult;

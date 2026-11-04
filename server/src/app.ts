@@ -245,6 +245,51 @@ export async function buildApp() {
     await q('delete from saved_venues where user_id = $1 and venue_id = $2', [req.user!.userId, venueId]);
     return { venueId, isSaved: false };
   });
+  // ── Saved locations ─────────────────────────────────────────────────────────
+  const MAX_PLACES = 20;
+  const round3 = (n: number) => Math.round(n * 1000) / 1000; // ~100 m: never store a precise position
+  const placeBody = z.object({
+    label: z.string().trim().min(1, 'Give this location a name.').max(30),
+    name: z.string().trim().min(1).max(80),
+    city: z.string().trim().max(80).default(''),
+    address: z.string().trim().max(200).default(''),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  });
+  type PlaceRow = { id: string; label: string; name: string; city: string; address: string; lat: number; lng: number; created_at: Date };
+  const placeOut = (r: PlaceRow) => ({ id: r.id, label: r.label, name: r.name, city: r.city, address: r.address, lat: r.lat, lng: r.lng, createdAt: new Date(r.created_at).getTime() });
+  const PLACE_COLS = 'id, label, name, city, address, lat, lng, created_at';
+
+  app.get('/v1/me/places', { preHandler: requireUser }, async (req) =>
+    (await q<PlaceRow>(`select ${PLACE_COLS} from user_places where user_id = $1 order by created_at`, [req.user!.userId])).map(placeOut),
+  );
+  app.post('/v1/me/places', { preHandler: requireUser }, async (req) => {
+    const b = parse(placeBody, req.body);
+    const n = await one<{ n: number }>('select count(*)::int n from user_places where user_id = $1', [req.user!.userId]);
+    if ((n?.n ?? 0) >= MAX_PLACES) throw new ApiError('conflict', `You can save up to ${MAX_PLACES} locations. Delete one first.`);
+    const r = await one<PlaceRow>(
+      `insert into user_places (user_id, label, name, city, address, lat, lng) values ($1,$2,$3,$4,$5,$6,$7) returning ${PLACE_COLS}`,
+      [req.user!.userId, b.label, b.name, b.city, b.address, round3(b.lat), round3(b.lng)],
+    );
+    return placeOut(r!);
+  });
+  app.put('/v1/me/places/:id', { preHandler: requireUser }, async (req) => {
+    const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+    const b = parse(placeBody, req.body);
+    const r = await one<PlaceRow>(
+      `update user_places set label = $3, name = $4, city = $5, address = $6, lat = $7, lng = $8, updated_at = now()
+        where id = $1 and user_id = $2 returning ${PLACE_COLS}`,
+      [id, req.user!.userId, b.label, b.name, b.city, b.address, round3(b.lat), round3(b.lng)],
+    );
+    if (!r) throw new ApiError('not_found', 'Location not found.');
+    return placeOut(r);
+  });
+  app.delete('/v1/me/places/:id', { preHandler: requireUser }, async (req) => {
+    const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+    await q('delete from user_places where id = $1 and user_id = $2', [id, req.user!.userId]);
+    return { ok: true };
+  });
+
   app.get('/v1/me/bookings', { preHandler: requireUser }, async (req) => bookings.listBookings(req.user!.userId));
   app.get('/v1/me/notifications', { preHandler: requireUser }, async (req) => {
     const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date }>(

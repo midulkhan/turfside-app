@@ -2,9 +2,9 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { ArrowRight, Bell, ChevronDown, ChevronRight, LocateFixed, Map, MapPin, Menu, Moon, Search, SlidersHorizontal } from 'lucide-react-native';
+import { ArrowRight, Bell, ChevronDown, MapPin, Menu, Moon, Search, SlidersHorizontal } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SideMenu } from '@/components/navigation/side-menu';
@@ -14,7 +14,6 @@ import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { OptionSheet } from '@/components/ui/option-sheet';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { Sheet } from '@/components/ui/sheet';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
@@ -22,7 +21,6 @@ import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { useExplore } from '@/features/api/queries';
 import type { PitchFormat, VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
-import { useLocate } from '@/features/session/use-locate';
 import { addDays, dhakaToday, formatDay, type DayKey } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, size, space } from '@/theme/tokens';
@@ -45,14 +43,13 @@ export default function Explore() {
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
   const { place } = useSession();
-  const { locate, locating } = useLocate();
   const today = dhakaToday();
   const [day, setDay] = useState<DayKey>(today);
   const [format, setFormat] = useState<PitchFormat | 'any'>('5-a-side');
   const [floodlitOnly, setFloodlitOnly] = useState(false);
   // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
   const [nearbyOnly, setNearbyOnly] = useState(false);
-  const [sheet, setSheet] = useState<null | 'day' | 'format' | 'place' | 'filters' | 'menu'>(null);
+  const [sheet, setSheet] = useState<null | 'day' | 'format' | 'filters' | 'menu'>(null);
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format, floodlitOnly }),
@@ -110,12 +107,12 @@ export default function Explore() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Playing near ${place.name}. Change location`}
-          onPress={() => setSheet('place')}
+          onPress={() => router.push('/locations')}
           style={styles.place}>
-          <Overline>{locating ? 'Finding you…' : 'Playing near'}</Overline>
+          <Overline>Playing near</Overline>
           <View style={styles.placeRow}>
             <Text variant="bodyStrong" numberOfLines={1} style={styles.placeName}>
-              {[place.name, place.city].filter(Boolean).join(', ')}
+              {place.label ? `${place.label} · ${place.name}` : [place.name, place.city].filter(Boolean).join(', ')}
             </Text>
             <ChevronDown size={18} color={colors.ink} strokeWidth={2.2} />
           </View>
@@ -269,87 +266,11 @@ export default function Explore() {
         onSelect={(v) => setFloodlitOnly(v === 'floodlit')}
         onClose={() => setSheet(null)}
       />
-      <LocationSheet
-        visible={sheet === 'place'}
-        onClose={() => setSheet(null)}
-        locating={locating}
-        onCurrent={() => {
-          setSheet(null);
-          void locate();
-        }}
-        onMap={() => {
-          setSheet(null);
-          router.push('/pick-location');
-        }}
-      />
     </View>
   );
 }
 
-/** Where are you playing? Current location (GPS) or a pin on the map. */
-function LocationSheet({
-  visible,
-  onClose,
-  onCurrent,
-  onMap,
-  locating,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onCurrent: () => void;
-  onMap: () => void;
-  locating: boolean;
-}) {
-  const insets = useSafeAreaInsets();
-  const rows = [
-    { key: 'gps', icon: LocateFixed, title: 'Use my current location', detail: 'Most accurate distances', onPress: onCurrent },
-    { key: 'map', icon: Map, title: 'Set location on map', detail: 'Drop a pin anywhere', onPress: onMap },
-  ];
-  return (
-    <Sheet visible={visible} onClose={onClose}>
-      <View style={[styles.sheetBody, { paddingBottom: insets.bottom + space[4] }]}>
-        <Text variant="h3" style={styles.sheetTitle}>
-          Where are you playing?
-        </Text>
-        {rows.map((r) => (
-          <Pressable
-            key={r.key}
-            accessibilityRole="button"
-            onPress={r.onPress}
-            disabled={locating && r.key === 'gps'}
-            style={({ pressed }) => [styles.sheetRow, pressed && styles.sheetPressed]}>
-            <View style={styles.sheetIcon}>
-              <r.icon size={22} color={colors.ink} strokeWidth={2} />
-            </View>
-            <View style={styles.flex}>
-              <Text variant="bodyStrong">{r.title}</Text>
-              <Text variant="label" color={colors.textMuted}>
-                {r.detail}
-              </Text>
-            </View>
-            {locating && r.key === 'gps' ? <ActivityIndicator color={colors.ink} /> : <ChevronRight size={20} color={colors.ink} />}
-          </Pressable>
-        ))}
-      </View>
-    </Sheet>
-  );
-}
-
 const styles = StyleSheet.create({
-  sheetBody: { paddingHorizontal: gutter, paddingTop: space[2], gap: space[2] },
-  sheetTitle: { marginBottom: space[2] },
-  sheetRow: {
-    minHeight: 72,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: space[4],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-  },
-  sheetPressed: { backgroundColor: colors.bg },
-  sheetIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.limeSoft, alignItems: 'center', justifyContent: 'center' },
   placeName: { maxWidth: 240 },
   root: { flex: 1, backgroundColor: colors.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, zIndex: 2 },

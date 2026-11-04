@@ -5,7 +5,7 @@ import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { ExploreParams, VenueDetail, VenueSummary } from './types';
+import type { ExploreParams, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -24,9 +24,10 @@ export const qk = {
   hold: (id: string) => ['hold', id] as const,
   requests: ['requests'] as const,
   reviews: (id: string) => ['reviews', id] as const,
+  places: ['places'] as const,
 };
 
-export const PERSISTED_ROOTS = new Set(['venue', 'saved', 'bookings', 'booking']);
+export const PERSISTED_ROOTS = new Set(['venue', 'saved', 'bookings', 'booking', 'places']);
 
 export function useExplore(p: ExploreParams) {
   return useQuery({
@@ -137,5 +138,32 @@ export function useCancelBooking() {
       qc.invalidateQueries({ queryKey: qk.bookings });
       qc.invalidateQueries({ queryKey: qk.slots(b.venueId, b.day) });
     },
+  });
+}
+
+/** Saved locations: persisted so the location screen opens instantly. */
+export function usePlaces() {
+  return useQuery({ queryKey: qk.places, queryFn: ({ signal }) => api.getPlaces(signal), staleTime: 5 * 60_000 });
+}
+
+export function useSavePlace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, place }: { id?: string; place: SavedPlaceInput }) => (id ? api.updatePlace(id, place) : api.createPlace(place)),
+    onSuccess: (saved) => {
+      qc.setQueryData<SavedPlace[]>(qk.places, (old) =>
+        old ? (old.some((p) => p.id === saved.id) ? old.map((p) => (p.id === saved.id ? saved : p)) : [...old, saved]) : [saved],
+      );
+      qc.invalidateQueries({ queryKey: qk.places });
+    },
+  });
+}
+
+export function useDeletePlace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deletePlace(id),
+    onMutate: (id) => qc.setQueryData<SavedPlace[]>(qk.places, (old) => old?.filter((p) => p.id !== id)),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.places }),
   });
 }

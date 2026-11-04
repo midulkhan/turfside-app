@@ -7,7 +7,8 @@ import { KNOWN_AREAS } from '@/lib/places';
 import { persister, queryClient } from '@/lib/query-client';
 import { prefs } from '@/lib/storage';
 
-export type Place = { name: string; city: string; lat: number; lng: number; source: 'gps' | 'map' | 'manual' };
+/** The location Explore searches around. `savedId` links it to a saved location. */
+export type Place = { name: string; city: string; lat: number; lng: number; source: 'gps' | 'map' | 'manual' | 'saved'; savedId?: string; label?: string };
 
 type SessionState = {
   ready: boolean;

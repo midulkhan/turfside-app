@@ -188,3 +188,26 @@ d('TurfSides API', () => {
     expect((await call('POST', '/v1/auth/signup/start', { name: 'x', phone: '123', password: 'short' })).status).toBe(400);
   });
 });
+
+d('saved locations', () => {
+  it('creates, lists, edits and deletes places, scoped to the owner', async () => {
+    const a = await newUser('Places A');
+    const b = await newUser('Places B');
+    const made = await call('POST', '/v1/me/places', { label: 'Home', name: 'Uttara', city: 'Dhaka', address: 'Sector 7, Uttara', lat: 23.87281234, lng: 90.39845678 }, a.accessToken);
+    expect(made.status).toBe(200);
+    expect(made.json.lat).toBe(23.873); // rounded server-side
+    const list = await call('GET', '/v1/me/places', undefined, a.accessToken);
+    expect(list.json.map((p: Json) => p.id)).toEqual([made.json.id]);
+    expect((await call('GET', '/v1/me/places', undefined, b.accessToken)).json).toEqual([]);
+    // Another user can neither edit nor delete it.
+    expect((await call('PUT', `/v1/me/places/${made.json.id}`, { label: 'X', name: 'X', lat: 1, lng: 1 }, b.accessToken)).status).toBe(404);
+    await call('DELETE', `/v1/me/places/${made.json.id}`, undefined, b.accessToken);
+    expect((await call('GET', '/v1/me/places', undefined, a.accessToken)).json).toHaveLength(1);
+    const edited = await call('PUT', `/v1/me/places/${made.json.id}`, { label: 'Work', name: 'Gulshan', city: 'Dhaka', lat: 23.79, lng: 90.41 }, a.accessToken);
+    expect(edited.json).toMatchObject({ label: 'Work', name: 'Gulshan' });
+    expect((await call('POST', '/v1/me/places', { label: '', name: 'x', lat: 0, lng: 0 }, a.accessToken)).status).toBe(400);
+    expect((await call('GET', '/v1/me/places')).status).toBe(401);
+    await call('DELETE', `/v1/me/places/${made.json.id}`, undefined, a.accessToken);
+    expect((await call('GET', '/v1/me/places', undefined, a.accessToken)).json).toEqual([]);
+  });
+});
