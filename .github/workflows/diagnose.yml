@@ -10,6 +10,9 @@ jobs:
           curl -sS -m 20 https://api.turfsides.com/v1/config; echo
           curl -sS -m 20 -X POST https://api.turfsides.com/v1/auth/signup/start -H 'Content-Type: application/json' \
             -d '{"name":"Diag Test","phone":"1799999123","password":"diagnostic pass 1"}'; echo
+      - name: Can the outside world reach the Supabase pooler? (rules out Supabase itself)
+        run: |
+          for port in 5432 6543; do timeout 8 bash -c "</dev/tcp/aws-0-ap-northeast-2.pooler.supabase.com/$port" && echo "pooler:$port reachable" || echo "pooler:$port NOT reachable"; done
       - name: Server error log (last lines)
         env:
           S: ${{ secrets.FTP_SERVER }}
