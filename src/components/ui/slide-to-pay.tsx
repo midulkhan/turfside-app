@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   dim: { opacity: 0.6 },
   fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(221,248,92,0.16)', borderRadius: radius.pill },
   labelWrap: { position: 'absolute', left: KNOB + 18, right: 52, alignItems: 'center' },
-  label: { fontSize: 17 },
+  label: { fontSize: 15, lineHeight: 20 },
   chevrons: { position: 'absolute', right: space[5] },
   knob: {
     position: 'absolute',

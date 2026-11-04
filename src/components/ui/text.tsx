@@ -46,7 +46,7 @@ function withTaka(children: ReactNode, family: string): ReactNode {
 export function Text({ variant = 'body', color = colors.text, align, style, children, ...rest }: AppTextProps) {
   const family = (StyleSheet.flatten(style)?.fontFamily as string | undefined) ?? type[variant].fontFamily;
   return (
-    <RNText maxFontSizeMultiplier={1.4} {...rest} style={[type[variant], { color }, align && { textAlign: align }, style]}>
+    <RNText maxFontSizeMultiplier={1.15} {...rest} style={[type[variant], { color }, align && { textAlign: align }, style]}>
       {withTaka(children, family)}
     </RNText>
   );

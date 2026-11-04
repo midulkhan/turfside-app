@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { colors, radius } from '@/theme/tokens';
@@ -15,13 +16,15 @@ export function initialsOf(name: string) {
 }
 
 export function Avatar({ name, size = 48, ring, uri }: { name: string; size?: number; ring?: string; uri?: string | null }) {
-  if (uri) {
+  const [failed, setFailed] = useState<string | null>(null); // the uri that failed to load
+  if (uri && failed !== uri) {
     return (
       <Image
         source={uri}
         accessibilityLabel={name}
         cachePolicy="memory-disk"
         transition={150}
+        onError={() => setFailed(uri)}
         style={[styles.base, { width: size, height: size, borderRadius: size / 2 }, ring ? { borderWidth: 2, borderColor: ring } : null]}
       />
     );

@@ -27,7 +27,7 @@ export function ScreenHeader({
       <IconButton icon={leftIcon} label="Go back" onPress={onBack ?? (() => (router.canGoBack() ? router.back() : router.replace('/')))} />
       <View style={styles.center}>
         {center ?? (
-          <Text variant="h3" numberOfLines={1}>
+          <Text variant="title" numberOfLines={1}>
             {title}
           </Text>
         )}

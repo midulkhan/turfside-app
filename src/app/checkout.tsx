@@ -159,8 +159,8 @@ export default function Checkout() {
           {/* Hold timer */}
           {h ? (
             <View style={[styles.timer, expired && styles.timerExpired]}>
-              <Timer size={18} color={expired ? colors.danger : colors.limeText} strokeWidth={2.2} />
-              <Text variant="labelStrong" color={expired ? colors.danger : colors.limeText}>
+              <Timer size={16} color={expired ? colors.danger : colors.limeText} strokeWidth={2} />
+              <Text variant="label" color={expired ? colors.danger : colors.limeText}>
                 {expired ? 'Your hold expired — go back and pick the slot again' : `Slot held for you · ${label}`}
               </Text>
             </View>
@@ -178,10 +178,10 @@ export default function Checkout() {
               </View>
             ) : null}
             <View style={styles.ticketBody}>
-              <Text variant="h2">{h?.venue.name ?? ' '}</Text>
+              <Text variant="title" style={styles.venueName}>{h?.venue.name ?? ' '}</Text>
               <View style={styles.row}>
-                <MapPin size={16} color={colors.textMuted} />
-                <Text variant="label" color={colors.textMuted}>
+                <MapPin size={14} color={colors.textMuted} strokeWidth={1.7} />
+                <Text variant="body" color={colors.textMuted} style={styles.small}>
                   {h ? `${h.venue.area}, ${h.venue.city}` : ' '}
                 </Text>
               </View>
@@ -189,22 +189,22 @@ export default function Checkout() {
             <TicketDivider />
             <View style={styles.when}>
               <View style={styles.whenCol}>
-                <CalendarDays size={22} color={colors.ink} strokeWidth={1.8} />
+                <CalendarDays size={18} color={colors.ink} strokeWidth={1.6} />
                 <View style={styles.whenText}>
-                  <Text variant="bodyStrong">{h ? formatDay(h.day, { year: false }) : ' '}</Text>
-                  <Text variant="label" color={colors.textMuted}>
+                  <Text variant="labelStrong" style={styles.whenMain}>{h ? formatDay(h.day, { year: false }) : ' '}</Text>
+                  <Text variant="body" color={colors.textMuted} style={styles.small}>
                     {h?.venue.formats[0]}
                   </Text>
                 </View>
               </View>
               <View style={styles.vr} />
               <View style={styles.whenCol}>
-                <Clock3 size={22} color={colors.ink} strokeWidth={1.8} />
+                <Clock3 size={18} color={colors.ink} strokeWidth={1.6} />
                 <View style={styles.whenText}>
-                  <Text variant="bodyStrong" numberOfLines={1}>
+                  <Text variant="labelStrong" numberOfLines={1} style={styles.whenMain}>
                     {h ? formatRange(h.start, h.end) : ' '}
                   </Text>
-                  <Text variant="label" color={colors.textMuted}>
+                  <Text variant="body" color={colors.textMuted} style={styles.small}>
                     {h ? formatDuration(h.end - h.start) : ''}
                   </Text>
                 </View>
@@ -213,26 +213,26 @@ export default function Checkout() {
           </TicketSurface>
 
           {/* Your details */}
-          <Text variant="h3" style={styles.sectionTitle}>
+          <Text variant="title" style={[styles.section, styles.sectionTitle]}>
             Your details
           </Text>
           <Card style={styles.details}>
-            <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={52} />
+            <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={44} />
             <View style={styles.flex}>
-              <Text variant="bodyStrong">{user?.name}</Text>
-              <Text variant="label" color={colors.textMuted}>
+              <Text variant="labelStrong" style={styles.whenMain}>{user?.name}</Text>
+              <Text variant="body" color={colors.textMuted} style={styles.small}>
                 {phoneMasked}
               </Text>
             </View>
             <View style={styles.vrTall} />
             <Pressable accessibilityRole="button" onPress={() => router.push('/profile')} style={styles.edit} hitSlop={8}>
-              <Pencil size={18} color={colors.ink} strokeWidth={1.8} />
-              <Text variant="labelStrong">Edit</Text>
+              <Pencil size={15} color={colors.ink} strokeWidth={1.7} />
+              <Text variant="label">Edit</Text>
             </Pressable>
           </Card>
 
           {/* Price details — all amounts come from the server quote */}
-          <Text variant="h3" style={styles.sectionTitle}>
+          <Text variant="title" style={[styles.section, styles.sectionTitle]}>
             Price details
           </Text>
           <Card padded={false}>
@@ -240,11 +240,11 @@ export default function Checkout() {
               {h
                 ? h.lines.map((l) => (
                     <View key={l.label} style={styles.line}>
-                      <Text variant="body" color={colors.textMuted}>
+                      <Text variant="body" color={colors.textMuted} style={styles.lineText}>
                         {l.label}
                         {l.detail ? `  ·  ${l.detail}` : ''}
                       </Text>
-                      <Text variant="bodyStrong">{formatTaka(l.amount)}</Text>
+                      <Text variant="labelStrong" style={styles.lineText}>{formatTaka(l.amount)}</Text>
                     </View>
                   ))
                 : [0, 1].map((i) => <Skeleton key={i} height={18} />)}
@@ -254,14 +254,14 @@ export default function Checkout() {
               accessibilityRole="button"
               style={styles.promo}
               onPress={() => Alert.alert('Promo codes', 'Promo codes are coming soon.')}>
-              <TicketPercent size={22} color={colors.ink} strokeWidth={1.7} />
-              <Text variant="body" style={styles.flex}>
+              <TicketPercent size={18} color={colors.ink} strokeWidth={1.6} />
+              <Text variant="body" style={[styles.flex, styles.lineText]}>
                 Add promo code
               </Text>
-              <Plus size={22} color={colors.ink} strokeWidth={1.8} />
+              <Plus size={18} color={colors.ink} strokeWidth={1.7} />
             </Pressable>
             <View style={styles.total}>
-              <Text variant="bodyStrong">Total payable</Text>
+              <Text variant="labelStrong" style={styles.whenMain}>Total payable</Text>
               <Text variant="h2" style={styles.totalAmount}>
                 {h ? formatTaka(h.total) : '—'}
               </Text>
@@ -270,7 +270,7 @@ export default function Checkout() {
 
           {/* Payment method */}
           <View style={styles.methodHead}>
-            <Text variant="h3">Payment method</Text>
+            <Text variant="title" style={styles.section}>Payment method</Text>
             <Text variant="label" color={colors.textMuted}>
               1 method
             </Text>
@@ -284,7 +284,7 @@ export default function Checkout() {
               cachePolicy="memory-disk"
             />
             <View style={styles.vrPink} />
-            <Text variant="body" color={colors.textMuted} style={styles.flex}>
+            <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
               Mobile wallet
             </Text>
             <View style={styles.radioOn}>
@@ -292,8 +292,8 @@ export default function Checkout() {
             </View>
           </View>
           <View style={styles.row}>
-            <Lock size={15} color={colors.textMuted} />
-            <Text variant="label" color={colors.textMuted}>
+            <Lock size={13} color={colors.textMuted} />
+            <Text variant="caption" color={colors.textMuted}>
               You’ll continue to bKash to pay. We never see your PIN.
             </Text>
           </View>
@@ -302,11 +302,11 @@ export default function Checkout() {
             accessibilityRole="button"
             onPress={() => h && Alert.alert('Cancellation policy', h.cancellationPolicy)}
             style={styles.policy}>
-            <FileText size={22} color={colors.ink} strokeWidth={1.7} />
-            <Text variant="bodyStrong" style={styles.flex}>
+            <FileText size={18} color={colors.ink} strokeWidth={1.6} />
+            <Text variant="label" style={styles.flex}>
               Cancellation policy
             </Text>
-            <ChevronRight size={20} color={colors.ink} />
+            <ChevronRight size={18} color={colors.textMuted} />
           </Pressable>
         </ScrollView>
       )}
@@ -381,7 +381,12 @@ const styles = StyleSheet.create({
   lines: { padding: space[4], gap: space[3] },
   line: { flexDirection: 'row', justifyContent: 'space-between' },
   promo: { flexDirection: 'row', alignItems: 'center', gap: space[3], padding: space[4], minHeight: 56 },
-  totalAmount: { fontFamily: 'Geist_800ExtraBold', fontSize: 22, lineHeight: 28 },
+  totalAmount: { fontFamily: 'Geist_700Bold', fontSize: 19, lineHeight: 24 },
+  venueName: { fontSize: 18, lineHeight: 23, letterSpacing: -0.2 },
+  section: { fontSize: 16, lineHeight: 21 },
+  whenMain: { fontSize: 14.5, lineHeight: 19 },
+  small: { fontSize: 13, lineHeight: 17 },
+  lineText: { fontSize: 14, lineHeight: 19 },
   total: {
     flexDirection: 'row',
     justifyContent: 'space-between',
