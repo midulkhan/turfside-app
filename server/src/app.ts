@@ -273,13 +273,15 @@ export async function buildApp() {
   app.post('/v1/uploads', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const b = parse(
       z.object({
-        purpose: z.enum(['avatar']),
+        purpose: z.enum(['avatar', 'venue']),
         contentType: z.enum(Object.keys(UPLOAD_TYPES) as [UploadType, ...UploadType[]]),
         size: z.number().int().min(1).max(MAX_UPLOAD_BYTES, 'Photos must be under 5 MB.'),
       }),
       req.body,
     );
-    const key = newKey(`avatars/${req.user!.userId}`, b.contentType);
+    // Turf photos are for owners only; each user uploads under their own prefix.
+    if (b.purpose === 'venue' && !req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'Only turf owners can upload turf photos.');
+    const key = newKey(`${b.purpose === 'venue' ? 'venues' : 'avatars'}/${req.user!.userId}`, b.contentType);
     return { key, ...(await presignPut(key, b.contentType, b.size)) };
   });
 

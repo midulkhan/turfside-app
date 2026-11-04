@@ -1,0 +1,14 @@
+[
+  { "id": 399187, "slot": "night-lit-field", "by": "Jonathan Petersson", "note": "Floodlit pitch at night" },
+  { "id": 186239, "slot": "night-players", "by": "Digital Buggu", "note": "Players under floodlights" },
+  { "id": 186240, "slot": "night-quiet", "by": "Digital Buggu", "note": "Floodlit field, quiet" },
+  { "id": 1171084, "slot": "aerial-match", "by": "Mike", "note": "Aerial, game in progress" },
+  { "id": 16726155, "slot": "aerial-empty", "by": "Chris F", "note": "Aerial, empty pitch with clear lines" },
+  { "id": 33658737, "slot": "aerial-green", "by": "Efrem Efre", "note": "Aerial, green pitch" },
+  { "id": 9739467, "slot": "aerial-park", "by": "Kindel Media", "note": "Aerial, pitch in a park" },
+  { "id": 12039814, "slot": "aerial-twin", "by": "Mario Ortiz", "note": "Aerial, two pitches side by side" },
+  { "id": 8807002, "slot": "aerial-teams", "by": "Juan C. Palacios", "note": "Aerial, teams playing" },
+  { "id": 33267122, "slot": "turf-lines", "by": "Zoriana Rusyn", "note": "Artificial turf with white lines" },
+  { "id": 47343, "slot": "corner-flag", "by": "Pixabay", "note": "Corner flag and ball" },
+  { "id": 17264600, "slot": "turf-closeup", "by": "BLACK IBEX", "note": "Pitch close-up with line" }
+]

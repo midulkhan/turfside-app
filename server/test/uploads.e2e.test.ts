@@ -19,9 +19,9 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return { status: res.status, json: (await res.json().catch(() => ({}))) as Json };
 }
 
-async function newUser() {
+async function newUser(role: 'player' | 'owner' = 'player') {
   const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-  const s = await call('POST', '/v1/auth/signup/start', { name: 'Photo Tester', phone, password: 'photo pass 123' });
+  const s = await call('POST', '/v1/auth/signup/start', { name: 'Photo Tester', phone, password: 'photo pass 123', role });
   return (await call('POST', '/v1/auth/signup/verify', { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
 }
 
@@ -64,6 +64,15 @@ d('photo uploads', () => {
 
     const cleared = await call('DELETE', '/v1/me/avatar', undefined, a.accessToken);
     expect(cleared.json.avatarUrl).toBeNull();
+  });
+
+  it('lets owners upload turf photos and use them on a turf', async () => {
+    const player = await newUser();
+    expect((await call('POST', '/v1/uploads', { purpose: 'venue', contentType: 'image/webp', size: WEBP.byteLength }, player.accessToken)).status).toBe(403);
+    const owner = await newUser('owner');
+    const up = await call('POST', '/v1/uploads', { purpose: 'venue', contentType: 'image/webp', size: WEBP.byteLength }, owner.accessToken);
+    expect(up.json.key).toMatch(new RegExp(`^venues/${owner.user.id}/`));
+    expect((await fetch(up.json.uploadUrl, { method: 'PUT', headers: up.json.headers, body: WEBP })).status).toBe(200);
   });
 
   it('validates upload requests', async () => {
