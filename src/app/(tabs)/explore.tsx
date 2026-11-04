@@ -10,7 +10,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SideMenu } from '@/components/navigation/side-menu';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
-import { Chip } from '@/components/ui/chip';
 import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -170,16 +169,15 @@ export default function Explore() {
             Search turfs or areas
           </Text>
         </PressableScale>
-      </View>
-
-      <View style={styles.chips}>
-        <Chip
-          label={`Distance · ${radiusKm} km`}
+        <IconButton
           icon={Radar}
-          active={radiusKm !== DEFAULT_DISTANCE}
+          label={`Distance, within ${radiusKm} km. Change`}
+          variant={radiusKm !== DEFAULT_DISTANCE ? 'lime' : 'light'}
+          size={size.control}
           onPress={() => setSheet('distance')}
         />
       </View>
+
     </View>
   );
 
@@ -237,7 +235,7 @@ const styles = StyleSheet.create({
   heroText: { paddingHorizontal: gutter, gap: space[2] },
   accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
   display: { marginBottom: space[1] },
-  searchRow: { flexDirection: 'row', gap: space[3], paddingHorizontal: gutter },
+  searchRow: { flexDirection: 'row', gap: space[2], paddingHorizontal: gutter },
   search: {
     flex: 1,
     height: size.control,
@@ -250,7 +248,6 @@ const styles = StyleSheet.create({
     gap: space[3],
     paddingHorizontal: space[5],
   },
-  chips: { flexDirection: 'row', gap: space[2], paddingHorizontal: gutter, marginTop: space[3] },
   flex: { flex: 1, gap: 2 },
   section: { paddingHorizontal: gutter, paddingTop: space[6], paddingBottom: space[3] },
   card: { paddingHorizontal: gutter, paddingBottom: space[4] },
