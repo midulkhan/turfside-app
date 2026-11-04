@@ -1,16 +1,9 @@
 import { BlurView } from 'expo-blur';
 import { X } from 'lucide-react-native';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
-import Animated, {
-  FadeIn,
-  useAnimatedStyle,
-  useDerivedValue,
-  useSharedValue,
-  withSpring,
-  type SharedValue,
-} from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -23,41 +16,77 @@ import { Text } from './text';
 
 /**
  * Distance picker modelled on the camera zoom dial, turned on its side: a big
- * dark disc sits against the right edge so the right thumb rolls it up and
- * down. Fine ticks every ½ km, labelled ticks every 5 km, a lime pointer on the
- * rim. Every kilometre clicks (haptic); on release it settles on the nearest
- * 5 km with a little momentum, like a real detented dial.
+ * dark disc against the right edge that the right thumb rolls up and down.
+ *
+ * Like the camera dial the scale is uneven: short distances get more room,
+ * long ones bunch up (angle ∝ km^0.6), so 5→50 km is about a 80° turn.
+ * The face runs from 0 so the top never looks empty, but you can't pick
+ * below 5 km. Everything during a drag runs on the UI thread; React only
+ * re-renders when the value crosses a 5 km detent.
  */
 export const DISTANCES = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
 export const DEFAULT_DISTANCE = 5;
 const MIN = DISTANCES[0];
 const MAX = DISTANCES[DISTANCES.length - 1];
-const DEG_PER_KM = 3.2; // the whole 5–50 km range spans 144° of the dial
-const HALF_TICKS = Array.from({ length: (MAX - MIN) * 2 + 1 }, (_, i) => MIN + i / 2);
+const POW = 0.6;
+const SPAN_DEG = 110; // 0 → 50 km
+const K = SPAN_DEG / Math.pow(MAX, POW);
 
-function Tick({ km, R }: { km: number; R: number }) {
-  const major = km % 5 === 0;
-  const whole = Number.isInteger(km);
-  return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-(km - MIN) * DEG_PER_KM}deg` }] }]}>
-      <View
-        style={[
-          styles.tick,
-          major ? styles.tickMajor : whole ? styles.tickWhole : styles.tickHalf,
-          { top: R - (major ? 1 : 0.5) },
-        ]}
-      />
-    </View>
-  );
+/** km → dial angle (deg) */
+function angleOf(km: number) {
+  'worklet';
+  return K * Math.pow(Math.max(0, km), POW);
+}
+/** dial angle (deg) → km */
+function kmOf(deg: number) {
+  'worklet';
+  return Math.pow(Math.max(0, deg) / K, 1 / POW);
 }
 
-function Label({ km, R, v, active }: { km: number; R: number; v: SharedValue<number>; active: boolean }) {
-  // keep the number upright while the disc turns
-  const upright = useAnimatedStyle(() => ({ transform: [{ rotate: `${(km - v.get()) * DEG_PER_KM}deg` }] }));
+// ½ km marks where there's room (under 10 km), 1 km marks beyond.
+const TICKS = [
+  ...Array.from({ length: 20 }, (_, i) => i / 2),
+  ...Array.from({ length: MAX - 10 + 1 }, (_, i) => 10 + i),
+];
+const LABELS = [0, ...DISTANCES];
+const SPRING = { damping: 22, stiffness: 220, mass: 0.7 };
+
+/** The static face: built once, then only the whole layer rotates. */
+const DialFace = memo(function DialFace({ R }: { R: number }) {
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-(km - MIN) * DEG_PER_KM}deg` }] }]}>
+    <>
+      {TICKS.map((km) => {
+        const major = km % 5 === 0;
+        const whole = Number.isInteger(km);
+        return (
+          <View
+            key={km}
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-angleOf(km)}deg` }] }]}>
+            <View
+              style={[
+                styles.tick,
+                major ? styles.tickMajor : whole ? styles.tickWhole : styles.tickHalf,
+                { top: R - (major ? 1 : 0.5) },
+                km < MIN && styles.tickDim,
+              ]}
+            />
+          </View>
+        );
+      })}
+    </>
+  );
+});
+
+const Label = memo(function Label({ km, R, a, active }: { km: number; R: number; a: SharedValue<number>; active: boolean }) {
+  const at = angleOf(km);
+  // keep the number upright while the disc turns
+  const upright = useAnimatedStyle(() => ({ transform: [{ rotate: `${at - a.get()}deg` }] }));
+  const dim = km < MIN;
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-at}deg` }] }]}>
       <Animated.View style={[styles.label, { top: R - 22 }, upright]}>
-        <Text variant="h3" color={active ? colors.lime : colors.textOnDark} style={styles.labelText}>
+        <Text variant="h3" color={active ? colors.lime : dim ? colors.textOnDarkMuted : colors.textOnDark} style={styles.labelText}>
           {km}
         </Text>
         <Text variant="caption" color={active ? colors.lime : colors.textOnDarkMuted} style={styles.labelUnit}>
@@ -66,7 +95,7 @@ function Label({ km, R, v, active }: { km: number; R: number; v: SharedValue<num
       </Animated.View>
     </View>
   );
-}
+});
 
 export function DistanceWheel({
   visible,
@@ -84,11 +113,12 @@ export function DistanceWheel({
   const R = Math.round(Math.min(height * 0.42, 380)); // disc radius
   const pointerX = Math.round(width * 0.44); // where the rim (and pointer) sits
   const cy = Math.round(height * 0.47);
-  const pxPerKm = (R * DEG_PER_KM * Math.PI) / 180; // arc length the thumb travels per km
 
-  const v = useSharedValue(value); // live dial position in km (fractional while turning)
-  const start = useSharedValue(value);
+  const a = useSharedValue(angleOf(value)); // dial angle in degrees, the only thing that moves
+  const start = useSharedValue(0);
   const lastKm = useSharedValue(value);
+  const lastDetent = useSharedValue(value);
+  const lastClickAt = useSharedValue(0);
   const [pick, setPick] = useState(value);
 
   // Reset to the current value every time the picker opens.
@@ -97,55 +127,68 @@ export function DistanceWheel({
     setWasVisible(visible);
     if (visible) {
       setPick(value);
-      v.set(value);
+      a.set(angleOf(value));
       lastKm.set(value);
+      lastDetent.set(value);
     }
   }
 
-  const click = (km: number) => {
-    haptic.select();
-    setPick(Math.min(MAX, Math.max(MIN, Math.round(km / 5) * 5)));
-  };
+  const click = () => haptic.select();
+  const detent = (km: number) => setPick(km);
   const settle = (km: number) => {
     haptic.tap();
     setPick(km);
   };
 
+  const lo = angleOf(MIN);
+  const hi = angleOf(MAX);
+  const degPerPx = 180 / (Math.PI * R); // the rim moves exactly with the thumb
+
   const pan = usePanGesture({
-    minDistance: 2,
+    minDistance: 1,
     onActivate: () => {
       'worklet';
-      start.set(v.get());
+      start.set(a.get());
     },
     onUpdate: (e) => {
       'worklet';
-      let next = start.get() - e.translationY / pxPerKm; // thumb up → further
+      let next = start.get() - e.translationY * degPerPx; // thumb up → further
       // rubber-band past the ends
-      if (next < MIN) next = MIN - (MIN - next) * 0.25;
-      if (next > MAX) next = MAX + (next - MAX) * 0.25;
-      v.set(next);
-      const km = Math.round(next);
+      if (next < lo) next = lo - (lo - next) * 0.3;
+      if (next > hi) next = hi + (next - hi) * 0.3;
+      a.set(next);
+
+      const km = Math.round(kmOf(next));
       if (km !== lastKm.get() && km >= MIN && km <= MAX) {
         lastKm.set(km);
-        scheduleOnRN(click, km);
+        const now = Date.now();
+        if (now - lastClickAt.get() > 28) {
+          lastClickAt.set(now);
+          scheduleOnRN(click);
+        }
+      }
+      const d = Math.min(MAX, Math.max(MIN, Math.round(kmOf(next) / 5) * 5));
+      if (d !== lastDetent.get()) {
+        lastDetent.set(d);
+        scheduleOnRN(detent, d);
       }
     },
     onDeactivate: (e) => {
       'worklet';
-      const projected = v.get() - (e.velocityY / pxPerKm) * 0.12; // a flick carries on a little
-      const target = Math.min(MAX, Math.max(MIN, Math.round(projected / 5) * 5));
-      v.set(withSpring(target, { damping: 20, stiffness: 180, mass: 0.8 }));
+      const projected = a.get() - e.velocityY * degPerPx * 0.12; // a flick carries on a little
+      const target = Math.min(MAX, Math.max(MIN, Math.round(kmOf(projected) / 5) * 5));
+      a.set(withSpring(angleOf(target), SPRING));
       lastKm.set(target);
+      lastDetent.set(target);
       scheduleOnRN(settle, target);
     },
   });
 
-  const spin = useDerivedValue(() => (v.get() - MIN) * DEG_PER_KM);
-  const discStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.get()}deg` }] }));
+  const discStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${a.get()}deg` }] }));
 
   const nudge = (dir: 1 | -1) => {
     const km = Math.min(MAX, Math.max(MIN, pick + dir * 5));
-    v.set(withSpring(km, { damping: 20, stiffness: 180 }));
+    a.set(withSpring(angleOf(km), SPRING));
     settle(km);
   };
 
@@ -165,11 +208,9 @@ export function DistanceWheel({
             pointerEvents="none"
             style={[styles.disc, { left: pointerX, top: cy - R, width: R * 2, height: R * 2, borderRadius: R }]}>
             <Animated.View style={[StyleSheet.absoluteFill, discStyle]}>
-              {HALF_TICKS.map((km) => (
-                <Tick key={km} km={km} R={R} />
-              ))}
-              {DISTANCES.map((km) => (
-                <Label key={km} km={km} R={R} v={v} active={km === pick} />
+              <DialFace R={R} />
+              {LABELS.map((km) => (
+                <Label key={km} km={km} R={R} a={a} active={km === pick} />
               ))}
             </Animated.View>
           </View>
@@ -239,6 +280,7 @@ const styles = StyleSheet.create({
   tickMajor: { width: 26, height: 2, opacity: 1 },
   tickWhole: { width: 14, height: 1, opacity: 0.75 },
   tickHalf: { width: 8, height: 1, opacity: 0.4 },
+  tickDim: { opacity: 0.25 },
   label: { position: 'absolute', left: 34, width: 48, height: 44, alignItems: 'center', justifyContent: 'center' },
   labelText: { lineHeight: 24 },
   labelUnit: { fontSize: 9, letterSpacing: 1, lineHeight: 12 },
