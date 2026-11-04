@@ -1,0 +1,37 @@
+{
+  "name": "turfsides-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TurfSides booking API (Fastify + PostgreSQL + Redis + bKash)",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit && node build.mjs",
+    "start": "node dist/index.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.0",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/rate-limit": "^11.2.2",
+    "@upstash/redis": "^1.41.0",
+    "fastify": "^5.12.8",
+    "jose": "^6.2.15",
+    "lru-cache": "^11.5.3",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

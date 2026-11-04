@@ -1,0 +1,358 @@
+import { createReadStream, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { z } from 'zod';
+
+import { cached, cacheBackend, pingCache } from './cache';
+import { config, isProd, missingConfig } from './config';
+import { one, q } from './db';
+import { ApiError } from './errors';
+import { bkashEnabled, isSimulated } from './lib/bkash';
+import { safeEqual } from './lib/crypto';
+import { addDays, dhakaToday, isDayKey } from './lib/time';
+import { verifyAccess, verifyPass } from './lib/tokens';
+import * as auth from './services/auth';
+import * as bookings from './services/bookings';
+import * as payments from './services/payments';
+import { allVenueRows, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    user?: { userId: string; roles: string[]; sessionId: string };
+  }
+}
+
+// ── Validation helpers ──────────────────────────────────────────────────────
+const phone10 = z
+  .string()
+  .transform((v) => {
+    let d = v.replace(/\D/g, '');
+    if (d.startsWith('880')) d = d.slice(3);
+    if (d.startsWith('0')) d = d.slice(1);
+    return d;
+  })
+  .refine((d) => /^1[3-9]\d{8}$/.test(d), 'Enter a valid Bangladesh mobile number.');
+const password = z.string().min(8, 'Use at least 8 characters.').max(128);
+const email = z.string().trim().toLowerCase().email().max(254);
+
+function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
+  const r = schema.safeParse(data);
+  if (!r.success) throw new ApiError('invalid', r.error.issues[0]?.message ?? 'Invalid request.');
+  return r.data;
+}
+
+const meta = (req: FastifyRequest) => ({ ip: req.ip, ua: req.headers['user-agent'] });
+const idem = (req: FastifyRequest) => (typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined);
+
+async function requireUser(req: FastifyRequest) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) throw new ApiError('unauthorized', 'Please sign in.');
+  req.user = await verifyAccess(h.slice(7));
+}
+async function optionalUser(req: FastifyRequest) {
+  if (req.headers.authorization?.startsWith('Bearer ')) await requireUser(req).catch(() => undefined);
+}
+
+const RADIUS_STEPS = [5, 10, 20, 30];
+const MIN_RESULTS = 5;
+
+export async function buildApp() {
+  const app = Fastify({
+    trustProxy: config.TRUST_PROXY, // behind cPanel's Apache/Passenger proxy
+    bodyLimit: 32 * 1024,
+    logger: {
+      level: isProd ? 'info' : 'debug',
+      redact: ['req.headers.authorization', 'req.headers.cookie', 'req.body.password', 'req.body.newPassword', 'req.body.code', 'req.body.refreshToken'],
+    },
+    genReqId: () => Math.random().toString(36).slice(2, 10),
+  });
+
+  await app.register(helmet, {
+    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // images are loaded by the app
+  });
+  await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'DELETE'] });
+  await app.register(rateLimit, { max: 120, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ApiError) return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
+    const status = (err as { statusCode?: number }).statusCode;
+    if (status === 429) return reply.status(429).send({ error: { code: 'rate_limited', message: 'Too many requests. Slow down a little.' } });
+    if (status && status < 500) return reply.status(status).send({ error: { code: 'invalid', message: 'Invalid request.' } });
+    req.log.error(err);
+    return reply.status(500).send({ error: { code: 'internal', message: 'Something went wrong. Please try again.' } });
+  });
+  app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: { code: 'not_found', message: 'Not found.' } }));
+
+  // ── Health ────────────────────────────────────────────────────────────────
+  app.get('/health', async () => {
+    let db = 'not_configured';
+    if (config.DATABASE_URL) db = await one('select 1 ok').then(() => 'ok').catch((e) => `error: ${String(e.message).slice(0, 80)}`);
+    return {
+      status: db === 'ok' ? 'ok' : 'degraded',
+      env: config.NODE_ENV,
+      db,
+      cache: `${cacheBackend}:${(await pingCache()) ? 'ok' : 'error'}`,
+      payments: config.BKASH_MODE,
+      missing: missingConfig(),
+      time: new Date().toISOString(),
+    };
+  });
+  app.get('/', async () => ({ name: 'TurfSides API', health: '/health' }));
+
+  // ── Static seed photos (long cache) ───────────────────────────────────────
+  const publicDir = join(__dirname, '..', 'public');
+  app.get('/static/seed/:file', async (req, reply) => {
+    const { file } = req.params as { file: string };
+    if (!/^[a-z0-9-]+\.webp$/.test(file)) throw new ApiError('not_found', 'Not found.');
+    const path = join(publicDir, 'seed', file);
+    if (!existsSync(path)) throw new ApiError('not_found', 'Not found.');
+    reply.header('Cache-Control', 'public, max-age=604800, immutable').type('image/webp');
+    return reply.send(createReadStream(path));
+  });
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const authLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+  app.post('/v1/auth/signup/start', authLimit, async (req) => {
+    const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email: email.optional().or(z.literal('').transform(() => undefined)), password, role: z.enum(['player', 'owner']).default('player') }), req.body);
+    return auth.signupStart(b, req.ip);
+  });
+  app.post('/v1/auth/signup/verify', authLimit, async (req) => {
+    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
+    return auth.signupVerify(b.phone, b.code, meta(req));
+  });
+  app.post('/v1/auth/login', authLimit, async (req) => {
+    const b = parse(z.object({ identifier: z.string().trim().min(3).max(254), password: z.string().min(1).max(128) }), req.body);
+    const isEmail = b.identifier.includes('@');
+    const ident = isEmail ? { kind: 'email' as const, value: parse(email, b.identifier) } : { kind: 'phone' as const, value: parse(phone10, b.identifier) };
+    return auth.login(ident, b.password, meta(req));
+  });
+  app.post('/v1/auth/refresh', authLimit, async (req) => auth.refresh(parse(z.object({ refreshToken: z.string().min(20).max(200) }), req.body).refreshToken, meta(req)));
+  app.post('/v1/auth/logout', { preHandler: requireUser }, async (req) => auth.logout(req.user!.sessionId));
+  app.post('/v1/auth/password/reset/start', authLimit, async (req) => auth.resetStart(parse(z.object({ phone: phone10 }), req.body).phone, req.ip));
+  app.post('/v1/auth/password/reset/verify', authLimit, async (req) => {
+    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/), newPassword: password }), req.body);
+    return auth.resetVerify(b.phone, b.code, b.newPassword, meta(req));
+  });
+
+  // ── Venues (public; hearts filled in when signed in) ──────────────────────
+  app.get('/v1/venues/explore', { preHandler: optionalUser }, async (req) => {
+    const p = parse(
+      z.object({
+        lat: z.coerce.number().min(-90).max(90),
+        lng: z.coerce.number().min(-180).max(180),
+        day: z.string().refine(isDayKey).optional(),
+        format: z.enum(['any', '5-a-side', '6-a-side', '7-a-side']).default('any'),
+        floodlit: z.enum(['true', 'false']).optional(),
+        q: z.string().trim().max(60).optional(),
+      }),
+      req.query,
+    );
+    const day = p.day ?? dhakaToday();
+    // Round to ~1 km so nearby users share cache entries.
+    const lat = Math.round(p.lat * 100) / 100;
+    const lng = Math.round(p.lng * 100) / 100;
+    const key = `explore:${lat}:${lng}:${day}:${p.format}:${p.floodlit ?? ''}:${(p.q ?? '').toLowerCase()}`;
+    const base = await cached(key, 60, async () => {
+      const ql = p.q?.toLowerCase();
+      const rows = (await allVenueRows())
+        .filter((v) => (p.format === 'any' ? true : v.formats.includes(p.format)))
+        .filter((v) => (p.floodlit === 'true' ? v.floodlit : true))
+        .filter((v) => (ql ? `${v.name} ${v.area}`.toLowerCase().includes(ql) : true))
+        .map((v) => ({ v, d: haversineKm(lat, lng, v.lat, v.lng) }))
+        .sort((a, b) => a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
+      let radiusKm = RADIUS_STEPS[RADIUS_STEPS.length - 1];
+      for (const r of RADIUS_STEPS) {
+        if (rows.filter((x) => x.d <= r).length >= MIN_RESULTS) {
+          radiusKm = r;
+          break;
+        }
+      }
+      const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 40);
+      const withAvail = await Promise.all(
+        inRange.map(async ({ v }) => ({ ...summary(v, { lat, lng, availableToday: (await daySlots(v, day)).some((s) => s.status === 'available') }) })),
+      );
+      return { radiusKm, near: withAvail.filter((x) => (x.distanceKm ?? 0) <= RADIUS_STEPS[0]), further: withAvail.filter((x) => (x.distanceKm ?? 0) > RADIUS_STEPS[0]) };
+    });
+    if (!req.user) return base;
+    const saved = new Set((await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1', [req.user.userId])).map((r) => r.venue_id));
+    const mark = (v: { id: string }) => ({ ...v, isSaved: saved.has(v.id) });
+    return { ...base, near: base.near.map(mark), further: base.further.map(mark) };
+  });
+
+  app.get('/v1/venues/:id', { preHandler: optionalUser }, async (req) => {
+    const { id } = req.params as { id: string };
+    const v = await getVenueRow(id);
+    const saved = req.user ? !!(await one('select 1 from saved_venues where user_id = $1 and venue_id = $2', [req.user.userId, id])) : false;
+    return detail(v, saved);
+  });
+
+  app.get('/v1/venues/:id/slots', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { day } = parse(z.object({ day: z.string().refine(isDayKey, 'Invalid date.') }), req.query);
+    const v = await getVenueRow(id);
+    reply.header('Cache-Control', 'no-store');
+    return { venueId: id, day, slots: await daySlots(v, day), fetchedAt: Date.now() };
+  });
+
+  app.get('/v1/venues/:id/reviews', async (req) => {
+    const { id } = req.params as { id: string };
+    const v = await getVenueRow(id);
+    return cached(`reviews:${id}`, 600, async () => {
+      const items = await q<{ id: string; author_name: string; rating: number; created_at: Date; body: string }>(
+        'select id, author_name, rating, created_at, body from reviews where venue_id = $1 order by created_at desc limit 20',
+        [id],
+      );
+      const hist = await q<{ rating: number; n: number }>('select rating, count(*)::int n from reviews where venue_id = $1 group by rating', [id]);
+      const histogram = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<1 | 2 | 3 | 4 | 5, number>;
+      hist.forEach((h) => (histogram[h.rating as 1 | 2 | 3 | 4 | 5] = h.n));
+      return {
+        average: Number(v.rating),
+        count: v.review_count,
+        histogram,
+        items: items.map((r) => ({ id: r.id, author: r.author_name, rating: r.rating, at: new Date(r.created_at).getTime(), text: r.body })),
+      };
+    });
+  });
+
+  // ── Me ────────────────────────────────────────────────────────────────────
+  app.get('/v1/me', { preHandler: requireUser }, async (req) => auth.me(req.user!.userId));
+  app.get('/v1/me/saved', { preHandler: requireUser }, async (req) => {
+    const ids = await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1 order by created_at desc', [req.user!.userId]);
+    const rows = await allVenueRows();
+    return ids.map((s) => rows.find((r) => r.id === s.venue_id)).filter(Boolean).map((v) => summary(v!, { saved: true }));
+  });
+  app.put('/v1/me/saved/:venueId', { preHandler: requireUser }, async (req) => {
+    const { venueId } = req.params as { venueId: string };
+    await getVenueRow(venueId);
+    await q('insert into saved_venues (user_id, venue_id) values ($1,$2) on conflict do nothing', [req.user!.userId, venueId]);
+    return { venueId, isSaved: true };
+  });
+  app.delete('/v1/me/saved/:venueId', { preHandler: requireUser }, async (req) => {
+    const { venueId } = req.params as { venueId: string };
+    await q('delete from saved_venues where user_id = $1 and venue_id = $2', [req.user!.userId, venueId]);
+    return { venueId, isSaved: false };
+  });
+  app.get('/v1/me/bookings', { preHandler: requireUser }, async (req) => bookings.listBookings(req.user!.userId));
+  app.get('/v1/me/notifications', { preHandler: requireUser }, async (req) => {
+    const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date }>(
+      'select id, kind, title, body, read_at, created_at from notifications where user_id = $1 order by created_at desc limit 50',
+      [req.user!.userId],
+    );
+    return rows.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, read: !!n.read_at, at: new Date(n.created_at).getTime() }));
+  });
+  app.get('/v1/me/requests', { preHandler: requireUser }, async (req) => {
+    const rows = await q<{ id: string; kind: string; venue_name: string; area: string; day: string; start_min: number; end_min: number; spots_total: number; spots_filled: number; share: number; status: string }>(
+      `select r.id, 'posted' kind, v.name venue_name, v.area, b.day::text, b.start_min, b.end_min, r.spots_total, r.spots_filled, r.share, r.status
+         from player_requests r join bookings b on b.id = r.booking_id join venues v on v.id = b.venue_id where r.user_id = $1
+       union all
+       select r.id, 'joined', v.name, v.area, b.day::text, b.start_min, b.end_min, r.spots_total, r.spots_filled, r.share, m.status
+         from player_request_members m join player_requests r on r.id = m.request_id join bookings b on b.id = r.booking_id join venues v on v.id = b.venue_id
+        where m.user_id = $1
+       order by day desc limit 100`,
+      [req.user!.userId],
+    );
+    return rows.map((r) => ({ id: r.id, kind: r.kind, venueName: r.venue_name, area: r.area, day: r.day, start: r.start_min, end: r.end_min, spotsTotal: r.spots_total, spotsFilled: r.spots_filled, sharePerPlayer: r.share, status: r.status }));
+  });
+
+  // ── Holds & checkout ──────────────────────────────────────────────────────
+  app.post('/v1/holds', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
+    const { slotId } = parse(z.object({ slotId: z.string().max(80) }), req.body);
+    return bookings.remembered(idem(req), req.user!.userId, 'hold', () => bookings.createHold(req.user!.userId, slotId));
+  });
+  app.get('/v1/holds/:id', { preHandler: requireUser }, async (req) => bookings.getHold(req.user!.userId, (req.params as { id: string }).id));
+
+  app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+    const { holdId } = parse(z.object({ holdId: z.string().uuid() }), req.body);
+    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '');
+  });
+  app.get('/v1/payments/:id', { preHandler: requireUser }, async (req) => {
+    const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+    return payments.paymentStatus(req.user!.userId, id);
+  });
+
+  /** bKash redirects the user's browser here. We verify server-side, then hand back to the app. */
+  const backToApp = (reply: FastifyReply, paymentId: string, status: string) =>
+    reply.redirect(`${config.APP_SCHEME}://payment-return?paymentId=${encodeURIComponent(paymentId)}&status=${encodeURIComponent(status)}`, 302);
+
+  app.get('/v1/payments/bkash/callback', async (req, reply) => {
+    const { paymentID, status } = parse(z.object({ paymentID: z.string().max(100), status: z.enum(['success', 'failure', 'cancel']) }), req.query);
+    const p = await one<{ id: string }>('select id from payments where provider_payment_id = $1', [paymentID]);
+    if (!p) throw new ApiError('not_found', 'Payment not found.');
+    if (status !== 'success') {
+      await payments.abandon(p.id, status === 'cancel' ? 'cancelled' : 'failed');
+      return backToApp(reply, p.id, status);
+    }
+    // The query-string "success" is NOT trusted: finalize() executes & verifies with bKash.
+    const r = await payments.finalize(p.id).catch(() => ({ status: 'pending' }));
+    return backToApp(reply, p.id, r.status);
+  });
+
+  if (isSimulated()) {
+    // Fake checkout page for end-to-end testing without bKash credentials. Disabled in production.
+    app.get('/v1/payments/simulate/:id', async (req, reply) => {
+      const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+      const p = await one<{ amount: number; status: string }>('select amount, status from payments where id = $1', [id]);
+      if (!p) throw new ApiError('not_found', 'Payment not found.');
+      reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'").type('text/html');
+      return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Simulated bKash</title>
+<body style="font-family:system-ui;background:#FFF1F7;display:grid;place-items:center;min-height:100vh;margin:0">
+<form method="post" style="background:#fff;padding:28px;border-radius:24px;text-align:center;max-width:320px">
+<h2 style="color:#E2136E;margin:0 0 6px">bKash (simulated)</h2><p>Test payment of <b>৳${(p.amount / 100).toLocaleString('en-IN')}</b>. No real money moves.</p>
+<button name="action" value="pay" style="background:#E2136E;color:#fff;border:0;border-radius:999px;padding:14px 28px;font-size:16px">Pay</button>
+<button name="action" value="cancel" style="background:none;border:0;margin-left:8px;font-size:16px">Cancel</button></form></body>`;
+    });
+    app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_r, body, done) => done(null, Object.fromEntries(new URLSearchParams(String(body)))));
+    app.post('/v1/payments/simulate/:id', async (req, reply) => {
+      const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+      const { action } = parse(z.object({ action: z.enum(['pay', 'cancel']) }), req.body);
+      if (action === 'cancel') {
+        await payments.abandon(id, 'cancelled');
+        return backToApp(reply, id, 'cancel');
+      }
+      await q("update payments set last_response = coalesce(last_response, '{}'::jsonb) || '{\"simApproved\": true}'::jsonb where id = $1 and status = 'pending'", [id]);
+      const r = await payments.finalize(id);
+      return backToApp(reply, id, r.status);
+    });
+  }
+
+  // ── Bookings ──────────────────────────────────────────────────────────────
+  app.get('/v1/bookings/:id', { preHandler: requireUser }, async (req) => bookings.getBooking(req.user!.userId, (req.params as { id: string }).id));
+  app.post('/v1/bookings/:id/cancel', { preHandler: requireUser }, async (req) => bookings.cancelBooking(req.user!.userId, (req.params as { id: string }).id));
+
+  /** Owner scanner: verify a QR pass and check the player in (only for the owner's own venues). */
+  app.post('/v1/passes/check-in', { preHandler: requireUser }, async (req) => {
+    if (!req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'Only venue owners can scan passes.');
+    const { token } = parse(z.object({ token: z.string().max(300) }), req.body);
+    const pass = verifyPass(token);
+    if (!pass) throw new ApiError('invalid', 'This pass is not valid.');
+    const b = await one<{ id: string; status: string; code: string }>(
+      `update bookings b set status = 'checked_in' from venues v
+        where b.id = $1 and v.id = b.venue_id and v.owner_id = $2 and b.status = 'confirmed' returning b.id, b.status, b.code`,
+      [pass.bookingId, req.user!.userId],
+    );
+    if (!b) throw new ApiError('conflict', 'Pass already used, cancelled, or for another venue.');
+    return { ok: true, code: b.code };
+  });
+
+  // ── Internal jobs (called by Supabase pg_cron + pg_net every minute) ───────
+  app.post('/internal/reconcile', async (req) => {
+    const secret = req.headers['x-cron-secret'];
+    if (!config.CRON_SECRET || typeof secret !== 'string' || !safeEqual(secret, config.CRON_SECRET)) throw new ApiError('unauthorized', 'Unauthorized.');
+    return payments.reconcile();
+  });
+
+  app.get('/v1/config', async () => ({
+    paymentsEnabled: bkashEnabled(),
+    horizonDays: config.BOOKING_HORIZON_DAYS,
+    horizonEnd: addDays(dhakaToday(), config.BOOKING_HORIZON_DAYS),
+    // Public realtime settings: the anon key can only read slot_updates (see migration 003).
+    realtime: config.SUPABASE_URL && config.SUPABASE_ANON_KEY ? { url: config.SUPABASE_URL, anonKey: config.SUPABASE_ANON_KEY, table: 'slot_updates' } : null,
+  }));
+
+  return app;
+}
