@@ -19,7 +19,9 @@ import { Text } from './text';
  * dark disc against the right edge that the right thumb rolls up and down.
  *
  * Like the camera dial the scale is uneven: short distances get more room,
- * long ones bunch up (angle ∝ km^0.6), so 5→50 km is about a 80° turn.
+ * long ones bunch up (angle ∝ km^0.7), so 5→50 km is about a 90° turn.
+ * Labels thin out where the scale tightens (every 5 km up to 20, then every
+ * 10); 25/35/45 are plain marks, the pointer and the readout name them.
  * The face runs from 0 so the top never looks empty, but you can't pick
  * below 5 km. Everything during a drag runs on the UI thread; React only
  * re-renders when the value crosses a 5 km detent.
@@ -28,8 +30,8 @@ export const DISTANCES = Array.from({ length: 10 }, (_, i) => (i + 1) * 5);
 export const DEFAULT_DISTANCE = 5;
 const MIN = DISTANCES[0];
 const MAX = DISTANCES[DISTANCES.length - 1];
-const POW = 0.6;
-const SPAN_DEG = 110; // 0 → 50 km
+const POW = 0.7;
+const SPAN_DEG = 115; // 0 → 50 km
 const K = SPAN_DEG / Math.pow(MAX, POW);
 
 /** km → dial angle (deg) */
@@ -48,7 +50,8 @@ const TICKS = [
   ...Array.from({ length: 20 }, (_, i) => i / 2),
   ...Array.from({ length: MAX - 10 + 1 }, (_, i) => 10 + i),
 ];
-const LABELS = [0, ...DISTANCES];
+const labelled = (km: number) => km <= 20 || km % 10 === 0;
+const LABELS = [0, ...DISTANCES].filter(labelled);
 const SPRING = { damping: 22, stiffness: 220, mass: 0.7 };
 
 /** The static face: built once, then only the whole layer rotates. */
@@ -56,7 +59,8 @@ const DialFace = memo(function DialFace({ R }: { R: number }) {
   return (
     <>
       {TICKS.map((km) => {
-        const major = km % 5 === 0;
+        const major = km % 5 === 0 && labelled(km);
+        const mid = km % 5 === 0 && !major;
         const whole = Number.isInteger(km);
         return (
           <View
@@ -66,8 +70,8 @@ const DialFace = memo(function DialFace({ R }: { R: number }) {
             <View
               style={[
                 styles.tick,
-                major ? styles.tickMajor : whole ? styles.tickWhole : styles.tickHalf,
-                { top: R - (major ? 1 : 0.5) },
+                major ? styles.tickMajor : mid ? styles.tickMid : whole ? styles.tickWhole : styles.tickHalf,
+                { top: R - (major || mid ? 1 : 0.5) },
                 km < MIN && styles.tickDim,
               ]}
             />
@@ -278,7 +282,8 @@ const styles = StyleSheet.create({
   disc: { position: 'absolute', backgroundColor: 'rgba(22,27,29,0.72)', overflow: 'hidden' },
   tick: { position: 'absolute', left: 0, backgroundColor: colors.textOnDark },
   tickMajor: { width: 26, height: 2, opacity: 1 },
-  tickWhole: { width: 14, height: 1, opacity: 0.75 },
+  tickMid: { width: 20, height: 2, opacity: 0.9 },
+  tickWhole: { width: 12, height: 1, opacity: 0.7 },
   tickHalf: { width: 8, height: 1, opacity: 0.4 },
   tickDim: { opacity: 0.25 },
   label: { position: 'absolute', left: 34, width: 48, height: 44, alignItems: 'center', justifyContent: 'center' },
