@@ -1,0 +1,20 @@
+name: Seed demo turfs
+on:
+  workflow_dispatch:
+    inputs:
+      phone: { description: 'Owner phone (10 digits)', required: true }
+      password: { description: 'Owner password', required: true }
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Create demo turfs on the live API
+        env:
+          PHONE: ${{ inputs.phone }}
+          PASSWORD: ${{ inputs.password }}
+        run: |
+          echo "::add-mask::$PASSWORD"
+          node server/scripts/seed-demo-turfs.mjs https://api.turfsides.com "$PHONE" "$PASSWORD"
