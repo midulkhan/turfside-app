@@ -1,0 +1,21 @@
+name: Diagnose live API
+on: workflow_dispatch
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health + sign-up probe
+        run: |
+          curl -sS -m 20 https://api.turfsides.com/health; echo
+          curl -sS -m 20 https://api.turfsides.com/v1/config; echo
+          curl -sS -m 20 -X POST https://api.turfsides.com/v1/auth/signup/start -H 'Content-Type: application/json' \
+            -d '{"name":"Diag Test","phone":"1799999123","password":"diagnostic pass 1"}'; echo
+      - name: Server error log (last lines)
+        env:
+          S: ${{ secrets.FTP_SERVER }}
+          U: ${{ secrets.FTP_USERNAME }}
+          P: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          curl -s --ssl-reqd --insecure --max-time 30 --user "$U:$P" "ftp://$S/stderr.log" -o err.log || true
+          wc -c err.log || true
+          tail -c 6000 err.log | grep -v -i "password\|secret" || true
