@@ -1,0 +1,23 @@
+name: FTP inspect (diagnostics)
+on: workflow_dispatch
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp >/dev/null
+      - name: Inspect FTP account
+        env:
+          S: ${{ secrets.FTP_SERVER }}
+          U: ${{ secrets.FTP_USERNAME }}
+          P: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          lftp -u "$U,$P" -e "set ftp:ssl-force true; set ssl:verify-certificate no; set net:max-retries 1; set net:timeout 20;
+            echo '== PWD'; pwd;
+            echo '== ROOT'; cls -la /;
+            echo '== PARENT'; cls -la ..;
+            echo '== PARENT2'; cls -la ../..;
+            echo '== dist'; cls -la /dist;
+            echo '== find cgi-bin/index.html/package.json (depth 3)'; find -d 3 / ;
+            bye" "$S" 2>&1 | grep -v -E '\.webp$' | head -200
+          echo "FTP user: ${U%%@*} @ ${U#*@}"
