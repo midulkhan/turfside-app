@@ -60,6 +60,7 @@ async function optionalUser(req: FastifyRequest) {
 }
 
 const RADIUS_STEPS = [5, 10, 20, 30];
+const STARTED_AT = new Date().toISOString();
 const MIN_RESULTS = 5;
 
 export async function buildApp() {
@@ -109,6 +110,7 @@ export async function buildApp() {
       storage: await pingStorage(),
       payments: config.BKASH_MODE,
       missing: missingConfig(),
+      startedAt: STARTED_AT, // changes on every restart: shows whether new settings were picked up
       time: new Date().toISOString(),
     };
   });

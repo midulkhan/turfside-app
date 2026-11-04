@@ -85,7 +85,7 @@ export function missingConfig() {
   if (config.SMS_PROVIDER === 'http' && !config.SMS_HTTP_URL) missing.push('SMS_HTTP_URL');
   if ((config.BKASH_MODE === 'sandbox' || config.BKASH_MODE === 'live') && !(config.BKASH_APP_KEY && config.BKASH_APP_SECRET && config.BKASH_USERNAME && config.BKASH_PASSWORD))
     missing.push('BKASH_* credentials');
-  if (!(config.R2_ENDPOINT && config.R2_ACCESS_KEY_ID && config.R2_SECRET_ACCESS_KEY && config.R2_BUCKET && config.R2_PUBLIC_URL))
-    missing.push('R2_* (photo uploads disabled)');
+  const r2 = (['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'] as const).filter((k) => !config[k]);
+  if (r2.length) missing.push(`${r2.join(', ')} (photo uploads disabled)`);
   return missing;
 }
