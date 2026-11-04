@@ -68,7 +68,7 @@ import {
   type DayKey,
   type DayPart,
 } from '@/lib/time';
-import { colors, gutter, radius, shadow, space } from '@/theme/tokens';
+import { colors, font, gutter, radius, shadow, space } from '@/theme/tokens';
 
 const DAYS_AHEAD = 60; // booking horizon (server config in production)
 const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
@@ -229,8 +229,8 @@ export default function VenueScreen() {
                 </Pressable>
               ) : null}
               <View style={styles.addressRow}>
-                <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
-                <Text variant="label" color={colors.textMuted} style={styles.flex} numberOfLines={1}>
+                <MapPin size={16} color={colors.textMuted} strokeWidth={1.7} />
+                <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.address]} numberOfLines={1}>
                   {v.shortAddress} · {distance} away
                 </Text>
                 <Pressable accessibilityRole="link" onPress={openMap} hitSlop={8} style={styles.mapLink}>
@@ -317,7 +317,7 @@ export default function VenueScreen() {
                         <Text variant="label" color={active ? colors.ink : colors.textMuted}>
                           {weekday(d)}
                         </Text>
-                        <Text variant="h3" color={colors.ink}>
+                        <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
                           {String(dayOfMonth(d)).padStart(2, '0')}
                         </Text>
                       </PressableScale>
@@ -490,8 +490,8 @@ function AmenityStrip({ v }: { v: VenueDetail }) {
     <Card padded={false} style={styles.strip}>
       {items.map((it, i) => (
         <View key={it.label} style={[styles.stripItem, i > 0 && styles.stripDivider]}>
-          <it.icon size={24} color={colors.ink} strokeWidth={1.5} />
-          <Text variant="caption" color={colors.textMuted} numberOfLines={2} align="center" style={styles.stripLabel}>
+          <it.icon size={20} color={colors.ink} strokeWidth={1.4} />
+          <Text variant="body" color={colors.textMuted} numberOfLines={2} align="center" style={styles.stripLabel}>
             {it.label}
           </Text>
         </View>
@@ -527,6 +527,7 @@ function Timeline({ grouped, selectedId, onPick }: { grouped: Record<DayPart, Sl
                   <SlotTicket slot={s} selected={s.id === selectedId} onPress={onPick} />
                 </View>
               ))}
+              {grouped[p.key].length % 2 ? <View style={styles.slotCell} /> : null}
             </View>
           </View>
         );
@@ -669,13 +670,15 @@ const styles = StyleSheet.create({
 
   body: { paddingHorizontal: gutter, paddingTop: space[5], gap: space[4] },
   titleBlock: { gap: space[2] },
-  name: { fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
+  name: { fontFamily: font.semibold, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
+  address: { fontSize: 13.5, lineHeight: 18 },
+  dateNum: { fontSize: 16, lineHeight: 20 },
   addressRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: space[2] },
 
   strip: { flexDirection: 'row', paddingVertical: space[4] },
   stripItem: { flex: 1, alignItems: 'center', gap: 6, paddingHorizontal: 2 },
-  stripLabel: { fontSize: 12, lineHeight: 15 },
+  stripLabel: { fontSize: 11.5, lineHeight: 14 },
   stripDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
 
   tabs: { flexDirection: 'row', gap: space[6], borderBottomWidth: 1, borderBottomColor: colors.border, marginTop: space[1] },
@@ -720,8 +723,9 @@ const styles = StyleSheet.create({
   nodeOn: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
   nodeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.limeText },
   partLabel: { width: 70, alignItems: 'center', paddingTop: space[3], gap: 4 },
-  slotGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', marginRight: -3, paddingBottom: space[2] },
-  slotCell: { width: '50%', padding: 3 },
+  // No negative margins: Android clips anything that pokes outside its parent (that cut the tickets' right borders).
+  slotGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: space[2] },
+  slotCell: { flexBasis: '40%', flexGrow: 1 },
 
   accordionHead: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[4], minHeight: 60 },
   accordionBody: { paddingHorizontal: space[4], paddingBottom: space[4], gap: space[2] },

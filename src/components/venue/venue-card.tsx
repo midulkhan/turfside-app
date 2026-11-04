@@ -15,7 +15,7 @@ import type { VenueSummary } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatDistance } from '@/lib/geo';
 import { formatTaka } from '@/lib/money';
-import { colors, radius, space } from '@/theme/tokens';
+import { colors, font, radius, space } from '@/theme/tokens';
 
 /** Founder-approved venue card. Memoised: list re-renders skip unchanged cards. */
 export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummary }) {
@@ -46,16 +46,16 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
           <View style={styles.body}>
             <View style={styles.titleRow}>
               <View style={styles.flex}>
-                <Text variant="title" numberOfLines={1}>
+                <Text variant="bodyStrong" numberOfLines={1} style={styles.name}>
                   {venue.name}
                 </Text>
-                <Text variant="label" color={colors.textMuted} numberOfLines={1}>
+                <Text variant="body" color={colors.textMuted} numberOfLines={1} style={styles.meta}>
                   {venue.area}
                   {venue.distanceKm != null ? ` · ${formatDistance(venue.distanceKm)}` : ''}
                 </Text>
               </View>
               <View style={styles.price}>
-                <Text variant="title">{formatTaka(venue.hourlyFrom)}</Text>
+                <Text variant="bodyStrong">{formatTaka(venue.hourlyFrom)}</Text>
                 <Text variant="caption" color={colors.textMuted}>
                   / hour
                 </Text>
@@ -63,8 +63,8 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
             </View>
             <View style={styles.tags}>
               <View style={styles.tag}>
-                <UsersRound size={16} color={colors.textMuted} strokeWidth={1.8} />
-                <Text variant="label" color={colors.textMuted}>
+                <UsersRound size={14} color={colors.textMuted} strokeWidth={1.6} />
+                <Text variant="body" color={colors.textMuted} style={styles.tagText}>
                   {venue.formats[0]}
                 </Text>
               </View>
@@ -72,8 +72,8 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
                 <>
                   <View style={styles.dot} />
                   <View style={styles.tag}>
-                    <Lightbulb size={16} color={colors.textMuted} strokeWidth={1.8} />
-                    <Text variant="label" color={colors.textMuted}>
+                    <Lightbulb size={14} color={colors.textMuted} strokeWidth={1.6} />
+                    <Text variant="body" color={colors.textMuted} style={styles.tagText}>
                       Floodlights
                     </Text>
                   </View>
@@ -84,15 +84,15 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
             <View style={styles.footer}>
               <View style={styles.tag}>
                 {venue.availableToday ? <LiveDot /> : <View style={[styles.avail, styles.availOff]} />}
-                <Text variant="labelStrong" color={venue.availableToday ? colors.text : colors.textMuted}>
+                <Text variant="label" color={venue.availableToday ? colors.text : colors.textMuted}>
                   {venue.availableToday ? 'Available today' : 'Fully booked today'}
                 </Text>
               </View>
               <View style={styles.cta}>
-                <Text variant="labelStrong" color={colors.textOnDark}>
+                <Text variant="label" color={colors.textOnDark} style={styles.ctaText}>
                   View slots
                 </Text>
-                <ArrowUpRight size={16} color={colors.textOnDark} strokeWidth={2.2} />
+                <ArrowUpRight size={14} color={colors.textOnDark} strokeWidth={2} />
               </View>
             </View>
           </View>
@@ -163,6 +163,10 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', gap: space[3] },
   flex: { flex: 1, gap: 2 },
   price: { alignItems: 'flex-end' },
+  name: { fontFamily: font.medium, fontSize: 15.5, lineHeight: 20 },
+  meta: { fontSize: 13, lineHeight: 17 },
+  tagText: { fontSize: 12.5, lineHeight: 16 },
+  ctaText: { fontSize: 13, lineHeight: 16 },
   tags: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong },
@@ -172,10 +176,10 @@ const styles = StyleSheet.create({
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     backgroundColor: colors.ink,
-    height: 40,
-    paddingHorizontal: space[4],
+    height: 34,
+    paddingHorizontal: space[3] + 2,
     borderRadius: radius.pill,
   },
 });

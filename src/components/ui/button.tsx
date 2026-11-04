@@ -63,11 +63,11 @@ export function Button({
         small && styles.small,
         { backgroundColor: p.bg, borderColor: p.border },
         spread && styles.spread,
-        inactive && styles.inactive,
+        disabled && styles.inactive,
         style,
       ]}>
       {loading ? (
-        <ActivityIndicator color={p.fg} />
+        <ActivityIndicator color={variant === 'primary' ? colors.ink : p.fg} />
       ) : (
         <>
           {spread ? <View style={styles.spacer} /> : null}
