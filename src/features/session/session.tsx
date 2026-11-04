@@ -7,7 +7,7 @@ import { KNOWN_AREAS } from '@/lib/places';
 import { persister, queryClient } from '@/lib/query-client';
 import { prefs } from '@/lib/storage';
 
-type Place = { name: string; city: string; lat: number; lng: number; source: 'gps' | 'manual' };
+export type Place = { name: string; city: string; lat: number; lng: number; source: 'gps' | 'map' | 'manual' };
 
 type SessionState = {
   ready: boolean;

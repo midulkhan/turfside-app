@@ -2,9 +2,9 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
-import { ArrowRight, Bell, ChevronDown, MapPin, Menu, Moon, Search, SlidersHorizontal } from 'lucide-react-native';
+import { ArrowRight, Bell, ChevronDown, ChevronRight, LocateFixed, Map, MapPin, Menu, Moon, Search, SlidersHorizontal } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SideMenu } from '@/components/navigation/side-menu';
@@ -14,11 +14,11 @@ import { Overline, SectionTitle } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { OptionSheet } from '@/components/ui/option-sheet';
 import { PressableScale } from '@/components/ui/pressable-scale';
+import { Sheet } from '@/components/ui/sheet';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { KNOWN_AREAS } from '@/lib/places';
 import { useExplore } from '@/features/api/queries';
 import type { PitchFormat, VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
@@ -44,12 +44,14 @@ export default function Explore() {
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
-  const { place, setPlace } = useSession();
+  const { place } = useSession();
   const { locate, locating } = useLocate();
   const today = dhakaToday();
   const [day, setDay] = useState<DayKey>(today);
   const [format, setFormat] = useState<PitchFormat | 'any'>('5-a-side');
   const [floodlitOnly, setFloodlitOnly] = useState(false);
+  // Nearby is a quick client-side filter (turfs within 5 km), so toggling it never refetches or flickers.
+  const [nearbyOnly, setNearbyOnly] = useState(false);
   const [sheet, setSheet] = useState<null | 'day' | 'format' | 'place' | 'filters' | 'menu'>(null);
 
   const params = useMemo(
@@ -63,10 +65,10 @@ export default function Explore() {
     if (!data) return [];
     const out: Row[] = [];
     if (data.near.length) {
-      out.push({ type: 'header', key: 'h-near', title: 'Recommended nearby' });
+      out.push({ type: 'header', key: 'h-near', title: nearbyOnly ? 'Within 5 km' : 'Recommended nearby' });
       data.near.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
-    if (data.further.length) {
+    if (data.further.length && !nearbyOnly) {
       out.push({
         type: 'header',
         key: 'h-far',
@@ -75,7 +77,7 @@ export default function Explore() {
       data.further.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     return out;
-  }, [data]);
+  }, [data, nearbyOnly]);
 
   const dayOptions = useMemo(
     () =>
@@ -107,13 +109,13 @@ export default function Explore() {
         <IconButton icon={Menu} label="Menu" onPress={() => setSheet('menu')} />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Playing near ${place.name}. Change area`}
+          accessibilityLabel={`Playing near ${place.name}. Change location`}
           onPress={() => setSheet('place')}
           style={styles.place}>
-          <Overline>Playing near</Overline>
+          <Overline>{locating ? 'Finding you…' : 'Playing near'}</Overline>
           <View style={styles.placeRow}>
-            <Text variant="bodyStrong">
-              {place.name}, {place.city}
+            <Text variant="bodyStrong" numberOfLines={1} style={styles.placeName}>
+              {[place.name, place.city].filter(Boolean).join(', ')}
             </Text>
             <ChevronDown size={18} color={colors.ink} strokeWidth={2.2} />
           </View>
@@ -168,13 +170,7 @@ export default function Explore() {
       <View style={styles.chips}>
         <Chip label={dayLabel} dropdown onPress={() => setSheet('day')} style={styles.chip} />
         <Chip label={format === 'any' ? 'Any format' : format} dropdown onPress={() => setSheet('format')} style={styles.chip} />
-        <Chip
-          label={locating ? 'Locating…' : 'Nearby'}
-          icon={MapPin}
-          active={place.source === 'gps'}
-          onPress={locate}
-          style={styles.chip}
-        />
+        <Chip label="Nearby" icon={MapPin} active={nearbyOnly} onPress={() => setNearbyOnly((v) => !v)} style={styles.chip} />
       </View>
 
       <PressableScale
@@ -226,12 +222,19 @@ export default function Explore() {
           ) : (
             <EmptyState
               icon={MapPin}
-              title="No turfs here yet"
-              body="We’re adding venues in new areas every week. Try a different format or area."
-              action="Clear filters"
+              title={nearbyOnly && data?.further.length ? 'Nothing within 5 km' : 'No turfs here yet'}
+              body={
+                nearbyOnly && data?.further.length
+                  ? `There are ${data.further.length} turf${data.further.length > 1 ? 's' : ''} a little further away.`
+                  : 'We’re adding venues in new areas every week. Try a different format or location.'
+              }
+              action={nearbyOnly && data?.further.length ? 'Show all turfs' : 'Clear filters'}
               onAction={() => {
-                setFormat('any');
-                setFloodlitOnly(false);
+                setNearbyOnly(false);
+                if (!(nearbyOnly && data?.further.length)) {
+                  setFormat('any');
+                  setFloodlitOnly(false);
+                }
               }}
             />
           )
@@ -266,26 +269,88 @@ export default function Explore() {
         onSelect={(v) => setFloodlitOnly(v === 'floodlit')}
         onClose={() => setSheet(null)}
       />
-      <OptionSheet
+      <LocationSheet
         visible={sheet === 'place'}
-        title="Where are you playing?"
-        options={[
-          { value: '__gps', label: 'Use my current location', detail: 'Most accurate distances' },
-          ...KNOWN_AREAS.map((a) => ({ value: a.name, label: a.name, detail: a.city })),
-        ]}
-        value={place.source === 'gps' ? '__gps' : place.name}
-        onSelect={(v) => {
-          if (v === '__gps') return void locate();
-          const a = KNOWN_AREAS.find((x) => x.name === v);
-          if (a) setPlace({ ...a, source: 'manual' });
-        }}
         onClose={() => setSheet(null)}
+        locating={locating}
+        onCurrent={() => {
+          setSheet(null);
+          void locate();
+        }}
+        onMap={() => {
+          setSheet(null);
+          router.push('/pick-location');
+        }}
       />
     </View>
   );
 }
 
+/** Where are you playing? Current location (GPS) or a pin on the map. */
+function LocationSheet({
+  visible,
+  onClose,
+  onCurrent,
+  onMap,
+  locating,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCurrent: () => void;
+  onMap: () => void;
+  locating: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const rows = [
+    { key: 'gps', icon: LocateFixed, title: 'Use my current location', detail: 'Most accurate distances', onPress: onCurrent },
+    { key: 'map', icon: Map, title: 'Set location on map', detail: 'Drop a pin anywhere', onPress: onMap },
+  ];
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={[styles.sheetBody, { paddingBottom: insets.bottom + space[4] }]}>
+        <Text variant="h3" style={styles.sheetTitle}>
+          Where are you playing?
+        </Text>
+        {rows.map((r) => (
+          <Pressable
+            key={r.key}
+            accessibilityRole="button"
+            onPress={r.onPress}
+            disabled={locating && r.key === 'gps'}
+            style={({ pressed }) => [styles.sheetRow, pressed && styles.sheetPressed]}>
+            <View style={styles.sheetIcon}>
+              <r.icon size={22} color={colors.ink} strokeWidth={2} />
+            </View>
+            <View style={styles.flex}>
+              <Text variant="bodyStrong">{r.title}</Text>
+              <Text variant="label" color={colors.textMuted}>
+                {r.detail}
+              </Text>
+            </View>
+            {locating && r.key === 'gps' ? <ActivityIndicator color={colors.ink} /> : <ChevronRight size={20} color={colors.ink} />}
+          </Pressable>
+        ))}
+      </View>
+    </Sheet>
+  );
+}
+
 const styles = StyleSheet.create({
+  sheetBody: { paddingHorizontal: gutter, paddingTop: space[2], gap: space[2] },
+  sheetTitle: { marginBottom: space[2] },
+  sheetRow: {
+    minHeight: 72,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: space[4],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+  },
+  sheetPressed: { backgroundColor: colors.bg },
+  sheetIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.limeSoft, alignItems: 'center', justifyContent: 'center' },
+  placeName: { maxWidth: 240 },
   root: { flex: 1, backgroundColor: colors.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, zIndex: 2 },
   place: { alignItems: 'center', gap: 2, minHeight: 48, justifyContent: 'center' },
