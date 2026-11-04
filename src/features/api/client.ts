@@ -34,8 +34,9 @@ const enc = encodeURIComponent;
 export const getConfig = (signal?: AbortSignal) => request<AppConfig>('GET', '/v1/config', { signal });
 
 // ---- auth -------------------------------------------------------------------
-export const signupStart = (b: { name: string; phone: string; email?: string; password: string; role: 'player' | 'owner' }) =>
-  request<CodeSent>('POST', '/v1/auth/signup/start', { body: b });
+/** The player app only creates player accounts; owners sign up in the owner app. */
+export const signupStart = (b: { name: string; phone: string; email?: string; password: string }) =>
+  request<CodeSent>('POST', '/v1/auth/signup/start', { body: { ...b, role: 'player' } });
 
 export const signupVerify = (phone: string, code: string) => request<AuthResult>('POST', '/v1/auth/signup/verify', { body: { phone, code } });
 

@@ -31,7 +31,7 @@ d('mobile app client ↔ live API', () => {
   });
 
   it('signs up with an SMS code and stores tokens', async () => {
-    const sent = await api.signupStart({ name: 'App Tester', phone, password: 'app password 1', role: 'player' });
+    const sent = await api.signupStart({ name: 'App Tester', phone, password: 'app password 1' });
     expect(sent.devCode).toMatch(/^\d{6}$/);
     await expect(api.signupVerify(phone, '000000')).rejects.toBeInstanceOf(ApiError);
     const auth = await api.signupVerify(phone, sent.devCode!);

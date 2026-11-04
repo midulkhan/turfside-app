@@ -18,7 +18,7 @@ type Props = {
   wave?: 'a' | 'b';
 };
 
-/** Shared layout for sign in / sign up / owner sign up: light header, wave, dark form. */
+/** Shared layout for sign in / sign up: light header, wave, dark form. */
 export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a' }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();

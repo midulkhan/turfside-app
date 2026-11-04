@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, ArrowUpRight, CircleCheck, Clock3, MapPin, QrCode } from 'lucide-react-native';
+import { ArrowRight, CircleCheck, Clock3, MapPin, QrCode } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
 import Animated, {
@@ -131,9 +131,9 @@ export default function Onboarding() {
   });
   const heroH = Math.min(height * 0.44, 420);
 
-  const finish = (to: '/sign-up' | '/owner-sign-up' = '/sign-up') => {
+  const finish = () => {
     completeOnboarding();
-    router.replace(to);
+    router.replace('/sign-up');
   };
   const next = () => {
     if (page >= SLIDES.length - 1) return finish();
@@ -205,16 +205,6 @@ export default function Onboarding() {
           spread
           onPress={next}
         />
-        <Pressable
-          accessibilityRole="link"
-          onPress={() => finish('/owner-sign-up')}
-          style={[styles.owner, page !== SLIDES.length - 1 && styles.hidden]}
-          disabled={page !== SLIDES.length - 1}>
-          <Text variant="labelStrong" style={styles.underline}>
-            Own a turf? List your venue
-          </Text>
-          <ArrowUpRight size={16} color={colors.ink} />
-        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -290,7 +280,4 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: gutter, paddingBottom: space[3], gap: space[5] },
   dots: { flexDirection: 'row', gap: space[2], justifyContent: 'center' },
   dot: { height: 10, borderRadius: 5 },
-  owner: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 4, minHeight: 32 },
-  hidden: { opacity: 0 },
-  underline: { textDecorationLine: 'underline' },
 });

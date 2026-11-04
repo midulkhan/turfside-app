@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, ArrowUpRight } from 'lucide-react-native';
+import { ArrowRight } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
@@ -39,11 +39,11 @@ export default function SignUp() {
       return;
     }
     setLoading(true);
-    const details = { name: name.trim(), phone, email: email.trim() || undefined, password, role: 'player' as const };
+    const details = { name: name.trim(), phone, email: email.trim() || undefined, password };
     try {
       const res = await api.signupStart(details);
       pendingSignup.set(details);
-      router.push({ pathname: '/verify', params: { phone, role: 'player', devCode: res.devCode ?? '' } });
+      router.push({ pathname: '/verify', params: { phone, devCode: res.devCode ?? '' } });
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t create your account', errorMessage(e));
@@ -125,15 +125,6 @@ export default function SignUp() {
             </Text>
           </Text>
         </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.replace('/owner-sign-up')} style={styles.row} hitSlop={8}>
-          <Text variant="body" color={colors.textOnDarkMuted}>
-            Own a turf?{' '}
-            <Text variant="body" color={colors.textOnDarkMuted} style={styles.u}>
-              Register as an owner
-            </Text>
-          </Text>
-          <ArrowUpRight size={16} color={colors.textOnDarkMuted} />
-        </Pressable>
       </View>
     </AuthShell>
   );
@@ -142,6 +133,5 @@ export default function SignUp() {
 const styles = StyleSheet.create({
   form: { gap: space[4] },
   links: { gap: space[4], alignItems: 'center', marginTop: space[2] },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   u: { textDecorationLine: 'underline' },
 });

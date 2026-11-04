@@ -1,6 +1,6 @@
 import { router, useScrollToTop } from 'expo-router';
 import { useRef } from 'react';
-import { Bell, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, Store, type LucideIcon } from 'lucide-react-native';
+import { Bell, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react-native';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -95,15 +95,6 @@ export default function Profile() {
         <Row icon={Bell} label="Notifications" onPress={() => router.push('/notifications')} />
         <Divider />
         <Row icon={ShieldCheck} label="Privacy & security" onPress={soon('Privacy & security')} />
-      </Card>
-
-      <Overline>For turf owners</Overline>
-      <Card padded={false}>
-        <Row
-          icon={Store}
-          label={user?.roles.includes('owner') ? 'Open owner workspace' : 'List your turf'}
-          onPress={() => router.push('/owner')}
-        />
       </Card>
 
       <Overline>Support</Overline>

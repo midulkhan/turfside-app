@@ -7,7 +7,6 @@ import {
   Heart,
   LogOut,
   Settings,
-  Store,
   UsersRound,
   X,
   type LucideIcon,
@@ -116,15 +115,6 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
           ))}
         </View>
 
-        <Pressable accessibilityRole="button" onPress={() => go(() => router.push('/owner'))} style={styles.owner}>
-          <Store size={22} color={colors.ink} strokeWidth={1.9} />
-          <View style={styles.flex}>
-            <Text variant="bodyStrong">Own a turf?</Text>
-            <Text variant="label">List your venue on TurfSides</Text>
-          </View>
-          <ChevronRight size={18} color={colors.ink} />
-        </Pressable>
-
         <Pressable accessibilityRole="button" onPress={() => go(() => signOut())} style={styles.signOut}>
           <LogOut size={20} color={colors.danger} strokeWidth={1.9} />
           <Text variant="bodyStrong" color={colors.danger}>
@@ -162,14 +152,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   badgeText: { color: colors.lime, fontFamily: 'Geist_700Bold' },
-  owner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    backgroundColor: colors.lime,
-    borderRadius: radius.lg,
-    padding: space[4],
-    marginTop: space[2],
-  },
   signOut: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 48, paddingHorizontal: space[2] },
 });

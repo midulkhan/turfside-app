@@ -39,7 +39,7 @@ export default function ResetPassword() {
       const auth = await api.resetVerify(phone, code, password);
       haptic.success();
       await signIn(auth);
-      router.replace(auth.user.roles.includes('owner') ? '/owner' : '/explore');
+      router.replace('/explore');
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t reset password', errorMessage(e));

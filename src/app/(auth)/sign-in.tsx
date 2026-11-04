@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowUpRight, LogIn } from 'lucide-react-native';
+import { LogIn } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
@@ -37,7 +37,7 @@ export default function SignIn() {
       const auth = await api.login(ident.value, password);
       haptic.success();
       await signIn(auth);
-      router.replace(auth.user.roles.includes('owner') ? '/owner' : '/explore');
+      router.replace('/explore');
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t sign in', errorMessage(e));
@@ -92,12 +92,6 @@ export default function SignIn() {
             </Text>
           </Text>
         </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.replace('/owner-sign-up')} style={styles.ownerLink} hitSlop={8}>
-          <Text variant="body" color={colors.textOnDarkMuted}>
-            Own a turf? Join as an owner
-          </Text>
-          <ArrowUpRight size={16} color={colors.textOnDarkMuted} />
-        </Pressable>
         <Text variant="caption" color={colors.textOnDarkMuted} align="center">
           Terms of service · Privacy policy
         </Text>
@@ -110,5 +104,4 @@ const styles = StyleSheet.create({
   form: { gap: space[5] },
   forgot: { alignSelf: 'flex-end', marginTop: -space[2] },
   links: { gap: space[5], alignItems: 'center', marginTop: space[3] },
-  ownerLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

@@ -20,8 +20,8 @@ const MAX_ATTEMPTS = 5;
 
 /** One-time SMS code. Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
 export default function Verify() {
-  const params = useLocalSearchParams<{ phone: string; role: 'player' | 'owner'; devCode?: string }>();
-  const { phone = '', role = 'player' } = params;
+  const params = useLocalSearchParams<{ phone: string; devCode?: string }>();
+  const { phone = '' } = params;
   const [devCode, setDevCode] = useState(params.devCode || '');
   const { signIn } = useSession();
   const [code, setCode] = useState('');
@@ -48,7 +48,7 @@ export default function Verify() {
       haptic.success();
       pendingSignup.clear();
       await signIn(auth);
-      router.replace(role === 'owner' ? '/owner' : '/explore');
+      router.replace('/explore');
     } catch (e) {
       haptic.error();
       const tooMany = e instanceof ApiError && e.code === 'rate_limited';
