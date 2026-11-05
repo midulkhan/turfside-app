@@ -21,7 +21,7 @@ import * as auth from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
 import * as payments from './services/payments';
-import { allVenueRows, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
+import { allVenueRows, daySlots, detail, getVenueRow, haversineKm, invalidateDay, summary } from './services/venues';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -102,6 +102,14 @@ export async function buildApp() {
   app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: { code: 'not_found', message: 'Not found.' } }));
 
   // ── Health ────────────────────────────────────────────────────────────────
+  /** Live slot updates need both the Supabase keys (for the app) and slot_updates in the realtime publication. */
+  const realtimeState = async () => {
+    const published = await one<{ ok: boolean }>(
+      "select exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'slot_updates') ok",
+    ).then((r) => !!r?.ok, () => false);
+    if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) return published ? 'needs SUPABASE_URL + SUPABASE_ANON_KEY' : 'not_configured';
+    return published ? 'ok' : 'slot_updates not in supabase_realtime publication';
+  };
   app.get('/health', async () => {
     let db = 'not_configured';
     if (config.DATABASE_URL) db = await one('select 1 ok')
@@ -119,6 +127,7 @@ export async function buildApp() {
       cache: `${cacheBackend}:${(await pingCache()) ? 'ok' : 'error'}`,
       storage: await pingStorage(),
       payments: config.BKASH_MODE,
+      realtime: db === 'ok' ? await realtimeState() : 'unknown',
       missing: missingConfig(),
       startedAt: STARTED_AT, // changes on every restart: shows whether new settings were picked up
       time: new Date().toISOString(),
@@ -217,9 +226,12 @@ export async function buildApp() {
 
   app.get('/v1/venues/:id/slots', { preHandler: optionalUser }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const { day } = parse(z.object({ day: z.string().refine(isDayKey, 'Invalid date.') }), req.query);
+    const { day, fresh } = parse(z.object({ day: z.string().refine(isDayKey, 'Invalid date.'), fresh: z.literal('1').optional() }), req.query);
     const v = await getVenueRow(id);
     reply.header('Cache-Control', 'no-store');
+    // `fresh=1`: the app was just told (realtime) that this day changed: skip the 15 s cache
+    // so it can never be handed a copy computed a moment before the change committed.
+    if (fresh) await invalidateDay(id, day);
     return { venueId: id, day, slots: await daySlots(v, day, req.user?.userId), fetchedAt: Date.now() };
   });
 

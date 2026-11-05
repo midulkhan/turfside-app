@@ -274,6 +274,10 @@ d('cart: one order, one turf, many slots', () => {
     expect(first.json.total).toBe(s1.price + s2.price);
     expect(first.json.expiresAt - Date.now()).toBeLessThanOrEqual(5 * 60_000 + 5_000); // 5-minute window
 
+    // A realtime-triggered refetch (fresh=1) sees the hold immediately, past the server cache.
+    const freshly = (await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}&fresh=1`, undefined, b.accessToken)).json.slots as Json[];
+    expect(freshly.find((s) => s.id === s1.id)!.status).toBe('held');
+
     // Same selection again resumes it.
     const resume = await call('POST', '/v1/holds', { slotIds: [s2.id, s1.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
     expect(resume.json.holdId).toBe(first.json.holdId);

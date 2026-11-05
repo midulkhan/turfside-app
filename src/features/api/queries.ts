@@ -43,12 +43,13 @@ export function useVenue(id: string) {
   return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: 5 * 60_000 });
 }
 
-export function useSlots(id: string, day: DayKey) {
+/** `live`: realtime is connected, so polling is only a slow safety net; otherwise poll fast. */
+export function useSlots(id: string, day: DayKey, live = false) {
   return useQuery({
     queryKey: qk.slots(id, day),
     queryFn: ({ signal }) => api.getSlots(id, day, signal),
-    staleTime: 15_000,
-    refetchInterval: 30_000, // keep availability honest while the user decides
+    staleTime: live ? 30_000 : 4_000,
+    refetchInterval: live ? 60_000 : 5_000,
     placeholderData: keepPreviousData,
   });
 }

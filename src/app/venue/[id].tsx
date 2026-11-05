@@ -126,8 +126,8 @@ export default function VenueScreen() {
   const galleryRef = useRef<ComponentRef<typeof View>>(null); // Android: what the photo buttons blur
 
   const venue = useVenue(id);
-  const slots = useSlots(id, day);
-  useLiveSlots(id, day); // instant updates when someone else books
+  const live = useLiveSlots(id, day); // instant updates when someone else holds or books
+  const slots = useSlots(id, day, live);
   const reviews = useReviews(id, tab === 'reviews');
   const toggle = useToggleSaved();
   const v = venue.data;

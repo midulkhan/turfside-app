@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -56,8 +56,9 @@ export function StickyHeader({
     borderBottomColor: interpolateColor(progress.get(), [0, 1], ['rgba(229,231,224,0)', colors.border]),
   }));
   return (
-    <Animated.View style={[styles.base, floating && styles.floating, { paddingTop: safeTop ? insets.top : 0 }, anim, style]}>
-      {children}
+    <Animated.View style={[styles.base, floating && styles.floating, { paddingTop: safeTop ? insets.top : 0 }, anim]}>
+      {/* `style` goes on an inner view so a screen's own padding can never cancel the status-bar inset. */}
+      <View style={style}>{children}</View>
     </Animated.View>
   );
 }

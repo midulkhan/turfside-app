@@ -18,6 +18,7 @@ import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { useExplore } from '@/features/api/queries';
+import { useLiveExplore } from '@/features/api/realtime';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { dhakaToday } from '@/lib/time';
@@ -40,6 +41,7 @@ export default function Explore() {
   const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
   const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
   const scrolled = useScrolled();
+  useLiveExplore(day);
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),

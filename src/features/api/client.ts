@@ -64,8 +64,9 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
 
 export const getVenue = (id: string, signal?: AbortSignal) => request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
 
-export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal) =>
-  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { auth: 'optional', query: { day }, signal });
+/** `fresh`: skip the server's short cache (used right after a realtime change). */
+export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal, fresh?: boolean) =>
+  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { auth: 'optional', query: fresh ? { day, fresh: '1' } : { day }, signal });
 
 export const getReviews = (venueId: string, signal?: AbortSignal) => request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { signal });
 
