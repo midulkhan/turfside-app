@@ -28,7 +28,8 @@ function getClient(cfg: NonNullable<AppConfig['realtime']>) {
 }
 
 export function useAppConfig() {
-  return useQuery({ queryKey: ['config'], queryFn: ({ signal }) => api.getConfig(signal), staleTime: 10 * 60_000 });
+  // v2: skips settings persisted before realtime was configured on the server.
+  return useQuery({ queryKey: ['config', 2], queryFn: ({ signal }) => api.getConfig(signal), staleTime: 2 * 60_000 });
 }
 
 /** Re-fetch a day's slots past the server cache, straight into the query cache. */
