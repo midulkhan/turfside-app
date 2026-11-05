@@ -377,19 +377,30 @@ export async function buildApp() {
   });
 
   // ── Holds & checkout ──────────────────────────────────────────────────────
-  app.post('/v1/holds', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
-    const { slotId } = parse(z.object({ slotId: z.string().max(80) }), req.body);
-    return bookings.remembered(idem(req), req.user!.userId, 'hold', () => bookings.createHold(req.user!.userId, slotId));
+  // Cart & payment limits are per signed-in session, not per IP: many players can share one
+  // carrier IP, and rate limiting runs before auth, so the bearer token is the session key.
+  const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;
+  app.post('/v1/holds', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
+    // One cart per player: a new selection replaces the old cart. `slotId` (single) is still accepted.
+    const body = parse(
+      z.union([
+        z.object({ slotIds: z.array(z.string().max(80)).min(1).max(bookings.MAX_SLOTS_PER_ORDER) }),
+        z.object({ slotId: z.string().max(80) }),
+      ]),
+      req.body,
+    );
+    const ids = 'slotIds' in body ? body.slotIds : [body.slotId];
+    return bookings.remembered(idem(req), req.user!.userId, 'hold', () => bookings.createHold(req.user!.userId, ids));
   });
   app.get('/v1/holds/:id', { preHandler: requireUser }, async (req) => bookings.getHold(req.user!.userId, (req.params as { id: string }).id));
-  /** Leaving checkout without paying frees the slot for everyone straight away. */
+  /** Leaving checkout without paying frees the slots for everyone straight away. */
   app.delete('/v1/holds/:id', { preHandler: requireUser }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
     return bookings.releaseHold(req.user!.userId, id);
   });
   app.get('/v1/me/holds', { preHandler: requireUser }, async (req) => bookings.listHolds(req.user!.userId));
 
-  app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
     const { holdId, returnUrl } = parse(z.object({ holdId: z.string().uuid(), returnUrl: z.string().max(300).optional() }), req.body);
     return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl);
   });

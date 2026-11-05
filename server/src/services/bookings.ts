@@ -10,8 +10,6 @@ import { signPass } from '../lib/tokens';
 
 import { getVenueRow, invalidateDay, photoUrl, rules } from './venues';
 
-const MAX_ACTIVE_HOLDS = 3; // stops one account hoarding slots
-
 type BookingRow = {
   id: string;
   code: string;
@@ -51,112 +49,190 @@ async function newCode(c: PoolClient, day: string) {
   throw new ApiError('internal', 'Could not create a booking code. Try again.');
 }
 
-async function holdShape(b: BookingRow) {
-  const v = await getVenueRow(b.venue_id);
+type OrderRow = {
+  id: string;
+  user_id: string;
+  venue_id: string;
+  status: string;
+  hold_expires_at: Date | null;
+  price_lines: { label: string; detail?: string; amount: number }[];
+  total: number;
+};
+const ORDER_COLS = 'id, user_id, venue_id, status, hold_expires_at, price_lines, total';
+
+export const MAX_SLOTS_PER_ORDER = 6;
+
+/** Cart / checkout shape. `day`/`start`/`end` describe the first slot (older apps read only those). */
+async function holdShape(o: OrderRow) {
+  const v = await getVenueRow(o.venue_id);
+  const slots = await q<{ id: string; day: string; start_min: number; end_min: number }>(
+    'select id, day::text, start_min, end_min from bookings where order_id = $1 order by day, start_min',
+    [o.id],
+  );
+  const first = slots[0];
   return {
-    holdId: b.id,
-    expiresAt: b.hold_expires_at ? new Date(b.hold_expires_at).getTime() : Date.now(),
+    holdId: o.id,
+    expiresAt: o.hold_expires_at ? new Date(o.hold_expires_at).getTime() : Date.now(),
     venue: { id: v.id, name: v.name, area: v.area, city: v.city, photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null, formats: v.formats },
-    day: b.day,
-    start: b.start_min,
-    end: b.end_min,
-    lines: b.price_lines,
-    total: b.total,
+    slots: slots.map((b) => ({ id: `${v.id}:${b.day}:${b.start_min}`, day: b.day, start: b.start_min, end: b.end_min })),
+    day: first?.day ?? dhakaToday(),
+    start: first?.start_min ?? 0,
+    end: first?.end_min ?? 0,
+    lines: o.price_lines,
+    total: o.total,
     cancellationPolicy: v.cancellation_policy,
   };
 }
 
-export async function createHold(userId: string, slotId: string) {
+function parseSlot(slotId: string) {
   const m = /^(v_[A-Za-z0-9_]{1,40}):(\d{4}-\d{2}-\d{2}):(\d{1,4})$/.exec(slotId);
   if (!m || !isDayKey(m[2])) throw new ApiError('invalid', 'Unknown slot.');
-  const [, venueId, day, startStr] = m;
-  const start = Number(startStr);
+  return { venueId: m[1], day: m[2], start: Number(m[3]) };
+}
+
+/** Expire a player's open order and its slots (inside a transaction). Returns the days it freed. */
+async function closeOpenOrder(c: PoolClient, userId: string) {
+  const freed = await c.query<{ venue_id: string; day: string }>(
+    `with o as (
+       update orders set status = 'expired', hold_expires_at = now()
+        where user_id = $1 and status in ('held','pending') returning id
+     )
+     update bookings b set status = 'expired', hold_expires_at = now()
+       from o where b.order_id = o.id and b.status in ('held','pending')
+     returning b.venue_id, b.day::text`,
+    [userId],
+  );
+  return freed.rows;
+}
+
+/**
+ * Put slots in the player's cart. One cart per player, one turf per cart:
+ * a new selection replaces the old cart, whose slots are freed for everyone
+ * straight away. Sending exactly the slots already in the cart resumes it.
+ */
+export async function createHold(userId: string, slotIds: string[]) {
+  const ids = [...new Set(slotIds)];
+  if (!ids.length) throw new ApiError('invalid', 'Pick at least one slot.');
+  if (ids.length > MAX_SLOTS_PER_ORDER) throw new ApiError('invalid', `You can book up to ${MAX_SLOTS_PER_ORDER} slots at a time.`);
+  const parsed = ids.map(parseSlot);
+  const venueId = parsed[0].venueId;
+  if (parsed.some((p) => p.venueId !== venueId)) throw new ApiError('invalid', 'All slots in one booking must be at the same turf.');
+
   const today = dhakaToday();
-  if (day < today || day > addDays(today, config.BOOKING_HORIZON_DAYS)) throw new ApiError('invalid', 'That date can’t be booked.');
-  if (day === today && start <= minutesNowInDhaka()) throw new ApiError('slot_taken', 'That session has already started.');
-
   const v = await getVenueRow(venueId);
-  const session = generateSessions({ openMin: v.open_min, closeMin: v.close_min, lengthMin: v.session_min, breakMin: v.break_min }).find((s) => s.start === start);
-  if (!session) throw new ApiError('invalid', 'Unknown slot.');
+  const sessions = generateSessions({ openMin: v.open_min, closeMin: v.close_min, lengthMin: v.session_min, breakMin: v.break_min });
+  const picks = parsed
+    .map((p) => {
+      if (p.day < today || p.day > addDays(today, config.BOOKING_HORIZON_DAYS)) throw new ApiError('invalid', 'That date can’t be booked.');
+      if (p.day === today && p.start <= minutesNowInDhaka()) throw new ApiError('slot_taken', 'That session has already started.');
+      const session = sessions.find((s) => s.start === p.start);
+      if (!session) throw new ApiError('invalid', 'Unknown slot.');
+      // Price is computed here, never taken from the app.
+      const price = sessionPrice(hourlyFor(rules(v), p.day), v.session_min);
+      return { day: p.day, start: session.start, end: session.end, price, from: instant(p.day, session.start), to: instant(p.day, session.end) };
+    })
+    .sort((a, b) => a.from.getTime() - b.from.getTime());
 
-  // Price is computed here, never taken from the app.
-  const price = sessionPrice(hourlyFor(rules(v), day), v.session_min);
   const lines = [
-    { label: 'Turf booking', detail: duration(v.session_min), amount: price },
+    ...picks.map((p) => ({ label: 'Turf booking', detail: `${dayLabel(p.day)} · ${duration(p.end - p.start)}`, amount: p.price })),
     { label: 'Service fee', amount: config.SERVICE_FEE_POISHA },
   ];
-  const total = price + config.SERVICE_FEE_POISHA;
-  const from = instant(day, session.start);
-  const to = instant(day, session.end);
+  const total = picks.reduce((n, p) => n + p.price, 0) + config.SERVICE_FEE_POISHA;
+  const want = picks.map((p) => `${p.day}:${p.start}`).join(',');
 
-  const row = await tx(async (c) => {
+  const result = await tx(async (c) => {
     // Queue concurrent holds on the same pitch (released at commit). Without this, two players
     // racing for one slot can deadlock inside the exclusion-constraint check instead of one
     // cleanly getting "slot taken". The exclusion constraint remains the real guarantee.
     await c.query('select pg_advisory_xact_lock(hashtext($1))', [`pitch:${v.pitch_id}`]);
-    // Picking a slot you already hold (e.g. back from checkout) resumes that hold.
-    const mine = (
-      await c.query<BookingRow>(
-        `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings
-          where user_id = $1 and pitch_id = $2 and during = tstzrange($3, $4) and status in ('held','pending') and hold_expires_at > now()`,
-        [userId, v.pitch_id, from, to],
+    // Serialise this player's own cart changes too.
+    await c.query('select pg_advisory_xact_lock(hashtext($1))', [`cart:${userId}`]);
+
+    // Same slots as the open cart (e.g. back from checkout): resume it.
+    const open = (
+      await c.query<OrderRow & { slots: string }>(
+        `select o.${ORDER_COLS.split(', ').join(', o.')},
+                (select string_agg(b.day::text || ':' || b.start_min, ',' order by b.day, b.start_min) from bookings b where b.order_id = o.id) slots
+           from orders o where o.user_id = $1 and o.status in ('held','pending') and o.hold_expires_at > now()`,
+        [userId],
       )
     ).rows[0];
-    if (mine) return mine;
-    const active = await c.query("select count(*)::int n from bookings where user_id = $1 and status = 'held' and hold_expires_at > now()", [userId]);
-    if (active.rows[0].n >= MAX_ACTIVE_HOLDS) throw new ApiError('rate_limited', 'You already have slots on hold. Finish or wait for them to expire.');
-    // Lazily release stale holds on this exact range so they never block a new booking.
-    await c.query("update bookings set status = 'expired' where pitch_id = $1 and status = 'held' and hold_expires_at < now() and during && tstzrange($2, $3)", [v.pitch_id, from, to]);
-    const code = await newCode(c, day);
+    if (open && open.venue_id === venueId && open.slots === want) return { order: open as OrderRow, freed: [] as { venue_id: string; day: string }[] };
+
+    // Anything else replaces the cart: the old slots are freed right now.
+    const freed = await closeOpenOrder(c, userId);
+    // Lazily release stale holds on these ranges so they never block a new booking.
+    for (const p of picks)
+      await c.query("update bookings set status = 'expired' where pitch_id = $1 and status = 'held' and hold_expires_at < now() and during && tstzrange($2, $3)", [v.pitch_id, p.from, p.to]);
+
+    const order = (
+      await c.query<OrderRow>(
+        `insert into orders (user_id, venue_id, status, hold_expires_at, price_lines, total)
+         values ($1, $2, 'held', now() + make_interval(mins => $3), $4, $5) returning ${ORDER_COLS}`,
+        [userId, v.id, config.HOLD_MINUTES, JSON.stringify(lines), total],
+      )
+    ).rows[0];
     try {
-      const r = await c.query<BookingRow>(
-        `insert into bookings (code, user_id, venue_id, pitch_id, day, start_min, end_min, during, status, hold_expires_at, price_lines, total)
-         values ($1,$2,$3,$4,$5,$6,$7,tstzrange($8,$9),'held', now() + make_interval(mins => $10), $11, $12)
-         returning id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total`,
-        [code, userId, v.id, v.pitch_id, day, session.start, session.end, from, to, config.HOLD_MINUTES, JSON.stringify(lines), total],
-      );
-      return r.rows[0];
+      for (const p of picks) {
+        const code = await newCode(c, p.day);
+        await c.query(
+          `insert into bookings (code, user_id, venue_id, pitch_id, day, start_min, end_min, during, status, hold_expires_at, price_lines, total, order_id)
+           values ($1,$2,$3,$4,$5,$6,$7,tstzrange($8,$9),'held', $10, $11, $12, $13)`,
+          [code, userId, v.id, v.pitch_id, p.day, p.start, p.end, p.from, p.to, order.hold_expires_at,
+            JSON.stringify([{ label: 'Turf booking', detail: duration(p.end - p.start), amount: p.price }]), p.price, order.id],
+        );
+      }
     } catch (e) {
       const code = (e as { code?: string }).code;
       // 23P01 exclusion violation; 40P01 deadlock as a last-resort safety net.
-      if (code === '23P01' || code === '40P01') throw new ApiError('slot_taken', 'Slot just got taken. Pick another time.');
+      if (code === '23P01' || code === '40P01')
+        throw new ApiError('slot_taken', picks.length > 1 ? 'One of those slots just got taken. Pick again.' : 'Slot just got taken. Pick another time.');
       throw e;
     }
+    return { order, freed };
   });
-  await invalidateDay(v.id, day);
-  return holdShape(row);
+  const days = new Map<string, string>();
+  for (const f of result.freed) days.set(`${f.venue_id}|${f.day}`, f.venue_id);
+  for (const p of picks) days.set(`${v.id}|${p.day}`, v.id);
+  await Promise.all([...days.keys()].map((k) => invalidateDay(days.get(k)!, k.split('|')[1])));
+  return holdShape(result.order);
 }
 
-/** Give a held slot back. Holds with a bKash payment in progress are left alone. */
+const dayLabel = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/** Give the cart back. Carts with a bKash payment in progress are left alone. */
 export async function releaseHold(userId: string, holdId: string) {
-  const b = await one<{ venue_id: string; day: string }>(
-    "update bookings set status = 'expired', hold_expires_at = now() where id = $1 and user_id = $2 and status = 'held' returning venue_id, day::text",
-    [holdId, userId],
-  );
-  if (b) await invalidateDay(b.venue_id, b.day);
-  return { released: !!b };
+  const rows = await tx(async (c) => {
+    const o = (await c.query("update orders set status = 'expired', hold_expires_at = now() where id = $1 and user_id = $2 and status = 'held' returning id", [holdId, userId])).rows[0];
+    if (!o) return [];
+    return (
+      await c.query<{ venue_id: string; day: string }>(
+        "update bookings set status = 'expired', hold_expires_at = now() where order_id = $1 and status = 'held' returning venue_id, day::text",
+        [holdId],
+      )
+    ).rows;
+  });
+  await Promise.all([...new Set(rows.map((r) => `${r.venue_id}|${r.day}`))].map((k) => invalidateDay(k.split('|')[0], k.split('|')[1])));
+  return { released: rows.length > 0 };
 }
 
-/** The player's active holds (the cart). */
+/** The player's cart (at most one order). */
 export async function listHolds(userId: string) {
-  const rows = await q<BookingRow>(
-    `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings
-      where user_id = $1 and status in ('held','pending') and hold_expires_at > now() order by hold_expires_at`,
+  const rows = await q<OrderRow>(
+    `select ${ORDER_COLS} from orders where user_id = $1 and status in ('held','pending') and hold_expires_at > now() order by hold_expires_at`,
     [userId],
   );
   return Promise.all(rows.map(holdShape));
 }
 
 export async function getHold(userId: string, holdId: string) {
-  const b = await one<BookingRow>(
-    "select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings where id = $1 and user_id = $2",
-    [holdId, userId],
-  );
-  if (!b) throw new ApiError('not_found', 'Your hold was not found. Please pick the slot again.');
-  if (b.status === 'expired' || (b.status === 'held' && b.hold_expires_at && new Date(b.hold_expires_at) < new Date()))
+  const o = await one<OrderRow>(`select ${ORDER_COLS} from orders where id = $1 and user_id = $2`, [holdId, userId]);
+  if (!o) throw new ApiError('not_found', 'Your hold was not found. Please pick the slot again.');
+  if (o.status === 'expired' || (o.status === 'held' && o.hold_expires_at && new Date(o.hold_expires_at) < new Date()))
     throw new ApiError('hold_expired', 'Your hold expired. Please pick the slot again.');
-  if (b.status !== 'held' && b.status !== 'pending') throw new ApiError('conflict', 'This slot is already booked.');
-  return holdShape(b);
+  if (o.status !== 'held' && o.status !== 'pending') throw new ApiError('conflict', 'This slot is already booked.');
+  return holdShape(o);
 }
 
 const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s);

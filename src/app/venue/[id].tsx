@@ -91,6 +91,8 @@ const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
   { key: 'night', label: 'Night', icon: Moon },
 ];
 const HERO_BTN = 40;
+const MAX_SLOTS = 6; // per order (the server enforces the same limit)
+type Picked = Slot & { day: DayKey };
 
 const AMENITY_ICON: Record<string, LucideIcon> = {
   Floodlights: Lightbulb,
@@ -113,7 +115,8 @@ export default function VenueScreen() {
   const today = dhakaToday();
 
   const [day, setDay] = useState<DayKey>(today);
-  const [selected, setSelected] = useState<Slot | null>(null);
+  // Picked slots, kept across day changes (one order can span days at this turf).
+  const [picked, setPicked] = useState<Picked[]>([]);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [tab, setTab] = useState<Tab>('book');
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -138,37 +141,55 @@ export default function VenueScreen() {
     return g;
   }, [slots.data]);
 
-  // If the selected slot gets booked by someone else while we look at it, drop it.
-  const live = selected ? slots.data?.slots.find((s) => s.id === selected.id) : undefined;
-  // Your own hold counts as selectable: continuing resumes it instead of starting over.
-  const chosen = live && (live.status === 'available' || live.status === 'mine') ? selected : null;
+  // Drop picks on the day in view that someone else just took (others are re-checked by the server).
+  // Your own hold counts as selectable: continuing with the same slots resumes it.
+  const chosen = useMemo(
+    () =>
+      picked.filter((p) => {
+        if (p.day !== day || !slots.data) return true;
+        const live = slots.data.slots.find((s) => s.id === p.id);
+        return !!live && (live.status === 'available' || live.status === 'mine');
+      }),
+    [picked, day, slots.data],
+  );
+  const chosenIds = useMemo(() => new Set(chosen.map((p) => p.id)), [chosen]);
+  const togglePick = (s: Slot) =>
+    setPicked((cur) => {
+      if (cur.some((p) => p.id === s.id)) return cur.filter((p) => p.id !== s.id);
+      if (cur.length >= MAX_SLOTS) {
+        haptic.error();
+        Alert.alert('That’s the maximum', `You can book up to ${MAX_SLOTS} slots in one go.`);
+        return cur;
+      }
+      return [...cur, { ...s, day }];
+    });
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';
 
   const hold = useMutation({
-    mutationFn: (slot: Slot) => {
+    mutationFn: (list: Picked[]) => {
       holdKey.current ??= newIdempotencyKey();
-      return api.createHold(slot.id, holdKey.current);
+      return api.createHold(
+        list.map((p) => p.id),
+        holdKey.current,
+      );
     },
     onSuccess: (h) => {
       holdKey.current = null;
       qc.setQueryData(qk.hold(h.holdId), h);
       qc.invalidateQueries({ queryKey: qk.myHolds });
-      qc.invalidateQueries({ queryKey: qk.slots(id, day) }); // shows as "In your cart" when you come back
+      qc.invalidateQueries({ queryKey: ['slots'] }); // this cart's slots (and any cart it replaced) refresh everywhere
       router.push({ pathname: '/checkout', params: { holdId: h.holdId } });
     },
     onError: (e) => {
       holdKey.current = null;
       haptic.error();
-      Alert.alert(e instanceof ApiError && e.code === 'slot_taken' ? 'Slot just got taken' : 'Could not hold this slot', e.message);
-      setSelected(null);
+      Alert.alert(e instanceof ApiError && e.code === 'slot_taken' ? 'Slot just got taken' : 'Could not hold these slots', e.message);
+      setPicked([]);
       slots.refetch();
     },
   });
 
-  const pickDay = (d: DayKey) => {
-    setDay(d);
-    setSelected(null);
-  };
+  const pickDay = (d: DayKey) => setDay(d);
 
   const heroH = Math.round(width * 0.68) + insets.top * 0.4;
   // Header goes white (and shows the name) once the photo has scrolled under it.
@@ -354,7 +375,7 @@ export default function VenueScreen() {
                 ) : slots.isError ? (
                   <ErrorState message={slots.error.message} onRetry={slots.refetch} />
                 ) : (
-                  <Timeline grouped={grouped} selectedId={chosen?.id} onPick={(s) => setSelected((cur) => (cur?.id === s.id ? null : s))} />
+                  <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
                 )}
                 {slots.data && !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
                   <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
@@ -456,13 +477,7 @@ export default function VenueScreen() {
       </StickyHeader>
 
       {/* ── Price bar: slides up only once a slot is picked ───── */}
-      <PriceBar
-        slot={chosen}
-        dayLabel={formatDay(day, { year: false })}
-        bottomInset={insets.bottom}
-        loading={hold.isPending}
-        onContinue={() => chosen && hold.mutate(chosen)}
-      />
+      <PriceBar picks={chosen} bottomInset={insets.bottom} loading={hold.isPending} onContinue={() => chosen.length && hold.mutate(chosen)} />
 
       <CalendarModal
         visible={calendarOpen}
@@ -482,44 +497,49 @@ export default function VenueScreen() {
   );
 }
 
-/** Compact dark bar. Keeps showing the last slot while it slides away, so it never blanks mid-animation. */
+/** Compact dark bar. Keeps showing the last picks while it slides away, so it never blanks mid-animation. */
 function PriceBar({
-  slot,
-  dayLabel,
+  picks,
   bottomInset,
   loading,
   onContinue,
 }: {
-  slot: Slot | null;
-  dayLabel: string;
+  picks: Picked[];
   bottomInset: number;
   loading: boolean;
   onContinue: () => void;
 }) {
-  const [last, setLast] = useState<Slot | null>(slot);
-  if (slot && slot !== last) setLast(slot);
-  const shown = slot ?? last;
-  const visible = useSharedValue(slot ? 1 : 0);
+  const open = picks.length > 0;
+  const [last, setLast] = useState<Picked[]>(picks);
+  if (open && picks !== last) setLast(picks);
+  const shown = open ? picks : last;
+  const visible = useSharedValue(open ? 1 : 0);
   useEffect(() => {
     visible.set(
-      withTiming(slot ? 1 : 0, { duration: slot ? 300 : 220, easing: slot ? Easing.bezier(0.22, 1, 0.36, 1) : Easing.in(Easing.quad) }),
+      withTiming(open ? 1 : 0, { duration: open ? 300 : 220, easing: open ? Easing.bezier(0.22, 1, 0.36, 1) : Easing.in(Easing.quad) }),
     );
-  }, [slot, visible]);
+  }, [open, visible]);
   const anim = useAnimatedStyle(() => ({
     opacity: visible.get(),
     transform: [{ translateY: (1 - visible.get()) * 120 }],
   }));
+  const one = shown.length === 1 ? shown[0] : null;
+  const days = [...new Set(shown.map((p) => p.day))].sort();
+  const minutes = shown.reduce((n, p) => n + (p.end - p.start), 0);
+  const summary = one
+    ? `${formatDay(one.day, { year: false })}  ·  ${formatRangeSpaced(one.start, one.end)}`
+    : `${shown.length} slots  ·  ${days.length === 1 ? formatDay(days[0], { year: false }) : `${days.length} days`}`;
   return (
-    <Animated.View pointerEvents={slot ? 'auto' : 'none'} style={[styles.priceWrap, { bottom: Math.max(bottomInset, space[3]) }, anim]}>
+    <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.priceWrap, { bottom: Math.max(bottomInset, space[3]) }, anim]}>
       <View style={[styles.priceBar, shadow.float]}>
         <View style={styles.priceText}>
           <Text variant="caption" color={colors.textOnDarkMuted} numberOfLines={1}>
-            {shown ? `${dayLabel}  ·  ${formatRangeSpaced(shown.start, shown.end)}` : dayLabel}
+            {shown.length ? summary : ''}
           </Text>
           <Text variant="h3" color={colors.textOnDark} style={styles.price}>
-            {shown ? formatTaka(shown.price) : ''}
+            {shown.length ? formatTaka(shown.reduce((n, p) => n + p.price, 0)) : ''}
             <Text variant="caption" color={colors.textOnDarkMuted}>
-              {shown ? `   ${formatDuration(shown.end - shown.start)}` : ''}
+              {shown.length ? `   ${formatDuration(minutes)}` : ''}
             </Text>
           </Text>
         </View>
@@ -554,12 +574,12 @@ function AmenityStrip({ v }: { v: VenueDetail }) {
 }
 
 /** Time picker grouped by part of day, with a vertical timeline on the left. */
-function Timeline({ grouped, selectedId, onPick }: { grouped: Record<DayPart, Slot[]>; selectedId?: string; onPick: (s: Slot) => void }) {
+function Timeline({ grouped, selectedIds, onPick }: { grouped: Record<DayPart, Slot[]>; selectedIds: Set<string>; onPick: (s: Slot) => void }) {
   const parts = PARTS.filter((p) => grouped[p.key].length);
   return (
     <View>
       {parts.map((p, i) => {
-        const active = grouped[p.key].some((s) => s.id === selectedId);
+        const active = grouped[p.key].some((s) => selectedIds.has(s.id));
         const first = i === 0;
         const last = i === parts.length - 1;
         return (
@@ -577,7 +597,7 @@ function Timeline({ grouped, selectedId, onPick }: { grouped: Record<DayPart, Sl
             <View style={styles.slotGrid}>
               {grouped[p.key].map((s) => (
                 <View key={s.id} style={styles.slotCell}>
-                  <SlotTicket slot={s} selected={s.id === selectedId} onPress={onPick} />
+                  <SlotTicket slot={s} selected={selectedIds.has(s.id)} onPress={onPick} />
                 </View>
               ))}
               {grouped[p.key].length % 2 ? <View style={styles.slotCell} /> : null}

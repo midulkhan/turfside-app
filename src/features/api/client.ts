@@ -76,8 +76,9 @@ export const setSaved = (venueId: string, value: boolean) =>
 
 // ---- checkout ---------------------------------------------------------------
 /** Reserve a slot for 10 minutes. The server re-checks availability atomically. */
-export const createHold = (slotId: string, idempotencyKey: string) =>
-  request<Hold>('POST', '/v1/holds', { auth: 'required', body: { slotId }, idempotencyKey });
+/** Put slots (one turf) in the cart. Replaces any previous cart; its slots are freed at once. */
+export const createHold = (slotIds: string | string[], idempotencyKey: string) =>
+  request<Hold>('POST', '/v1/holds', { auth: 'required', body: { slotIds: Array.isArray(slotIds) ? slotIds : [slotIds] }, idempotencyKey });
 
 export const getHold = (holdId: string, signal?: AbortSignal) => request<Hold>('GET', `/v1/holds/${enc(holdId)}`, { auth: 'required', signal });
 

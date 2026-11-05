@@ -51,6 +51,9 @@ export type Hold = {
   holdId: string;
   expiresAt: number;
   venue: Pick<VenueDetail, 'id' | 'name' | 'area' | 'city' | 'photo' | 'formats'>;
+  /** Every slot in this order (one turf, possibly several days). Older servers omit it. */
+  slots?: { id: string; day: DayKey; start: number; end: number }[];
+  /** First slot (kept for older code paths). */
   day: DayKey;
   start: number;
   end: number;

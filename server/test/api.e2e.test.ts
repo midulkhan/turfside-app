@@ -256,3 +256,70 @@ d('holds: someone booking vs your cart', () => {
     expect((await call('POST', '/v1/holds', { slotId: slot.id }, b.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(200);
   });
 });
+
+d('cart: one order, one turf, many slots', () => {
+  it('replaces the cart on a new pick and frees the old slots at once', async () => {
+    const a = await newUser('Cart A');
+    const b = await newUser('Cart B');
+    const day = new Date(Date.now() + 6 * 3600_000 + 4 * 86400_000).toISOString().slice(0, 10);
+    const slotsAt = async (venueId: string, token?: string) =>
+      (await call('GET', `/v1/venues/${venueId}/slots?day=${day}`, undefined, token)).json.slots as Json[];
+    const free = (await slotsAt('v_gulshan_goal')).filter((s) => s.status === 'available');
+    const [s1, s2, s3] = free;
+
+    // Two slots at one turf → one order.
+    const first = await call('POST', '/v1/holds', { slotIds: [s1.id, s2.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(first.status).toBe(200);
+    expect(first.json.slots.map((s: Json) => s.id)).toEqual([s1.id, s2.id]);
+    expect(first.json.total).toBe(s1.price + s2.price);
+    expect(first.json.expiresAt - Date.now()).toBeLessThanOrEqual(5 * 60_000 + 5_000); // 5-minute window
+
+    // Same selection again resumes it.
+    const resume = await call('POST', '/v1/holds', { slotIds: [s2.id, s1.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(resume.json.holdId).toBe(first.json.holdId);
+
+    // A new pick replaces the cart; the dropped slot is free for others immediately.
+    const second = await call('POST', '/v1/holds', { slotIds: [s3.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(second.status).toBe(200);
+    expect(second.json.holdId).not.toBe(first.json.holdId);
+    const cart = await call('GET', '/v1/me/holds', undefined, a.accessToken);
+    expect(cart.json.map((h: Json) => h.holdId)).toEqual([second.json.holdId]);
+    const seenByB = await slotsAt('v_gulshan_goal', b.accessToken);
+    expect(seenByB.find((s) => s.id === s1.id)!.status).toBe('available');
+    expect(seenByB.find((s) => s.id === s3.id)!.status).toBe('held');
+    expect((await call('POST', '/v1/holds', { slotId: s1.id }, b.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(200);
+
+    // The old cart can't be paid any more.
+    expect((await call('POST', '/v1/payments', { holdId: first.json.holdId }, a.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(410);
+
+    // Picking at another turf replaces the cart too (never two turfs at once).
+    const other = (await slotsAt('v_bashundhara')).find((s) => s.status === 'available')!;
+    const moved = await call('POST', '/v1/holds', { slotIds: [other.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(moved.json.venue.id).toBe('v_bashundhara');
+    expect((await slotsAt('v_gulshan_goal', b.accessToken)).find((s) => s.id === s3.id)!.status).toBe('available');
+    expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toHaveLength(1);
+
+    // One order can't mix turfs.
+    const mixed = await call('POST', '/v1/holds', { slotIds: [s3.id, other.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(mixed.status).toBe(400);
+  });
+
+  it('pays several slots in one order and confirms them all', async () => {
+    const a = await newUser('Multi Payer');
+    const day = new Date(Date.now() + 6 * 3600_000 + 7 * 86400_000).toISOString().slice(0, 10);
+    const free = ((await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`)).json.slots as Json[]).filter((s) => s.status === 'available');
+    const picks = [free[0], free[1], free[2]];
+    const hold = await call('POST', '/v1/holds', { slotIds: picks.map((s) => s.id) }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(pay.status).toBe(200);
+    const res = await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    expect(res.status).toBe(302);
+    expect((await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, a.accessToken)).json.status).toBe('confirmed');
+    const mine = (await call('GET', '/v1/me/bookings', undefined, a.accessToken)).json as Json[];
+    const booked = mine.filter((b) => b.day === day && b.status === 'confirmed');
+    expect(booked).toHaveLength(3);
+    const after = ((await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`)).json.slots as Json[]).filter((s) => picks.some((p) => p.id === s.id));
+    expect(after.every((s) => s.status === 'booked')).toBe(true);
+    expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toEqual([]);
+  });
+});

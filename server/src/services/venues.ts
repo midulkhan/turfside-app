@@ -78,7 +78,7 @@ export async function daySlots(v: VenueRow, day: string, viewerId?: string): Pro
     const to = instant(day, v.close_min + 60);
     const rows = await q<{ s: Date; e: Date; kind: string; id: string | null; user_id: string | null; until: Date | null }>(
       `select lower(during) s, upper(during) e,
-              case when status in ('held','pending') then 'held' else 'booked' end kind, id, user_id, hold_expires_at until
+              case when status in ('held','pending') then 'held' else 'booked' end kind, coalesce(order_id, id) id, user_id, hold_expires_at until
          from bookings
         where pitch_id = $1 and during && tstzrange($2, $3) and status in ('held','pending','confirmed','checked_in')
           and not (status in ('held','pending') and hold_expires_at < now())

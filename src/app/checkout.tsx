@@ -167,7 +167,7 @@ export default function Checkout() {
             <View style={[styles.timer, expired && styles.timerExpired]}>
               <Timer size={16} color={expired ? colors.danger : colors.limeText} strokeWidth={2} />
               <Text variant="label" color={expired ? colors.danger : colors.limeText}>
-                {expired ? 'Your hold expired — go back and pick the slot again' : `Slot held for you · ${label}`}
+                {expired ? 'Your hold expired — go back and pick again' : `${(h.slots?.length ?? 1) > 1 ? `${h.slots!.length} slots held` : 'Slot held'} for you · ${label}`}
               </Text>
             </View>
           ) : null}
@@ -195,31 +195,48 @@ export default function Checkout() {
               </View>
             </View>
             <TicketDivider />
-            <View style={styles.when}>
-              <View style={styles.whenCol}>
-                <CalendarDays size={18} color={colors.ink} strokeWidth={1.6} />
-                <View style={styles.whenText}>
-                  <Text variant="labelStrong" style={styles.whenMain}>
-                    {h ? formatDay(h.day, { year: false }) : ' '}
-                  </Text>
-                  <Text variant="body" color={colors.textMuted} style={styles.small}>
-                    {h?.venue.formats[0]}
-                  </Text>
+            {h?.slots && h.slots.length > 1 ? (
+              <View style={styles.slotList}>
+                {h.slots.map((sl, i) => (
+                  <View key={sl.id} style={[styles.slotRow, i > 0 && styles.slotRowDivider]}>
+                    <CalendarDays size={16} color={colors.textMuted} strokeWidth={1.6} />
+                    <Text variant="labelStrong" style={[styles.whenMain, styles.flex]} numberOfLines={1}>
+                      {formatDay(sl.day, { year: false })}
+                    </Text>
+                    <Clock3 size={16} color={colors.textMuted} strokeWidth={1.6} />
+                    <Text variant="labelStrong" style={styles.whenMain} numberOfLines={1}>
+                      {formatRange(sl.start, sl.end)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.when}>
+                <View style={styles.whenCol}>
+                  <CalendarDays size={18} color={colors.ink} strokeWidth={1.6} />
+                  <View style={styles.whenText}>
+                    <Text variant="labelStrong" style={styles.whenMain}>
+                      {h ? formatDay(h.day, { year: false }) : ' '}
+                    </Text>
+                    <Text variant="body" color={colors.textMuted} style={styles.small}>
+                      {h?.venue.formats[0]}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.vr} />
+                <View style={styles.whenCol}>
+                  <Clock3 size={18} color={colors.ink} strokeWidth={1.6} />
+                  <View style={styles.whenText}>
+                    <Text variant="labelStrong" numberOfLines={1} style={styles.whenMain}>
+                      {h ? formatRange(h.start, h.end) : ' '}
+                    </Text>
+                    <Text variant="body" color={colors.textMuted} style={styles.small}>
+                      {h ? formatDuration(h.end - h.start) : ''}
+                    </Text>
+                  </View>
                 </View>
               </View>
-              <View style={styles.vr} />
-              <View style={styles.whenCol}>
-                <Clock3 size={18} color={colors.ink} strokeWidth={1.6} />
-                <View style={styles.whenText}>
-                  <Text variant="labelStrong" numberOfLines={1} style={styles.whenMain}>
-                    {h ? formatRange(h.start, h.end) : ' '}
-                  </Text>
-                  <Text variant="body" color={colors.textMuted} style={styles.small}>
-                    {h ? formatDuration(h.end - h.start) : ''}
-                  </Text>
-                </View>
-              </View>
-            </View>
+            )}
           </TicketSurface>
 
           {/* Your details */}
@@ -404,6 +421,9 @@ const styles = StyleSheet.create({
   section: { fontSize: 16, lineHeight: 21 },
   whenMain: { fontSize: 14.5, lineHeight: 19 },
   small: { fontSize: 13, lineHeight: 17 },
+  slotList: { paddingHorizontal: space[5], paddingVertical: space[3] },
+  slotRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[3] },
+  slotRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   lineText: { fontSize: 14, lineHeight: 19 },
   total: {
     flexDirection: 'row',
