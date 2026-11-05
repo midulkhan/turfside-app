@@ -79,21 +79,20 @@ export function TicketSurface({ fill, stroke, strokeWidth = 1, radius = radii.md
   // three pixel columns unevenly), so every side is equally crisp.
   const pr = PixelRatio.get();
   const sw = stroke ? Math.max(1, Math.round(strokeWidth * pr)) / pr : 0;
-  // +1 device-pixel margin on every side, so pixel snapping can never shave an edge.
-  const d = size.w ? ticketPath(size.w, size.h, radius, notch, cy, sw / 2 + 1 / pr) : '';
+  // 2 device-pixel margin on every side, so layout rounding (up to ~1px) can never shave an edge.
+  const d = size.w ? ticketPath(size.w, size.h, radius, notch, cy, sw / 2 + 2 / pr) : '';
 
   return (
     <View style={style} onLayout={onLayout}>
       {size.w ? (
-        // Pinned to the view's edges and drawn through a viewBox: if a measurement is a
-        // hair stale, the outline scales by a fraction of a pixel instead of being clipped.
+        // Exact pixel size (a percentage height mis-resolves on iOS), drawn through a viewBox.
+        // The path keeps a 2px inner margin, so a measurement a hair off can't clip an edge.
         <Svg
           pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${size.w} ${size.h}`}
-          preserveAspectRatio="none">
+          style={styles.svg}
+          width={size.w}
+          height={size.h}
+          viewBox={`0 0 ${size.w} ${size.h}`}>
           {hatch ? (
             <Defs>
               <Pattern id={`h${uid}`} width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -133,8 +132,19 @@ export function TicketDivider({
     <View
       style={{ height: gap * 2, justifyContent: 'center' }}
       onLayout={(e) => report?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}>
-      <View style={{ borderTopWidth: 1.5, borderStyle: 'dashed', borderColor: dashColor, marginHorizontal: inset }} />
+      {/* Real dash marks: iOS renders a one-sided dashed border as a solid line. */}
+      <View style={[styles.dashes, { marginHorizontal: inset }]}>
+        {DASHES.map((i) => (
+          <View key={i} style={[styles.dash, { backgroundColor: dashColor }]} />
+        ))}
+      </View>
     </View>
   );
 }
 
+const DASHES = Array.from({ length: 80 }, (_, i) => i);
+const styles = StyleSheet.create({
+  svg: { position: 'absolute', left: 0, top: 0 },
+  dashes: { height: 1.5, flexDirection: 'row', gap: 4, overflow: 'hidden' },
+  dash: { width: 5, height: 1.5, borderRadius: 1 },
+});
