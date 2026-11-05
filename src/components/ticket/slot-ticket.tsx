@@ -84,7 +84,7 @@ export const SlotTicket = memo(function SlotTicket({
         stroke={tone.stroke}
         strokeWidth={tone.sw}
         radius={radius.sm}
-        notch={6}
+        notch={8}
         hatch={slot.status === 'booked' || slot.status === 'blocked'}
         style={styles.base}>
         <Text
@@ -97,7 +97,7 @@ export const SlotTicket = memo(function SlotTicket({
           align="center">
           {range}
         </Text>
-        <TicketDivider inset={space[3]} gap={7} dashColor={tone.dash} />
+        <TicketDivider inset={space[3] + 2} gap={7} dashColor={tone.dash} />
         <View style={styles.row}>
           {selected ? (
             <View style={styles.check}>
