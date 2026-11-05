@@ -267,8 +267,9 @@ export default function Checkout() {
           <Card padded={false}>
             <View style={styles.lines}>
               {h
-                ? h.lines.map((l) => (
-                    <View key={l.label} style={styles.line}>
+                ? h.lines.map((l, i) => (
+                    // Index in the key: a multi-slot order repeats "Turf booking" once per slot.
+                    <View key={`${i}:${l.label}`} style={styles.line}>
                       <Text variant="body" color={colors.textMuted} style={styles.lineText}>
                         {l.label}
                         {l.detail ? `  ·  ${l.detail}` : ''}
