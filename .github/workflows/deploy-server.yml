@@ -64,6 +64,7 @@ jobs:
           R2_PUBLIC_URL: https://pub-test.r2.dev
           STORAGE_TEST: '1'
           AUTH_RATE_LIMIT: '1000' # the suite signs up many test users from one IP
+          OTP_IP_LIMIT: '1000'
         run: |
           node scripts/s3-local.mjs /tmp/s3-local > /tmp/s3.log 2>&1 &
           # The app-client tests compile ../src, whose tsconfig extends Expo's base config.

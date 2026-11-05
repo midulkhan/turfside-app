@@ -32,7 +32,7 @@ export const publicUser = (u: UserRow) => ({
 /** Per-phone and per-IP limits on top of the global HTTP rate limit. */
 async function guardOtp(phone: string, purpose: Purpose, ip: string) {
   if ((await hit(`otp:phone:${phone}`, 3600)) > 6) throw new ApiError('rate_limited', 'Too many codes requested. Try again in an hour.');
-  if ((await hit(`otp:ip:${ip}`, 3600)) > 20) throw new ApiError('rate_limited', 'Too many requests. Try again later.');
+  if ((await hit(`otp:ip:${ip}`, 3600)) > config.OTP_IP_LIMIT) throw new ApiError('rate_limited', 'Too many requests. Try again later.');
   const last = await one<{ created_at: Date }>('select created_at from otp_codes where phone = $1 and purpose = $2 order by created_at desc limit 1', [phone, purpose]);
   if (last && Date.now() - new Date(last.created_at).getTime() < OTP_RESEND_SECONDS * 1000) throw new ApiError('rate_limited', 'Please wait a few seconds before requesting another code.');
 }

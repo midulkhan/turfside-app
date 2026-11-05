@@ -55,6 +55,8 @@ const schema = z.object({
 
   // Sign-in / sign-up / code requests per IP per minute. Keep the default in production; tests raise it.
   AUTH_RATE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
+  /** Verification codes one IP can request per hour (SMS-abuse guard). Raised only in CI. */
+  OTP_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(20),
 
   SERVICE_FEE_POISHA: z.coerce.number().int().min(0).default(0),
   HOLD_MINUTES: z.coerce.number().int().min(2).max(30).default(5),
