@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { ScreenHeader } from '@/components/ui/headers';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
@@ -68,15 +69,21 @@ function RequestCard({ r }: { r: PlayerRequest }) {
 
 /** "Player calls": calls the player posted ("need 2 players") or asked to join. Preview of a phase-3 feature. */
 export default function Requests() {
+  const scrolled = useScrolled();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'posted' | 'joined'>('posted');
   const { data, isPending } = useRequests();
   const list = (data ?? []).filter((r) => r.kind === tab);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <ScreenHeader title="My calls" />
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[6] }]}>
+    <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <ScreenHeader title="My calls" />
+      </StickyHeader>
+      <ScrollView
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[6] }]}>
         <View style={styles.tabs}>
           <Chip label="Posted by me" active={tab === 'posted'} tone="dark" onPress={() => setTab('posted')} />
           <Chip label="Joined" active={tab === 'joined'} tone="dark" onPress={() => setTab('joined')} />

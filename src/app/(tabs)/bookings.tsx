@@ -3,13 +3,13 @@ import { router, useScrollToTop } from 'expo-router';
 import { CalendarDays, Clock3, QrCode, RotateCcw } from 'lucide-react-native';
 import { memo, useMemo, useState, useRef } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
 import { Overline } from '@/components/ui/headers';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Photo } from '@/components/ui/photo';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -85,7 +85,7 @@ const BookingRow = memo(function BookingRow({ b }: { b: Booking }) {
 export default function Bookings() {
   const listRef = useRef<FlashListRef<Booking>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
-  const insets = useSafeAreaInsets();
+  const scrolled = useScrolled();
   const bottom = useTabBarSpace();
   const [filter, setFilter] = useState<Filter>('all');
   const { data, isPending, isError, error, refetch } = useBookings();
@@ -109,14 +109,7 @@ export default function Bookings() {
   }, [data, filter, today]);
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + space[4] }]}>
-      <Text variant="pageTitle">My bookings</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-        {FILTERS.map((f) => (
-          <Chip key={f.key} label={f.label} active={filter === f.key} tone="dark" onPress={() => setFilter(f.key)} />
-        ))}
-      </ScrollView>
-
+    <View style={[styles.header, { paddingTop: space[4] }]}>
       {next && (filter === 'all' || filter === 'upcoming') ? (
         <PressableScale scaleTo={0.985} onPress={() => router.push({ pathname: '/booking/[id]', params: { id: next.id } })}>
           <Card tone="dark" padded={false} style={styles.next}>
@@ -157,7 +150,19 @@ export default function Bookings() {
 
   return (
     <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <View style={styles.sticky}>
+          <Text variant="pageTitle">My bookings</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+            {FILTERS.map((f) => (
+              <Chip key={f.key} label={f.label} active={filter === f.key} tone="dark" onPress={() => setFilter(f.key)} />
+            ))}
+          </ScrollView>
+        </View>
+      </StickyHeader>
       <FlashList
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
         maintainVisibleContentPosition={NO_ANCHOR}
         ref={listRef}
         data={list}
@@ -199,6 +204,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   header: { paddingHorizontal: gutter, gap: space[4], paddingBottom: space[3] },
   filters: { gap: space[2] },
+  sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3], gap: space[3] },
   next: { overflow: 'hidden' },
   nextPhoto: { height: 120, margin: 6, borderRadius: radius.md },
   nextBody: { padding: space[4], paddingTop: space[2], gap: space[2] },

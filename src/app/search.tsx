@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton } from '@/components/ui/icon-button';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Input } from '@/components/ui/input';
 import { Overline } from '@/components/ui/headers';
 import { EmptyState } from '@/components/ui/states';
@@ -36,36 +37,41 @@ export default function Search() {
     [place.lat, place.lng, q],
   );
   const { data, isFetching } = useExplore(params);
+  const scrolled = useScrolled();
   const results = enabled && data ? [...data.near, ...data.further] : [];
   const areas = enabled ? KNOWN_AREAS.filter((a) => a.name.toLowerCase().includes(q.toLowerCase())) : KNOWN_AREAS.slice(0, 6);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + space[2] }]}>
-      <View style={styles.bar}>
-        <IconButton icon={ArrowLeft} label="Go back" onPress={() => router.back()} />
-        <Input
-          containerStyle={styles.flex}
-          icon={SearchIcon}
-          placeholder="Search turfs or areas"
-          value={text}
-          onChangeText={setText}
-          autoFocus
-          returnKeyType="search"
-          autoCorrect={false}
-          maxLength={60}
-          trailing={
-            isFetching && enabled ? (
-              <ActivityIndicator color={colors.ink} />
-            ) : text ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setText('')} hitSlop={10}>
-                <X size={20} color={colors.textMuted} />
-              </Pressable>
-            ) : null
-          }
-        />
-      </View>
+    <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress} style={styles.sticky}>
+        <View style={styles.bar}>
+          <IconButton icon={ArrowLeft} label="Go back" onPress={() => router.back()} />
+          <Input
+            containerStyle={styles.flex}
+            icon={SearchIcon}
+            placeholder="Search turfs or areas"
+            value={text}
+            onChangeText={setText}
+            autoFocus
+            returnKeyType="search"
+            autoCorrect={false}
+            maxLength={60}
+            trailing={
+              isFetching && enabled ? (
+                <ActivityIndicator color={colors.ink} />
+              ) : text ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setText('')} hitSlop={10}>
+                  <X size={20} color={colors.textMuted} />
+                </Pressable>
+              ) : null
+            }
+          />
+        </View>
+      </StickyHeader>
 
       <FlashList
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
         maintainVisibleContentPosition={NO_ANCHOR}
         data={results}
         keyExtractor={(v) => v.id}
@@ -109,6 +115,7 @@ export default function Search() {
 }
 
 const styles = StyleSheet.create({
+  sticky: { paddingTop: space[2], paddingBottom: space[2] },
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingBottom: space[3] },

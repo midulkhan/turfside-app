@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Overline } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { usePlaces } from '@/features/api/queries';
@@ -23,6 +24,7 @@ const placeLine = (p: Pick<SavedPlace, 'name' | 'city' | 'address'>) => p.addres
  * and Explore refilters straight away because its query depends on the place.
  */
 export default function Locations() {
+  const scrolled = useScrolled();
   const insets = useSafeAreaInsets();
   const { place, setPlace } = useSession();
   const { locate, locating } = useLocate();
@@ -39,16 +41,20 @@ export default function Locations() {
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + space[2] }]}>
-      <View style={styles.header}>
-        <IconButton icon={X} label="Close" onPress={() => router.back()} />
-        <Text variant="h3" style={styles.title}>
-          Choose location
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
+    <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress} style={styles.sticky}>
+        <View style={styles.header}>
+          <IconButton icon={X} label="Close" onPress={() => router.back()} />
+          <Text variant="title" style={styles.title}>
+            Choose location
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
+      </StickyHeader>
 
       <ScrollView
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.actions}>
@@ -170,6 +176,7 @@ function ActionRow({
 }
 
 const styles = StyleSheet.create({
+  sticky: { paddingTop: space[2], paddingBottom: space[2] },
   root: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: gutter, paddingBottom: space[3] },
   title: { flex: 1, textAlign: 'center' },

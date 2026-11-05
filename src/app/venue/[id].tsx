@@ -29,12 +29,24 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ScrollViewInstance,
+} from 'react-native';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import Animated, { Easing, FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SlotTicket } from '@/components/ticket/slot-ticket';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, Divider } from '@/components/ui/card';
@@ -158,6 +170,11 @@ export default function VenueScreen() {
     setSelected(null);
   };
 
+  const heroH = Math.round(width * 0.68) + insets.top * 0.4;
+  // Header goes white (and shows the name) once the photo has scrolled under it.
+  const scrolled = useScrolled(heroH - insets.top - HERO_BTN - space[4]);
+  const titleStyle = useAnimatedStyle(() => ({ opacity: scrolled.progress.get() }));
+
   if (venue.isError) {
     return (
       <View style={[styles.root, { paddingTop: insets.top + space[8] }]}>
@@ -167,52 +184,29 @@ export default function VenueScreen() {
   }
 
   const gallery = v?.photos.length ? v.photos : [null];
-  const heroH = Math.round(width * 0.68) + insets.top * 0.4;
+  const btnVariant = scrolled.isScrolled ? 'light' : 'blur';
   const openMap = () => v && Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${v.latitude},${v.longitude}`);
 
   return (
     <View style={styles.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}>
         {/* ── Gallery ─────────────────────────────────────────── */}
         <View style={[styles.hero, { height: heroH }]}>
           <BlurTargetView ref={galleryRef} style={StyleSheet.absoluteFill}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))}>
-            {gallery.map((p, i) => (
-              <Photo key={i} source={p} style={{ width, height: heroH }} rounded={0} priority={i === 0 ? 'high' : 'low'} />
-            ))}
-          </ScrollView>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))}>
+              {gallery.map((p, i) => (
+                <Photo key={i} source={p} style={{ width, height: heroH }} rounded={0} priority={i === 0 ? 'high' : 'low'} />
+              ))}
+            </ScrollView>
           </BlurTargetView>
-          <View style={[styles.heroBar, { top: insets.top + space[2] }]}>
-            <IconButton icon={ArrowLeft} label="Go back" variant="blur" blurTarget={galleryRef} size={HERO_BTN} onPress={() => router.back()} />
-            <View style={styles.row}>
-              <IconButton
-                icon={Share2}
-                label="Share turf"
-                variant="blur"
-                blurTarget={galleryRef}
-                size={HERO_BTN}
-                onPress={() => v && Share.share({ message: `${v.name}, ${v.area} — book on TurfSides: https://turfsides.app/v/${v.id}` })}
-              />
-              <IconButton
-                icon={Heart}
-                label={isSaved ? 'Remove from saved' : 'Save turf'}
-                variant="blur"
-                blurTarget={galleryRef}
-                size={HERO_BTN}
-                fill={isSaved ? colors.danger : undefined}
-                iconColor={isSaved ? colors.danger : undefined}
-                onPress={() => {
-                  if (!v) return;
-                  haptic.select();
-                  toggle.mutate({ venueId: v.id, value: !isSaved });
-                }}
-              />
-            </View>
-          </View>
           <View style={styles.counter}>
             {Platform.OS === 'ios' ? (
               <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
@@ -417,6 +411,49 @@ export default function VenueScreen() {
           ) : null}
         </View>
       </ScrollView>
+
+      {/* Sticky header: transparent over the photo, white with the name once scrolled. */}
+      <StickyHeader progress={scrolled.progress} from="rgba(255,255,255,0)" floating style={styles.stickyBar}>
+        <View style={styles.heroBar}>
+          <IconButton
+            icon={ArrowLeft}
+            label="Go back"
+            variant={btnVariant}
+            blurTarget={galleryRef}
+            size={HERO_BTN}
+            onPress={() => router.back()}
+          />
+          <Animated.View style={[styles.barTitle, titleStyle]} pointerEvents="none">
+            <Text variant="title" numberOfLines={1} align="center">
+              {v?.name ?? ''}
+            </Text>
+          </Animated.View>
+          <View style={styles.row}>
+            <IconButton
+              icon={Share2}
+              label="Share turf"
+              variant={btnVariant}
+              blurTarget={galleryRef}
+              size={HERO_BTN}
+              onPress={() => v && Share.share({ message: `${v.name}, ${v.area} — book on TurfSides: https://turfsides.app/v/${v.id}` })}
+            />
+            <IconButton
+              icon={Heart}
+              label={isSaved ? 'Remove from saved' : 'Save turf'}
+              variant={btnVariant}
+              blurTarget={galleryRef}
+              size={HERO_BTN}
+              fill={isSaved ? colors.danger : undefined}
+              iconColor={isSaved ? colors.danger : undefined}
+              onPress={() => {
+                if (!v) return;
+                haptic.select();
+                toggle.mutate({ venueId: v.id, value: !isSaved });
+              }}
+            />
+          </View>
+        </View>
+      </StickyHeader>
 
       {/* ── Price bar: slides up only once a slot is picked ───── */}
       <PriceBar
@@ -671,7 +708,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.surfaceMuted,
   },
-  heroBar: { position: 'absolute', left: gutter, right: gutter, flexDirection: 'row', justifyContent: 'space-between' },
+  stickyBar: { paddingHorizontal: gutter, paddingBottom: space[2] },
+  heroBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[3], paddingTop: space[2] },
+  barTitle: { flex: 1 },
   counter: {
     position: 'absolute',
     right: space[5],

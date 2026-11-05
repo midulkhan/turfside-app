@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
@@ -23,10 +24,16 @@ function ago(t: number) {
 export default function Notifications() {
   const insets = useSafeAreaInsets();
   const { data, isPending } = useNotifications();
+  const scrolled = useScrolled();
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Notifications" />
-      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + space[6] }]}>
+    <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <ScreenHeader title="Notifications" />
+      </StickyHeader>
+      <ScrollView
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + space[6] }]}>
         {isPending ? (
           [0, 1, 2].map((i) => <Skeleton key={i} height={84} r={radius.lg} />)
         ) : data?.length ? (

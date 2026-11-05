@@ -5,11 +5,11 @@ import { router, useScrollToTop } from 'expo-router';
 import { Bell, ChevronDown, MapPin, Menu, Radar, Search } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SideMenu } from '@/components/navigation/side-menu';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { SectionTitle } from '@/components/ui/headers';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { IconButton } from '@/components/ui/icon-button';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { DEFAULT_DISTANCE, DistanceWheel } from '@/components/ui/distance-wheel';
@@ -34,13 +34,12 @@ type Row = { type: 'header'; key: string; title: string; hint?: string } | { typ
 export default function Explore() {
   const listRef = useRef<FlashListRef<Row>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
-  const insets = useSafeAreaInsets();
   const bottom = useTabBarSpace();
   const { place } = useSession();
   const day = dhakaToday(); // Explore shows today's availability; the turf page picks other days
   const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
   const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
-
+  const scrolled = useScrolled();
 
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
@@ -93,28 +92,6 @@ export default function Explore() {
 
   const header = (
     <View>
-      <View style={[styles.topBar, { paddingTop: insets.top + space[2] }]}>
-        <IconButton icon={Menu} label="Menu" size={HEADER_BTN} onPress={() => setSheet('menu')} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Playing near ${place.name}. Change location`}
-          onPress={() => router.push('/locations')}
-          style={styles.place}>
-          <Text variant="caption" color={colors.textMuted} style={styles.placeKicker}>
-            PLAYING NEAR
-          </Text>
-          <View style={styles.placeRow}>
-            <Text variant="labelStrong" numberOfLines={1} style={styles.placeName}>
-              {place.label ? `${place.label} · ${place.name}` : [place.name, place.city].filter(Boolean).join(', ')}
-            </Text>
-            <ChevronDown size={14} color={colors.textMuted} strokeWidth={2.4} />
-          </View>
-        </Pressable>
-        <View style={styles.actions}>
-          <IconButton icon={Bell} label="Notifications" badge size={HEADER_BTN} onPress={() => router.push('/notifications')} />
-        </View>
-      </View>
-
       <View style={styles.hero}>
         <Image
           source={require('@/assets/photos/hero-ball.webp')}
@@ -166,13 +143,37 @@ export default function Explore() {
           onPress={() => setSheet('distance')}
         />
       </View>
-
     </View>
   );
 
   return (
     <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress} style={styles.sticky}>
+        <View style={styles.topBar}>
+          <IconButton icon={Menu} label="Menu" size={HEADER_BTN} onPress={() => setSheet('menu')} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Playing near ${place.name}. Change location`}
+            onPress={() => router.push('/locations')}
+            style={styles.place}>
+            <Text variant="caption" color={colors.textMuted} style={styles.placeKicker}>
+              PLAYING NEAR
+            </Text>
+            <View style={styles.placeRow}>
+              <Text variant="labelStrong" numberOfLines={1} style={styles.placeName}>
+                {place.label ? `${place.label} · ${place.name}` : [place.name, place.city].filter(Boolean).join(', ')}
+              </Text>
+              <ChevronDown size={14} color={colors.textMuted} strokeWidth={2.4} />
+            </View>
+          </Pressable>
+          <View style={styles.actions}>
+            <IconButton icon={Bell} label="Notifications" badge size={HEADER_BTN} onPress={() => router.push('/notifications')} />
+          </View>
+        </View>
+      </StickyHeader>
       <FlashList
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
         maintainVisibleContentPosition={NO_ANCHOR}
         getItemType={(r) => r.type}
         ref={listRef}
@@ -211,13 +212,14 @@ export default function Explore() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: gutter, zIndex: 2 },
+  sticky: { paddingBottom: space[2] },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: gutter, paddingTop: space[2] },
   place: { flex: 1, alignItems: 'center', gap: 1, minHeight: HEADER_BTN, justifyContent: 'center', paddingHorizontal: space[1] },
   placeKicker: { fontSize: 10.5, lineHeight: 14, letterSpacing: 1.6 },
   placeName: { flexShrink: 1 },
   actions: { flexDirection: 'row', gap: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
-  hero: { height: 172, justifyContent: 'flex-end', paddingBottom: space[3], marginTop: -space[2], overflow: 'hidden' }, // keep the photo (and its pitch base) inside the fades
+  hero: { height: 164, justifyContent: 'flex-end', paddingBottom: space[3], overflow: 'hidden' }, // keep the photo (and its pitch base) inside the fades
   heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
   fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '55%' },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 },

@@ -2,11 +2,11 @@ import { router, useScrollToTop } from 'expo-router';
 import { useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { Bell, Camera, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react-native';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { LogoMark } from '@/components/brand/logo';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { Overline } from '@/components/ui/headers';
@@ -53,9 +53,9 @@ function Row({
 }
 
 export default function Profile() {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   useScrollToTop(scrollRef as never);
-  const insets = useSafeAreaInsets();
+  const scrolled = useScrolled();
   const bottom = useTabBarSpace();
   const { user, place, signOut, updateUser } = useSession();
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -102,87 +102,101 @@ export default function Profile() {
   const soon = (t: string) => () => Alert.alert(t, 'Coming in the next build.');
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top + space[4], paddingBottom: bottom, paddingHorizontal: gutter, gap: space[4] }}>
-      <Text variant="pageTitle">Profile</Text>
-
-      <Card style={styles.me}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={user?.avatarUrl ? 'Change profile photo' : 'Add profile photo'}
-          onPress={editPhoto}
-          disabled={photoBusy}
-          hitSlop={6}>
-          <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={64} />
-          <View style={styles.camera}>
-            {photoBusy ? <ActivityIndicator size="small" color={colors.ink} /> : <Camera size={14} color={colors.ink} strokeWidth={2.4} />}
+    <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <View style={styles.sticky}>
+          <Text variant="pageTitle">Profile</Text>
+        </View>
+      </StickyHeader>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingTop: space[2], paddingBottom: bottom, paddingHorizontal: gutter, gap: space[4] }}>
+        <Card style={styles.me}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={user?.avatarUrl ? 'Change profile photo' : 'Add profile photo'}
+            onPress={editPhoto}
+            disabled={photoBusy}
+            hitSlop={6}>
+            <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={64} />
+            <View style={styles.camera}>
+              {photoBusy ? (
+                <ActivityIndicator size="small" color={colors.ink} />
+              ) : (
+                <Camera size={14} color={colors.ink} strokeWidth={2.4} />
+              )}
+            </View>
+            {photoBusy ? <View style={styles.dim} /> : null}
+          </Pressable>
+          <View style={styles.flex}>
+            <Text variant="h3">{user?.name}</Text>
+            <Text variant="label" color={colors.textMuted}>
+              +880 {user?.phone}
+            </Text>
           </View>
-          {photoBusy ? <View style={styles.dim} /> : null}
-        </Pressable>
-        <View style={styles.flex}>
-          <Text variant="h3">{user?.name}</Text>
-          <Text variant="label" color={colors.textMuted}>
-            +880 {user?.phone}
+        </Card>
+
+        <View style={styles.stats}>
+          <Card tone="dark" style={styles.stat}>
+            <Text variant="number" color={colors.lime}>
+              {upcoming}
+            </Text>
+            <Text variant="label" color={colors.textOnDarkMuted}>
+              Upcoming
+            </Text>
+          </Card>
+          <Card tone="lime" style={styles.stat}>
+            <Text variant="number">{played}</Text>
+            <Text variant="label">Games played</Text>
+          </Card>
+        </View>
+
+        <Overline>Account</Overline>
+        <Card padded={false}>
+          <Row icon={MapPin} label="Home area" detail={place.name} onPress={() => router.navigate('/explore')} />
+          <Divider />
+          <Row icon={Bell} label="Notifications" onPress={() => router.push('/notifications')} />
+          <Divider />
+          <Row icon={ShieldCheck} label="Privacy & security" onPress={soon('Privacy & security')} />
+        </Card>
+
+        <Overline>Support</Overline>
+        <Card padded={false}>
+          <Row icon={CircleHelp} label="Help & support" onPress={soon('Help & support')} />
+          <Divider />
+          <Row icon={FileText} label="Terms & privacy policy" onPress={soon('Terms & privacy policy')} />
+          <Divider />
+          <Row
+            icon={LogOut}
+            label="Sign out"
+            danger
+            onPress={() =>
+              Alert.alert('Sign out?', 'You can sign back in any time.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+              ])
+            }
+          />
+        </Card>
+
+        <View style={styles.footer}>
+          <LogoMark height={22} />
+          <Text variant="caption" color={colors.textSubtle}>
+            Version {Constants.expoConfig?.version ?? '1.0.0'}
           </Text>
         </View>
-      </Card>
-
-      <View style={styles.stats}>
-        <Card tone="dark" style={styles.stat}>
-          <Text variant="number" color={colors.lime}>
-            {upcoming}
-          </Text>
-          <Text variant="label" color={colors.textOnDarkMuted}>
-            Upcoming
-          </Text>
-        </Card>
-        <Card tone="lime" style={styles.stat}>
-          <Text variant="number">{played}</Text>
-          <Text variant="label">Games played</Text>
-        </Card>
-      </View>
-
-      <Overline>Account</Overline>
-      <Card padded={false}>
-        <Row icon={MapPin} label="Home area" detail={place.name} onPress={() => router.navigate('/explore')} />
-        <Divider />
-        <Row icon={Bell} label="Notifications" onPress={() => router.push('/notifications')} />
-        <Divider />
-        <Row icon={ShieldCheck} label="Privacy & security" onPress={soon('Privacy & security')} />
-      </Card>
-
-      <Overline>Support</Overline>
-      <Card padded={false}>
-        <Row icon={CircleHelp} label="Help & support" onPress={soon('Help & support')} />
-        <Divider />
-        <Row icon={FileText} label="Terms & privacy policy" onPress={soon('Terms & privacy policy')} />
-        <Divider />
-        <Row
-          icon={LogOut}
-          label="Sign out"
-          danger
-          onPress={() =>
-            Alert.alert('Sign out?', 'You can sign back in any time.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
-            ])
-          }
-        />
-      </Card>
-
-      <View style={styles.footer}>
-        <LogoMark height={22} />
-        <Text variant="caption" color={colors.textSubtle}>
-          Version {Constants.expoConfig?.version ?? '1.0.0'}
-        </Text>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flex: 1 },
+  sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3] },
   flex: { flex: 1 },
   camera: {
     position: 'absolute',

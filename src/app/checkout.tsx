@@ -25,6 +25,7 @@ import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Photo } from '@/components/ui/photo';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SlideToPay } from '@/components/ui/slide-to-pay';
@@ -141,21 +142,26 @@ export default function Checkout() {
   };
 
   const h = hold.data;
+  const scrolled = useScrolled();
   const phoneMasked = user?.phone ? `+880 ${user.phone.slice(0, 4)}••••${user.phone.slice(-2)}` : '';
 
   return (
     <View style={styles.root}>
-      <View style={{ paddingTop: insets.top }}>
+      <StickyHeader progress={scrolled.progress}>
         <ScreenHeader title="Checkout" />
         <View style={styles.stepper}>
           <Stepper steps={['Select slot', 'Review & pay', 'Confirmed']} current={1} />
         </View>
-      </View>
+      </StickyHeader>
 
       {hold.isError ? (
         <ErrorState message={hold.error.message} onRetry={() => router.back()} />
       ) : (
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 170 + insets.bottom }]} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          onScroll={scrolled.onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={[styles.content, { paddingBottom: 170 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}>
           {/* Hold timer */}
           {h ? (
             <View style={[styles.timer, expired && styles.timerExpired]}>
@@ -178,7 +184,9 @@ export default function Checkout() {
               </View>
             ) : null}
             <View style={styles.ticketBody}>
-              <Text variant="title" style={styles.venueName}>{h?.venue.name ?? ' '}</Text>
+              <Text variant="title" style={styles.venueName}>
+                {h?.venue.name ?? ' '}
+              </Text>
               <View style={styles.row}>
                 <MapPin size={14} color={colors.textMuted} strokeWidth={1.7} />
                 <Text variant="body" color={colors.textMuted} style={styles.small}>
@@ -191,7 +199,9 @@ export default function Checkout() {
               <View style={styles.whenCol}>
                 <CalendarDays size={18} color={colors.ink} strokeWidth={1.6} />
                 <View style={styles.whenText}>
-                  <Text variant="labelStrong" style={styles.whenMain}>{h ? formatDay(h.day, { year: false }) : ' '}</Text>
+                  <Text variant="labelStrong" style={styles.whenMain}>
+                    {h ? formatDay(h.day, { year: false }) : ' '}
+                  </Text>
                   <Text variant="body" color={colors.textMuted} style={styles.small}>
                     {h?.venue.formats[0]}
                   </Text>
@@ -219,7 +229,9 @@ export default function Checkout() {
           <Card style={styles.details}>
             <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={44} />
             <View style={styles.flex}>
-              <Text variant="labelStrong" style={styles.whenMain}>{user?.name}</Text>
+              <Text variant="labelStrong" style={styles.whenMain}>
+                {user?.name}
+              </Text>
               <Text variant="body" color={colors.textMuted} style={styles.small}>
                 {phoneMasked}
               </Text>
@@ -244,7 +256,9 @@ export default function Checkout() {
                         {l.label}
                         {l.detail ? `  ·  ${l.detail}` : ''}
                       </Text>
-                      <Text variant="labelStrong" style={styles.lineText}>{formatTaka(l.amount)}</Text>
+                      <Text variant="labelStrong" style={styles.lineText}>
+                        {formatTaka(l.amount)}
+                      </Text>
                     </View>
                   ))
                 : [0, 1].map((i) => <Skeleton key={i} height={18} />)}
@@ -261,7 +275,9 @@ export default function Checkout() {
               <Plus size={18} color={colors.ink} strokeWidth={1.7} />
             </Pressable>
             <View style={styles.total}>
-              <Text variant="labelStrong" style={styles.whenMain}>Total payable</Text>
+              <Text variant="labelStrong" style={styles.whenMain}>
+                Total payable
+              </Text>
               <Text variant="h2" style={styles.totalAmount}>
                 {h ? formatTaka(h.total) : '—'}
               </Text>
@@ -270,7 +286,9 @@ export default function Checkout() {
 
           {/* Payment method */}
           <View style={styles.methodHead}>
-            <Text variant="title" style={styles.section}>Payment method</Text>
+            <Text variant="title" style={styles.section}>
+              Payment method
+            </Text>
             <Text variant="label" color={colors.textMuted}>
               1 method
             </Text>

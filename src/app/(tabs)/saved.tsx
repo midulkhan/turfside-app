@@ -3,9 +3,9 @@ import { router, useScrollToTop } from 'expo-router';
 import { useRef } from 'react';
 import { Heart } from 'lucide-react-native';
 import { RefreshControl, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
@@ -21,13 +21,20 @@ const NO_ANCHOR = { disabled: true };
 export default function Saved() {
   const listRef = useRef<FlashListRef<VenueSummary>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
-  const insets = useSafeAreaInsets();
+  const scrolled = useScrolled();
   const bottom = useTabBarSpace();
   const { data, isPending, isError, error, refetch } = useSaved();
   const pull = usePullToRefresh(refetch);
   return (
     <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <View style={styles.sticky}>
+          <Text variant="pageTitle">Saved turfs</Text>
+        </View>
+      </StickyHeader>
       <FlashList
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
         maintainVisibleContentPosition={NO_ANCHOR}
         ref={listRef}
         data={data ?? []}
@@ -38,8 +45,7 @@ export default function Saved() {
           </View>
         )}
         ListHeaderComponent={
-          <View style={[styles.header, { paddingTop: insets.top + space[4] }]}>
-            <Text variant="pageTitle">Saved turfs</Text>
+          <View style={styles.header}>
             <Text variant="body" color={colors.textMuted}>
               Your favourite pitches, one tap away.
             </Text>
@@ -71,6 +77,7 @@ export default function Saved() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: gutter, gap: space[1], paddingBottom: space[5] },
+  sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3] },
+  header: { paddingHorizontal: gutter, gap: space[1], paddingTop: space[2], paddingBottom: space[5] },
   item: { paddingHorizontal: gutter, paddingBottom: space[4] },
 });
