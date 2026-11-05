@@ -47,7 +47,10 @@ export default function Explore() {
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
     [place.lat, place.lng, day, radiusKm],
   );
-  const { data, isPending, isError, error, refetch } = useExplore(params);
+  const { data: fetched, isPending, isPlaceholderData, isError, error, refetch } = useExplore(params);
+  // New distance / place: show skeletons at once instead of the old list, then the new results.
+  const loading = isPending || isPlaceholderData;
+  const data = loading ? undefined : fetched;
   const pull = usePullToRefresh(refetch);
 
   const rows = useMemo<Row[]>(() => {
@@ -187,7 +190,7 @@ export default function Explore() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
         ListEmptyComponent={
-          isPending ? (
+          loading ? (
             <View style={styles.skeletons}>
               <VenueCardSkeleton />
               <VenueCardSkeleton />

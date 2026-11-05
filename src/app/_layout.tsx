@@ -17,10 +17,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { VideoSplash } from '@/components/splash/video-splash';
+import { OfflineBanner } from '@/components/ui/offline-banner';
 import { OverlayProvider } from '@/components/ui/overlay-host';
+import { installNavGuard } from '@/lib/nav-guard';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors } from '@/theme/tokens';
+
+installNavGuard(); // one tap = one screen, even on a fast double tap
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -64,6 +68,7 @@ function RootNavigator() {
           </Stack.Protected>
         </Stack>
       ) : null}
+      {appReady ? <OfflineBanner /> : null}
       {!splashDone ? <VideoSplash appReady={appReady} onDone={finishSplash} /> : null}
     </>
   );

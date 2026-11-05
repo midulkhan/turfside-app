@@ -30,9 +30,10 @@ export const qk = {
 
 export const PERSISTED_ROOTS = new Set(['venue', 'saved', 'bookings', 'booking', 'places']);
 
-export function useExplore(p: ExploreParams) {
+export function useExplore(p: ExploreParams, enabled = true) {
   return useQuery({
     queryKey: qk.explore(p),
+    enabled,
     queryFn: ({ signal }) => api.explore(p, signal), // signal aborts stale debounced searches
     staleTime: 60_000,
     placeholderData: keepPreviousData, // no flicker while filters change

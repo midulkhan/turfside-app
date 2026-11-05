@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { CalendarDays, Clock3, UsersRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/card';
@@ -9,9 +9,10 @@ import { Chip } from '@/components/ui/chip';
 import { ScreenHeader } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useRequests } from '@/features/api/queries';
+import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import type { PlayerRequest } from '@/features/api/types';
 import { formatTaka } from '@/lib/money';
 import { formatDay, formatRange } from '@/lib/time';
@@ -72,7 +73,8 @@ export default function Requests() {
   const scrolled = useScrolled();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'posted' | 'joined'>('posted');
-  const { data, isPending } = useRequests();
+  const { data, isPending, isError, refetch } = useRequests();
+  const pull = usePullToRefresh(refetch);
   const list = (data ?? []).filter((r) => r.kind === tab);
 
   return (
@@ -83,6 +85,7 @@ export default function Requests() {
       <ScrollView
         onScroll={scrolled.onScroll}
         scrollEventThrottle={16}
+        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[6] }]}>
         <View style={styles.tabs}>
           <Chip label="Posted by me" active={tab === 'posted'} tone="dark" onPress={() => setTab('posted')} />
@@ -90,6 +93,8 @@ export default function Requests() {
         </View>
         {isPending ? (
           <Skeleton height={150} r={radius.lg} />
+        ) : isError && !data ? (
+          <ErrorState message="Couldn’t load your calls. Check your connection." onRetry={refetch} />
         ) : list.length ? (
           list.map((r) => <RequestCard key={r.id} r={r} />)
         ) : (

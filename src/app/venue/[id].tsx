@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft,
   ArrowRight,
@@ -28,7 +28,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   Alert,
   Linking,
@@ -42,6 +42,7 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 import { BlurTargetView, BlurView } from 'expo-blur';
+import { setStatusBarStyle } from 'expo-status-bar';
 import Animated, { Easing, FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -161,7 +162,8 @@ export default function VenueScreen() {
         Alert.alert('That’s the maximum', `You can book up to ${MAX_SLOTS} slots in one go.`);
         return cur;
       }
-      return [...cur, { ...s, day }];
+      // The slot's own id carries its date (`venue:YYYY-MM-DD:start`), never the date strip's state.
+      return [...cur, { ...s, day: (s.id.split(':')[1] as DayKey) ?? day }];
     });
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';
 
@@ -195,6 +197,14 @@ export default function VenueScreen() {
   // Header goes white (and shows the name) once the photo has scrolled under it.
   const scrolled = useScrolled(heroH - insets.top - HERO_BTN - space[4]);
   const titleStyle = useAnimatedStyle(() => ({ opacity: scrolled.progress.get() }));
+  // Light status bar over the photo, dark once the header turns white; only while this
+  // screen is in front, and always back to dark when leaving (checkout is white).
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle(scrolled.isScrolled ? 'dark' : 'light', true);
+      return () => setStatusBarStyle('dark', true);
+    }, [scrolled.isScrolled]),
+  );
 
   if (venue.isError) {
     return (
@@ -366,7 +376,7 @@ export default function VenueScreen() {
                   ) : null}
                 </View>
 
-                {slots.isPending ? (
+                {slots.isPending || slots.isPlaceholderData ? (
                   <View style={styles.skeletonGrid}>
                     {Array.from({ length: 4 }).map((_, i) => (
                       <Skeleton key={i} width="47%" height={72} r={radius.sm} />
@@ -377,7 +387,7 @@ export default function VenueScreen() {
                 ) : (
                   <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
                 )}
-                {slots.data && !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
+                {slots.data && !slots.isPlaceholderData && !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
                   <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
                     No open sessions on this day. Try another date.
                   </Text>

@@ -1,20 +1,22 @@
 import { BellRing, CreditCard, Megaphone } from 'lucide-react-native';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useNotifications } from '@/features/api/queries';
+import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 
 const ICON = { booking: BellRing, payment: CreditCard, promo: Megaphone };
 
 function ago(t: number) {
   const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'Just now';
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
   if (h < 24) return `${h} h ago`;
@@ -23,7 +25,8 @@ function ago(t: number) {
 
 export default function Notifications() {
   const insets = useSafeAreaInsets();
-  const { data, isPending } = useNotifications();
+  const { data, isPending, isError, refetch } = useNotifications();
+  const pull = usePullToRefresh(refetch);
   const scrolled = useScrolled();
   return (
     <View style={styles.root}>
@@ -33,9 +36,12 @@ export default function Notifications() {
       <ScrollView
         onScroll={scrolled.onScroll}
         scrollEventThrottle={16}
+        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + space[6] }]}>
         {isPending ? (
           [0, 1, 2].map((i) => <Skeleton key={i} height={84} r={radius.lg} />)
+        ) : isError && !data ? (
+          <ErrorState message="Couldn’t load notifications. Check your connection." onRetry={refetch} />
         ) : data?.length ? (
           data.map((n) => {
             const Icon = ICON[n.kind];

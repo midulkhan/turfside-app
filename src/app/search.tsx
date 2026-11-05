@@ -9,9 +9,10 @@ import { IconButton } from '@/components/ui/icon-button';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Input } from '@/components/ui/input';
 import { Overline } from '@/components/ui/headers';
-import { EmptyState } from '@/components/ui/states';
+import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
+import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { KNOWN_AREAS } from '@/lib/places';
 import { useExplore } from '@/features/api/queries';
 import { useSession } from '@/features/session/session';
@@ -36,9 +37,11 @@ export default function Search() {
     () => ({ lat: place.lat, lng: place.lng, day: dhakaToday(), format: 'any' as const, query: q }),
     [place.lat, place.lng, q],
   );
-  const { data, isFetching } = useExplore(params);
+  const { data, isFetching, isPlaceholderData, isError, refetch } = useExplore(params, enabled); // no request until there's a query
+  // Typing ahead of the debounce, or a new query in flight: never show the previous query's results.
+  const searching = enabled && (isFetching && (isPlaceholderData || !data) || text.trim() !== q);
   const scrolled = useScrolled();
-  const results = enabled && data ? [...data.near, ...data.further] : [];
+  const results = enabled && data && !searching && !isError ? [...data.near, ...data.further] : [];
   const areas = enabled ? KNOWN_AREAS.filter((a) => a.name.toLowerCase().includes(q.toLowerCase())) : KNOWN_AREAS.slice(0, 6);
 
   return (
@@ -57,7 +60,7 @@ export default function Search() {
             autoCorrect={false}
             maxLength={60}
             trailing={
-              isFetching && enabled ? (
+              searching ? (
                 <ActivityIndicator color={colors.ink} />
               ) : text ? (
                 <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setText('')} hitSlop={10}>
@@ -104,7 +107,13 @@ export default function Search() {
           </View>
         }
         ListEmptyComponent={
-          enabled && !isFetching ? (
+          searching ? (
+            <View style={styles.item}>
+              <VenueCardSkeleton />
+            </View>
+          ) : isError && enabled ? (
+            <ErrorState message="Couldn’t search right now. Check your connection." onRetry={refetch} />
+          ) : enabled ? (
             <EmptyState icon={SearchIcon} title="No turfs found" body={`Nothing matches “${q}” yet. Try an area name like Uttara.`} />
           ) : null
         }

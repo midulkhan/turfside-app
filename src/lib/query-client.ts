@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { focusManager, onlineManager, QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
 import { AppState, Platform } from 'react-native';
 
 import { PERSISTED_ROOTS } from '@/features/api/queries';
 import { ApiError } from '@/features/api/types';
+import { initNetwork } from '@/lib/network';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,7 +15,9 @@ export const queryClient = new QueryClient({
       retryDelay: (n) => Math.min(800 * 2 ** n, 5000),
       refetchOnReconnect: true,
     },
-    mutations: { retry: 0 }, // never auto-retry money movement; idempotency keys handle manual retries
+    // Never auto-retry money movement (idempotency keys handle manual retries), and never sit
+    // silently paused while offline: actions fail at once with a clear "no connection" error.
+    mutations: { retry: 0, networkMode: 'always' },
   },
 });
 
@@ -34,4 +37,5 @@ export const persistOptions = {
 if (Platform.OS !== 'web') {
   AppState.addEventListener('change', (s) => focusManager.setFocused(s === 'active'));
 }
-onlineManager.setOnline(true);
+// Real connectivity (pauses queries offline, refetches on reconnect).
+initNetwork();
