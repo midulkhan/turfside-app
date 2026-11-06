@@ -594,15 +594,15 @@ function Timeline({ grouped, selectedIds, onPick }: { grouped: Record<DayPart, S
         const last = i === parts.length - 1;
         return (
           <View key={p.key} style={styles.partRow}>
+            {/* Narrow rail: one continuous line, the period's icon + name sit on it (line breaks around them). */}
             <View style={styles.rail}>
               <View style={[styles.railLine, first && styles.railFirst, last && styles.railLast]} />
-              <View style={[styles.node, active && styles.nodeOn]}>{active ? <View style={styles.nodeDot} /> : null}</View>
-            </View>
-            <View style={styles.partLabel}>
-              <p.icon size={22} color={colors.ink} strokeWidth={1.6} />
-              <Text variant="caption" color={colors.textMuted} numberOfLines={1}>
-                {p.label}
-              </Text>
+              <View style={styles.partLabel}>
+                <p.icon size={20} color={active ? colors.limeText : colors.ink} strokeWidth={1.6} />
+                <Text variant="caption" color={active ? colors.limeText : colors.textMuted} numberOfLines={1} style={styles.partText}>
+                  {p.label}
+                </Text>
+              </View>
             </View>
             <View style={styles.slotGrid}>
               {grouped[p.key].map((s) => (
@@ -793,24 +793,13 @@ const styles = StyleSheet.create({
 
   skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2], justifyContent: 'space-between' },
   partRow: { flexDirection: 'row' },
-  rail: { width: 16, alignItems: 'center' },
-  railLine: { position: 'absolute', top: 0, bottom: 0, width: 1.5, backgroundColor: colors.border },
-  railFirst: { top: 32 },
-  railLast: { bottom: undefined, height: 32 },
-  node: {
-    marginTop: 25,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: colors.textSubtle,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nodeOn: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
-  nodeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.limeText },
-  partLabel: { width: 70, alignItems: 'center', paddingTop: space[3], gap: 4 },
+  rail: { width: 62, alignItems: 'center', justifyContent: 'center', marginRight: space[2], paddingBottom: space[2] },
+  railLine: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth * 2, backgroundColor: colors.border },
+  railFirst: { top: space[2] },
+  railLast: { bottom: space[4] },
+  // Card-coloured backing so the line visibly breaks around the icon and name.
+  partLabel: { alignItems: 'center', gap: 4, paddingVertical: space[2], backgroundColor: colors.surface },
+  partText: { fontSize: 11.5, lineHeight: 14 },
   // No negative margins: Android clips anything that pokes outside its parent (that cut the tickets' right borders).
   slotGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: space[2] },
   slotCell: { flexBasis: '40%', flexGrow: 1 },
