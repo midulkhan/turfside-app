@@ -14,6 +14,7 @@ import {
   GlassWater,
   Heart,
   Lightbulb,
+  Banknote,
   MapPin,
   Moon,
   Navigation,
@@ -341,26 +342,28 @@ export default function VenueScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              <View style={styles.addressRow}>
-                <MapPin size={16} color={colors.textMuted} strokeWidth={1.7} />
-                <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.address]} numberOfLines={1}>
-                  {v.shortAddress} · {distance} radius
-                </Text>
-                <Pressable accessibilityRole="link" onPress={openMap} hitSlop={8} style={styles.mapLink}>
-                  <Text variant="labelStrong">Map</Text>
-                  <ArrowUpRight size={16} color={colors.ink} strokeWidth={2.2} />
-                </Pressable>
-              </View>
-              <View style={styles.fromRow}>
-                <Text variant="body" color={colors.textMuted} style={styles.address}>
-                  Starting at
-                </Text>
-                <Text variant="bodyStrong" style={styles.fromPrice}>
-                  {formatTaka(v.hourlyFrom)}
-                </Text>
-                <Text variant="body" color={colors.textMuted} style={styles.address}>
-                  / hour
-                </Text>
+              {/* Supporting facts: one muted list with a shared icon column, under the title. */}
+              <View style={styles.meta}>
+                <View style={styles.metaRow}>
+                  <MapPin size={16} color={colors.textMuted} strokeWidth={1.7} />
+                  <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.address]} numberOfLines={1}>
+                    {v.shortAddress} · {distance} radius
+                  </Text>
+                  <Pressable accessibilityRole="link" onPress={openMap} hitSlop={8} style={styles.mapLink}>
+                    <Text variant="labelStrong">Map</Text>
+                    <ArrowUpRight size={16} color={colors.ink} strokeWidth={2.2} />
+                  </Pressable>
+                </View>
+                <View style={styles.metaRow}>
+                  <Banknote size={16} color={colors.textMuted} strokeWidth={1.7} />
+                  <Text variant="body" color={colors.textMuted} style={styles.address} numberOfLines={1}>
+                    Starting at{'  '}
+                    <Text variant="bodyStrong" style={styles.fromPrice}>
+                      {formatTaka(v.hourlyFrom)}
+                    </Text>{' '}
+                    / hour
+                  </Text>
+                </View>
               </View>
             </Animated.View>
           ) : (
@@ -913,12 +916,12 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   ratingBox: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
   ratingNum: { fontSize: 15, lineHeight: 19 },
-  fromRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5, paddingLeft: 24 },
-  fromPrice: { fontFamily: font.semibold, fontSize: 15, lineHeight: 19 },
+  fromPrice: { fontFamily: font.semibold, fontSize: 14.5, lineHeight: 18, color: colors.ink },
+  meta: { gap: 6, marginTop: space[1] },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 22 },
   name: { fontFamily: font.semibold, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
   address: { fontSize: 13.5, lineHeight: 18 },
   dateNum: { fontSize: 16, lineHeight: 20 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: space[2] },
 
   strip: { flexDirection: 'row', paddingVertical: space[4] },
