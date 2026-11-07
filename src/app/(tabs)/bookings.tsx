@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { router, useScrollToTop } from 'expo-router';
 import { CalendarDays, Clock3, QrCode, RotateCcw } from 'lucide-react-native';
 import { memo, useMemo, useState, useRef } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
@@ -25,26 +25,25 @@ import { colors, gutter, radius, space } from '@/theme/tokens';
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
 
-type Filter = 'all' | 'upcoming' | 'completed' | 'cancelled';
+type Filter = 'all' | 'open' | 'closed';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'upcoming', label: 'Upcoming' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'open', label: 'Open' },
+  { key: 'closed', label: 'Closed' },
 ];
 
-const isUpcoming = (b: Booking, today: string) => b.status === 'confirmed' && b.day >= today;
+/** Open = a game still ahead of you (booked, today or later). Everything else (played, past, cancelled) is closed. */
+const isOpen = (b: Booking, today: string) => (b.status === 'confirmed' || b.status === 'checked_in') && b.day >= today;
 
-const STATUS: Record<Booking['status'], { label: string; bg: string; fg: string }> = {
-  confirmed: { label: 'Confirmed', bg: colors.limeSoft, fg: colors.limeText },
-  checked_in: { label: 'Checked in', bg: colors.limeSoft, fg: colors.limeText },
-  completed: { label: 'Completed', bg: colors.surfaceMuted, fg: colors.textMuted },
-  cancelled: { label: 'Cancelled', bg: colors.dangerSoft, fg: colors.danger },
-};
+const OPEN = { label: 'Open', bg: colors.limeSoft, fg: colors.limeText };
+const CLOSED = { label: 'Closed', bg: colors.surfaceMuted, fg: colors.textMuted };
 
-const BookingRow = memo(function BookingRow({ b }: { b: Booking }) {
-  const s = STATUS[b.status];
+const BookingRow = memo(function BookingRow({ b, today }: { b: Booking; today: string }) {
+  const live = isOpen(b, today);
+  const s = live ? OPEN : CLOSED;
   const open = () => router.push({ pathname: '/booking/[id]', params: { id: b.id } });
+  // "Book again" goes to the turf itself, not this booking.
+  const bookAgain = () => router.push({ pathname: '/venue/[id]', params: { id: b.venue.id } });
   return (
     <PressableScale
       scaleTo={0.985}
@@ -69,12 +68,26 @@ const BookingRow = memo(function BookingRow({ b }: { b: Booking }) {
           </Text>
           <View style={styles.rowBottom}>
             <Text variant="labelStrong">{formatTaka(b.amountPaid)}</Text>
-            <View style={styles.link}>
-              {b.status === 'confirmed' ? <QrCode size={15} color={colors.ink} /> : <RotateCcw size={15} color={colors.ink} />}
-              <Text variant="labelStrong" style={styles.u}>
-                {b.status === 'confirmed' ? 'View ticket' : 'Book again'}
-              </Text>
-            </View>
+            {live ? (
+              <View style={styles.link}>
+                <QrCode size={15} color={colors.ink} />
+                <Text variant="labelStrong" style={styles.u}>
+                  View ticket
+                </Text>
+              </View>
+            ) : (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Book ${b.venue.name} again`}
+                onPress={bookAgain}
+                hitSlop={10}
+                style={styles.link}>
+                <RotateCcw size={15} color={colors.ink} />
+                <Text variant="labelStrong" style={styles.u}>
+                  Book again
+                </Text>
+              </Pressable>
+            )}
           </View>
         </View>
       </Card>
@@ -94,23 +107,15 @@ export default function Bookings() {
 
   const { next, list } = useMemo(() => {
     const all = data ?? [];
-    const upcoming = all.filter((b) => isUpcoming(b, today)).sort((a, b) => a.day.localeCompare(b.day) || a.start - b.start);
+    const upcoming = all.filter((b) => isOpen(b, today)).sort((a, b) => a.day.localeCompare(b.day) || a.start - b.start);
     const nextB = upcoming[0];
-    const filtered = all.filter((b) =>
-      filter === 'all'
-        ? true
-        : filter === 'upcoming'
-          ? isUpcoming(b, today)
-          : filter === 'completed'
-            ? b.status === 'completed' || (b.status === 'confirmed' && b.day < today)
-            : b.status === 'cancelled',
-    );
-    return { next: nextB, list: filtered.filter((b) => b.id !== nextB?.id || filter === 'completed' || filter === 'cancelled') };
+    const filtered = all.filter((b) => (filter === 'all' ? true : filter === 'open' ? isOpen(b, today) : !isOpen(b, today)));
+    return { next: nextB, list: filtered.filter((b) => b.id !== nextB?.id || filter === 'closed') };
   }, [data, filter, today]);
 
   const header = (
     <View style={[styles.header, { paddingTop: space[4] }]}>
-      {next && (filter === 'all' || filter === 'upcoming') ? (
+      {next && (filter === 'all' || filter === 'open') ? (
         <PressableScale scaleTo={0.985} onPress={() => router.push({ pathname: '/booking/[id]', params: { id: next.id } })}>
           <Card tone="dark" padded={false} style={styles.next}>
             <Photo source={next.venue.photo} style={styles.nextPhoto} />
@@ -169,7 +174,7 @@ export default function Bookings() {
         keyExtractor={(b) => b.id}
         renderItem={({ item }) => (
           <View style={styles.item}>
-            <BookingRow b={item} />
+            <BookingRow b={item} today={today} />
           </View>
         )}
         ListHeaderComponent={header}
@@ -184,7 +189,7 @@ export default function Bookings() {
             </View>
           ) : isError ? (
             <ErrorState message={error.message} onRetry={refetch} />
-          ) : next && (filter === 'all' || filter === 'upcoming') ? null : (
+          ) : next && (filter === 'all' || filter === 'open') ? null : (
             <EmptyState
               icon={CalendarDays}
               title="Nothing here yet"
