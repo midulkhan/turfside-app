@@ -167,8 +167,9 @@ export default function VenueScreen() {
     const m = tabX.current[t];
     if (!m) return;
     const cfg = { duration: 240, easing: Easing.bezier(0.22, 1, 0.36, 1) };
-    lineX.set(animate ? withTiming(m.x, cfg) : m.x);
-    lineW.set(animate ? withTiming(m.w, cfg) : m.w);
+    const slide = animate && lineW.get() > 0; // first placement snaps; later moves slide
+    lineX.set(slide ? withTiming(m.x, cfg) : m.x);
+    lineW.set(slide ? withTiming(m.w, cfg) : m.w);
   };
   const lineStyle = useAnimatedStyle(() => ({ width: lineW.get(), transform: [{ translateX: lineX.get() }] }));
   // Switching tabs never shrinks the page under your thumb: the new tab starts at least as
@@ -459,12 +460,12 @@ export default function VenueScreen() {
                     onLayout={(e) => {
                       const { x, width } = e.nativeEvent.layout;
                       tabX.current[key] = { x, w: width };
-                      if (key === tab) moveLine(key, false);
+                      // The active label is bolder (a touch wider): keep the underline exactly under it.
+                      if (key === tab) moveLine(key, true);
                     }}
                     hitSlop={{ top: 8, bottom: 8 }}
                     style={styles.tab}>
-                    {/* Same weight in both states, so the labels never reflow when you switch. */}
-                    <Text variant="bodyStrong" color={active ? colors.text : colors.textMuted}>
+                    <Text variant={active ? 'bodyStrong' : 'body'} color={active ? colors.text : colors.textMuted}>
                       {label}
                     </Text>
                   </Pressable>
