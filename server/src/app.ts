@@ -97,7 +97,7 @@ export async function buildApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // images are loaded by the app
   });
   await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'DELETE'] });
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
+  await app.register(rateLimit, { max: config.RATE_LIMIT_PER_MIN, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
   // Per signed-in session rather than per IP: many players can share one carrier IP, and rate
   // limiting runs before auth, so the bearer token is the session key (IP for signed-out users).
   const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;

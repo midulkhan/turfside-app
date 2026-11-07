@@ -54,6 +54,8 @@ const schema = z.object({
   R2_PUBLIC_URL: z.string().url().optional(), // public base for reads: https://pub-xxxx.r2.dev or https://cdn.turfsides.com
 
   // Sign-in / sign-up / code requests per IP per minute. Keep the default in production; tests raise it.
+  /** General per-IP ceiling (requests per minute). CI raises it: the whole suite runs from one IP. */
+  RATE_LIMIT_PER_MIN: z.coerce.number().int().min(10).max(100_000).default(120),
   AUTH_RATE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
   /** Verification codes one IP can request per hour (SMS-abuse guard). Raised only in CI. */
   OTP_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(20),
