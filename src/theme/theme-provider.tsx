@@ -4,6 +4,8 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 
 import { prefs } from '@/lib/storage';
 
+import * as SystemUI from 'expo-system-ui';
+
 import { applyScheme, getScheme, palettes, type Scheme } from './tokens';
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -46,6 +48,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const scheme: Scheme = !pref || pref === 'system' ? system : pref;
   // Flip the palette before any child of this render reads a colour (idempotent).
   if (pref) applyScheme(scheme);
+
+  // The native window behind every screen: shown for a frame between screens and through
+  // crossfades. It starts as app.json's white, so match it to the theme (no white flash).
+  useEffect(() => {
+    if (pref) SystemUI.setBackgroundColorAsync(palettes[scheme].bg).catch(() => {});
+  }, [pref, scheme]);
 
   const veil = useSharedValue(0);
   const shown = useRef<Scheme | null>(null);

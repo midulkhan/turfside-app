@@ -76,7 +76,8 @@ function RootNavigator() {
           </Stack.Protected>
           <Stack.Protected guard={!!user} redirectTo="/">
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-            <Stack.Screen name="venue/[id]" />
+            {/* Opens and closes with a quick crossfade (150 ms on Android; iOS matched). */}
+            <Stack.Screen name="venue/[id]" options={{ animation: 'fade', animationDuration: 180 }} />
             <Stack.Screen name="checkout" />
             <Stack.Screen name="booking/[id]" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
             <Stack.Screen name="search" options={{ animation: 'fade' }} />
