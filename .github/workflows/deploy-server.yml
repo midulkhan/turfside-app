@@ -25,6 +25,12 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      # The cache runs against real Redis in CI, behind a local stand-in for Upstash's REST API.
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
 
     defaults:
       run:
@@ -67,14 +73,26 @@ jobs:
           AUTH_RATE_LIMIT: '1000' # the suite signs up many test users from one IP
           OTP_IP_LIMIT: '1000'
           RATE_LIMIT_PER_MIN: '10000'
+          # Redis cache through scripts/upstash-local.mjs (same protocol as Upstash)
+          UPSTASH_REDIS_REST_URL: http://127.0.0.1:8079
+          UPSTASH_REDIS_REST_TOKEN: local-token
+          CACHE_PREFIX: 'ci:'
+          UPSTASH_TEST_URL: http://127.0.0.1:8079
+          UPSTASH_TEST_TOKEN: local-token
+          API_URL_2: http://localhost:4011
         run: |
           node scripts/s3-local.mjs /tmp/s3-local > /tmp/s3.log 2>&1 &
+          node scripts/upstash-local.mjs 8079 6379 > /tmp/upstash.log 2>&1 &
           # The app-client tests compile ../src, whose tsconfig extends Expo's base config.
           # Only the server's packages are installed here, so give that file an empty stand-in.
           [ -f ../node_modules/expo/tsconfig.base.json ] || { mkdir -p ../node_modules/expo && echo '{}' > ../node_modules/expo/tsconfig.base.json; }
           node dist/index.js > /tmp/api.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:4010/health | grep -q '"schema":"ok"' && break; sleep 1; done
-          API_URL=http://localhost:4010 npx vitest run || (cat /tmp/api.log; exit 1)
+          # A second process on the same database + Redis: the cache must stay right across processes.
+          PORT=4011 PUBLIC_URL=http://localhost:4011 AUTO_MIGRATE=false node dist/index.js > /tmp/api2.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4011/health > /dev/null && break; sleep 1; done
+          curl -s http://localhost:4010/health | grep -q '"cache":"upstash-redis:ok"' || { echo "Redis cache not active"; curl -s http://localhost:4010/health; exit 1; }
+          API_URL=http://localhost:4010 npx vitest run || (cat /tmp/api.log; tail -50 /tmp/api2.log; exit 1)
 
       - name: Assemble deploy folder
         run: |

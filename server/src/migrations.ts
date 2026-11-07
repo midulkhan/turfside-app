@@ -9,6 +9,7 @@ import m004 from '../db/migrations/004_user_places.sql';
 import m005 from '../db/migrations/005_avatars.sql';
 import m006 from '../db/migrations/006_orders.sql';
 import m007 from '../db/migrations/007_account_settings.sql';
+import m008 from '../db/migrations/008_slot_update_xid.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -18,6 +19,7 @@ const MIGRATIONS: [string, string][] = [
   ['005_avatars', m005],
   ['006_orders', m006],
   ['007_account_settings', m007],
+  ['008_slot_update_xid', m008],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

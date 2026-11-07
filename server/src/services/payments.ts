@@ -4,7 +4,15 @@ import { ApiError } from '../errors';
 import * as bkash from '../lib/bkash';
 import { randomToken } from '../lib/crypto';
 
-import { invalidateDay } from './venues';
+import { refreshDays } from './venues';
+
+/** Which turf-days an order (or a single booking) covers, for refreshing the slot cache after a change. */
+async function daysOf(orderId: string | null, bookingId?: string) {
+  return q<{ venueId: string; day: string }>(
+    'select distinct venue_id "venueId", day::text from bookings where ' + (orderId ? 'order_id = $1' : 'id = $1'),
+    [orderId ?? bookingId],
+  );
+}
 
 type PaymentRow = {
   id: string;
@@ -70,6 +78,9 @@ export async function startPayment(userId: string, holdId: string, idemKey: stri
     await c.query("update bookings set status = 'pending', hold_expires_at = now() + make_interval(mins => $2) where order_id = $1 and status = 'held'", [o.id, PAYMENT_WINDOW_MIN()]);
     return p;
   });
+  // The hold now lasts the whole payment window: without this, a cached copy would show
+  // the slots free when the original hold time passes.
+  await refreshDays(await daysOf(payment.order_id, payment.booking_id));
 
   try {
     let paymentID: string;
@@ -188,15 +199,15 @@ export async function finalize(paymentId: string): Promise<{ status: string; boo
     }
     return { status: confirmed ? 'confirmed' : 'refund_required', bookingId: p.booking_id, days: slots.map((x) => [x.venue_id, x.day] as const) };
   });
-  if ('days' in out && out.days) await Promise.all([...new Set(out.days.map(([v, d]) => `${v}|${d}`))].map((k) => invalidateDay(k.split('|')[0], k.split('|')[1])));
+  if ('days' in out && out.days) await refreshDays(out.days.map(([venueId, day]) => ({ venueId, day })));
   return { status: out.status === 'refund_required' ? 'failed' : out.status, bookingId: out.bookingId };
 }
 
 /** Callback for cancel / failure from bKash: free the slot again for a retry. */
 export async function abandon(paymentId: string, status: 'cancelled' | 'failed') {
-  await tx(async (c) => {
+  const touched = await tx(async (c) => {
     const p = (await c.query<{ booking_id: string; order_id: string | null; status: string }>('select booking_id, order_id, status from payments where id = $1 for update', [paymentId])).rows[0];
-    if (!p || p.status !== 'pending') return;
+    if (!p || p.status !== 'pending') return null;
     await c.query('update payments set status = $2, updated_at = now() where id = $1', [paymentId, status]);
     if (p.order_id) {
       await c.query("update orders set status = 'held', hold_expires_at = least(hold_expires_at, now() + interval '5 minutes') where id = $1 and status = 'pending'", [p.order_id]);
@@ -204,7 +215,9 @@ export async function abandon(paymentId: string, status: 'cancelled' | 'failed')
     } else {
       await c.query("update bookings set status = 'held', hold_expires_at = least(hold_expires_at, now() + interval '5 minutes') where id = $1 and status = 'pending'", [p.booking_id]);
     }
+    return p;
   });
+  if (touched) await refreshDays(await daysOf(touched.order_id, touched.booking_id));
 }
 
 export async function paymentStatus(userId: string, paymentId: string) {
@@ -236,6 +249,7 @@ export async function reconcile() {
           await c.query("update bookings set status = 'expired' where id = $1 and status = 'pending'", [p.booking_id]);
         }
       });
+      await refreshDays(await daysOf(p.order_id, p.booking_id));
     }
   }
   const released = (await one<{ n: number }>('select release_expired_holds() n'))?.n ?? 0;

@@ -1,10 +1,10 @@
-import { cacheDel } from './cache';
 import { config, missingConfig } from './config';
 import { buildApp } from './app';
 import { closeDb } from './db';
 import { ensureCronJobs } from './jobs';
 import { migrate, schema } from './migrations';
 import { reconcile } from './services/payments';
+import { invalidateVenue } from './services/venues';
 
 async function main() {
   const app = await buildApp();
@@ -26,7 +26,7 @@ async function main() {
     const run = async (attempt = 1): Promise<void> => {
       try {
         await migrate((m) => app.log.info(m));
-        await cacheDel('venues:all'); // drop anything cached while the tables were still empty
+        await invalidateVenue(); // drop anything cached while the tables were still empty
         await ensureCronJobs((m) => app.log.info(m)).catch((e) => app.log.warn(e, 'could not schedule jobs'));
       } catch (e) {
         const wait = Math.min(15_000 * attempt, 120_000);

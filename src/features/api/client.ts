@@ -75,9 +75,17 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
 export const getVenue = (id: string, signal?: AbortSignal) =>
   request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
 
-/** `fresh`: skip the server's short cache (used right after a realtime change). */
-export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal, fresh?: boolean) =>
-  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { auth: 'optional', query: fresh ? { day, fresh: '1' } : { day }, signal });
+/**
+ * `after`: the database transaction a realtime event reported. The server answers from its
+ * cache only if that cache already includes the change, otherwise straight from the database.
+ * `true` (no transaction id known) always skips the cache.
+ */
+export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal, after?: string | true) =>
+  request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, {
+    auth: 'optional',
+    query: after === true ? { day, fresh: '1' } : after ? { day, v: after } : { day },
+    signal,
+  });
 
 export const getReviews = (venueId: string, signal?: AbortSignal) =>
   request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { signal });

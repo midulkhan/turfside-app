@@ -8,7 +8,7 @@ import { ApiError } from '../errors';
 import { addDays, dhakaToday, generateSessions, hourlyFor, instant, isDayKey, minutesNowInDhaka, sessionPrice } from '../lib/time';
 import { signPass } from '../lib/tokens';
 
-import { getVenueRow, invalidateDay, photoUrl, rules } from './venues';
+import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules } from './venues';
 
 type BookingRow = {
   id: string;
@@ -129,7 +129,8 @@ export async function createHold(userId: string, slotIds: string[]) {
   if (parsed.some((p) => p.venueId !== venueId)) throw new ApiError('invalid', 'All slots in one booking must be at the same turf.');
 
   const today = dhakaToday();
-  const v = await getVenueRow(venueId);
+  // From Postgres, not the cache: this sets the price and checks the schedule.
+  const v = await getVenueRowExact(venueId);
   const sessions = generateSessions({ openMin: v.open_min, closeMin: v.close_min, lengthMin: v.session_min, breakMin: v.break_min });
   const picks = parsed
     .map((p) => {
@@ -200,7 +201,7 @@ export async function createHold(userId: string, slotIds: string[]) {
   const days = new Map<string, string>();
   for (const f of result.freed) days.set(`${f.venue_id}|${f.day}`, f.venue_id);
   for (const p of picks) days.set(`${v.id}|${p.day}`, v.id);
-  await Promise.all([...days.keys()].map((k) => invalidateDay(days.get(k)!, k.split('|')[1])));
+  await refreshDays([...days.keys()].map((k) => ({ venueId: days.get(k)!, day: k.split('|')[1] })));
   return holdShape(result.order);
 }
 
@@ -269,7 +270,7 @@ export async function releaseHold(userId: string, holdId: string) {
       )
     ).rows;
   });
-  await Promise.all([...new Set(rows.map((r) => `${r.venue_id}|${r.day}`))].map((k) => invalidateDay(k.split('|')[0], k.split('|')[1])));
+  await refreshDays(rows.map((r) => ({ venueId: r.venue_id, day: r.day })));
   return { released: rows.length > 0 };
 }
 

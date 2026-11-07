@@ -7,9 +7,9 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { cached, cacheBackend, pingCache } from './cache';
+import { cached, cacheBackend, cacheStats, pingCache } from './cache';
 import { config, isProd, missingConfig } from './config';
-import { one, q } from './db';
+import { dbStats, one, q, requestDb } from './db';
 import { schema } from './migrations';
 import { ApiError } from './errors';
 import { bkashEnabled, isSimulated } from './lib/bkash';
@@ -22,7 +22,7 @@ import * as auth from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
 import * as payments from './services/payments';
-import { allVenueRows, daySlots, detail, getVenueRow, haversineKm, invalidateDay, summary } from './services/venues';
+import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -101,6 +101,17 @@ export async function buildApp() {
     genReqId: () => Math.random().toString(36).slice(2, 10),
   });
 
+  // Count this request's database work (the header is left out in production).
+  app.addHook('onRequest', (req, _reply, done) => {
+    const scope = { n: 0 };
+    (req as unknown as { db: typeof scope }).db = scope;
+    requestDb.run(scope, done);
+  });
+  if (!isProd)
+    app.addHook('onSend', async (req, reply) => {
+      reply.header('x-db-queries', String((req as unknown as { db?: { n: number } }).db?.n ?? 0));
+    });
+
   await app.register(helmet, {
     contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // images are loaded by the app
@@ -131,6 +142,7 @@ export async function buildApp() {
     return published ? 'ok' : 'slot_updates not in supabase_realtime publication';
   };
   app.get('/health', async () => {
+    const dbQueries = dbStats.queries; // before this check's own queries
     let db = 'not_configured';
     if (config.DATABASE_URL) db = await one('select 1 ok')
         .then(() => 'ok')
@@ -145,6 +157,7 @@ export async function buildApp() {
       db,
       schema: schema.state === 'error' ? `error: ${schema.error}` : schema.state,
       cache: `${cacheBackend}:${(await pingCache()) ? 'ok' : 'error'}`,
+      cacheStats: { ...cacheStats(), dbQueries },
       storage: await pingStorage(),
       payments: config.BKASH_MODE,
       realtime: db === 'ok' ? await realtimeState() : 'unknown',
@@ -208,31 +221,28 @@ export async function buildApp() {
       req.query,
     );
     const day = p.day ?? dhakaToday();
-    // Round to ~1 km so nearby users share cache entries.
-    const lat = Math.round(p.lat * 100) / 100;
-    const lng = Math.round(p.lng * 100) / 100;
-    const key = `explore:${lat}:${lng}:${day}:${p.format}:${p.floodlit ?? ''}:${p.radius ?? ''}:${(p.q ?? '').toLowerCase()}`;
-    const base = await cached(key, 60, async () => {
-      const ql = p.q?.toLowerCase();
-      const rows = (await allVenueRows())
-        .filter((v) => (p.format === 'any' ? true : v.formats.includes(p.format)))
-        .filter((v) => (p.floodlit === 'true' ? v.floodlit : true))
-        .filter((v) => (ql ? `${v.name} ${v.area}`.toLowerCase().includes(ql) : true))
-        .map((v) => ({ v, d: haversineKm(lat, lng, v.lat, v.lng) }))
-        .sort((a, b) => a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
-      let radiusKm = p.radius ?? RADIUS_STEPS[RADIUS_STEPS.length - 1];
-      if (!p.radius) for (const r of RADIUS_STEPS) {
-        if (rows.filter((x) => x.d <= r).length >= MIN_RESULTS) {
-          radiusKm = r;
-          break;
-        }
+    // Everything here comes from the cached catalog (memory, re-checked once a minute) and one
+    // shared availability read for the day: searching and filtering cost no database queries.
+    const lat = p.lat;
+    const lng = p.lng;
+    const ql = p.q?.toLowerCase();
+    const rows = (await allVenueRows())
+      .filter((v) => (p.format === 'any' ? true : v.formats.includes(p.format)))
+      .filter((v) => (p.floodlit === 'true' ? v.floodlit : true))
+      .filter((v) => (ql ? `${v.name} ${v.area}`.toLowerCase().includes(ql) : true))
+      .map((v) => ({ v, d: haversineKm(lat, lng, v.lat, v.lng) }))
+      .sort((a, b) => a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
+    let radiusKm = p.radius ?? RADIUS_STEPS[RADIUS_STEPS.length - 1];
+    if (!p.radius) for (const r of RADIUS_STEPS) {
+      if (rows.filter((x) => x.d <= r).length >= MIN_RESULTS) {
+        radiusKm = r;
+        break;
       }
-      const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 60);
-      const withAvail = await Promise.all(
-        inRange.map(async ({ v }) => ({ ...summary(v, { lat, lng, availableToday: (await daySlots(v, day)).some((s) => s.status === 'available') }) })),
-      );
-      return { radiusKm, near: withAvail.filter((x) => (x.distanceKm ?? 0) <= RADIUS_STEPS[0]), further: withAvail.filter((x) => (x.distanceKm ?? 0) > RADIUS_STEPS[0]) };
-    });
+    }
+    const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 60);
+    const avail = await availabilityFor(inRange.map((x) => x.v), day);
+    const withAvail = inRange.map(({ v }) => summary(v, { lat, lng, availableToday: avail.get(v.id) ?? false }));
+    const base = { radiusKm, near: withAvail.filter((x) => (x.distanceKm ?? 0) <= RADIUS_STEPS[0]), further: withAvail.filter((x) => (x.distanceKm ?? 0) > RADIUS_STEPS[0]) };
     if (!req.user) return base;
     const saved = new Set((await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1', [req.user.userId])).map((r) => r.venue_id));
     const mark = (v: { id: string }) => ({ ...v, isSaved: saved.has(v.id) });
@@ -248,19 +258,28 @@ export async function buildApp() {
 
   app.get('/v1/venues/:id/slots', { preHandler: optionalUser }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const { day, fresh } = parse(z.object({ day: z.string().refine(isDayKey, 'Invalid date.'), fresh: z.literal('1').optional() }), req.query);
-    const v = await getVenueRow(id);
+    const { day, fresh, v: since } = parse(
+      z.object({
+        day: z.string().refine(isDayKey, 'Invalid date.'),
+        fresh: z.literal('1').optional(),
+        /** Transaction id from the realtime event: the answer must include that change. */
+        v: z.string().regex(/^\d{1,20}$/).optional(),
+      }),
+      req.query,
+    );
+    const venue = await getVenueRow(id);
     reply.header('Cache-Control', 'no-store');
-    // `fresh=1`: the app was just told (realtime) that this day changed: skip the 15 s cache
-    // so it can never be handed a copy computed a moment before the change committed.
-    if (fresh) await invalidateDay(id, day);
-    return { venueId: id, day, slots: await daySlots(v, day, req.user?.userId), fetchedAt: Date.now() };
+    // `v`: served from cache only if the cached copy already contains that transaction.
+    // `fresh=1` (older apps, which don't send `v`): always recomputed.
+    const slots = await daySlots(venue, day, req.user?.userId, since ? { since: BigInt(since) } : { bypass: !!fresh });
+    return { venueId: id, day, slots, fetchedAt: Date.now() };
   });
 
   app.get('/v1/venues/:id/reviews', async (req) => {
     const { id } = req.params as { id: string };
     const v = await getVenueRow(id);
-    return cached(`reviews:${id}`, 600, async () => {
+    // No API path writes reviews yet; when one does, it must cacheDel(`reviews:${id}`).
+    return cached(`reviews:${id}`, 3600, async () => {
       const items = await q<{ id: string; author_name: string; rating: number; created_at: Date; body: string }>(
         'select id, author_name, rating, created_at, body from reviews where venue_id = $1 order by created_at desc limit 20',
         [id],
@@ -274,7 +293,7 @@ export async function buildApp() {
         histogram,
         items: items.map((r) => ({ id: r.id, author: r.author_name, rating: r.rating, at: new Date(r.created_at).getTime(), text: r.body })),
       };
-    });
+    }, 300);
   });
 
   // ── Me ────────────────────────────────────────────────────────────────────

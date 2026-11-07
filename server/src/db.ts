@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { Pool, types, type PoolClient, type QueryResultRow } from 'pg';
 
 import { config } from './config';
@@ -9,6 +11,15 @@ types.setTypeParser(20, (v) => Number(v));
 types.setTypeParser(1082, (v) => v);
 
 let pool: Pool | null = null;
+/** Statements/transactions sent since start (shown on /health; lets tests prove what is cached). */
+export const dbStats = { queries: 0 };
+/** Per-request count (sent as x-db-queries outside production, so tests can see what was cached). */
+export const requestDb = new AsyncLocalStorage<{ n: number }>();
+const counted = () => {
+  dbStats.queries++;
+  const r = requestDb.getStore();
+  if (r) r.n++;
+};
 
 export function getPool() {
   if (!config.DATABASE_URL) throw new ApiError('not_configured', 'Database is not configured yet.');
@@ -30,6 +41,7 @@ export function getPool() {
 
 /** Parameterised queries only — never string-concatenate user input into SQL. */
 export async function q<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []) {
+  counted();
   const res = await getPool().query<T>(text, params);
   return res.rows;
 }
@@ -41,6 +53,7 @@ export async function one<T extends QueryResultRow = QueryResultRow>(text: strin
 
 /** Run work in a transaction; rolls back on any error. */
 export async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  counted();
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');

@@ -30,6 +30,13 @@ const schema = z.object({
 
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  /** Key namespace, so tests or a staging API can share one Redis without touching live keys. */
+  CACHE_PREFIX: z.string().regex(/^[a-z0-9_:-]{1,20}$/).default('ts:'),
+  /**
+   * Redis commands one Node process may spend per day on cache reads (writes that keep the
+   * cache correct are never skipped). Upstash's free plan is 500K/month ≈ 16K/day in total.
+   */
+  REDIS_DAILY_BUDGET: z.coerce.number().int().min(100).max(10_000_000).default(14_000),
 
   SMS_PROVIDER: z.enum(['console', 'http']).default('console'),
   SMS_HTTP_URL: z.string().url().optional(),
