@@ -43,8 +43,17 @@ import {
 } from 'react-native';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { setStatusBarStyle } from 'expo-status-bar';
-import Animated, { Easing, FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeIn,
+  LinearTransition,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { SlotTicket } from '@/components/ticket/slot-ticket';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -92,6 +101,7 @@ const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
   { key: 'night', label: 'Night', icon: Moon },
 ];
 const HERO_BTN = 40;
+const SHEET_OVERLAP = 28; // content sheet radius = how far it overlaps the photo
 const MAX_SLOTS = 6; // per order (the server enforces the same limit)
 type Picked = Slot & { day: DayKey };
 
@@ -195,7 +205,27 @@ export default function VenueScreen() {
 
   const heroH = Math.round(width * 0.68) + insets.top * 0.4;
   // Header goes white (and shows the name) once the photo has scrolled under it.
-  const scrolled = useScrolled(heroH - insets.top - HERO_BTN - space[4]);
+  const barAt = heroH - insets.top - HERO_BTN - space[4];
+  const scrolled = useScrolled(barAt);
+  // Scroll tracked on the UI thread: drives the photo parallax and flips the header past `barAt`.
+  const scrollY = useSharedValue(0);
+  const pastBar = useSharedValue(false);
+  const setPast = scrolled.setPast;
+  const onScroll = useAnimatedScrollHandler((e) => {
+    const y = e.contentOffset.y;
+    scrollY.set(y);
+    const now = y > barAt;
+    if (now !== pastBar.get()) {
+      pastBar.set(now);
+      scheduleOnRN(setPast, now);
+    }
+  });
+  // Photo moves at ~half speed (the sheet slides over it); pulling down stretches it (iOS bounce).
+  const parallax = useAnimatedStyle(() => {
+    const y = scrollY.get();
+    if (y < 0) return { transform: [{ translateY: y / 2 }, { scale: 1 + -y / heroH }] };
+    return { transform: [{ translateY: Math.min(y, heroH) * 0.45 }] };
+  });
   const titleStyle = useAnimatedStyle(() => ({ opacity: scrolled.progress.get() }));
   // Light status bar over the photo, dark once the header turns white; only while this
   // screen is in front, and always back to dark when leaving (checkout is white).
@@ -220,24 +250,26 @@ export default function VenueScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
-        onScroll={scrolled.onScroll}
+        onScroll={onScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}>
-        {/* ── Gallery ─────────────────────────────────────────── */}
+        {/* ── Gallery (full-bleed, parallax) ──────────────────── */}
         <View style={[styles.hero, { height: heroH }]}>
-          <BlurTargetView ref={galleryRef} style={StyleSheet.absoluteFill}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))}>
-              {gallery.map((p, i) => (
-                <Photo key={i} source={p} style={{ width, height: heroH }} rounded={0} priority={i === 0 ? 'high' : 'low'} />
-              ))}
-            </ScrollView>
-          </BlurTargetView>
+          <Animated.View style={[StyleSheet.absoluteFill, parallax]}>
+            <BlurTargetView ref={galleryRef} style={StyleSheet.absoluteFill}>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / width))}>
+                {gallery.map((p, i) => (
+                  <Photo key={i} source={p} style={{ width, height: heroH }} rounded={0} priority={i === 0 ? 'high' : 'low'} />
+                ))}
+              </ScrollView>
+            </BlurTargetView>
+          </Animated.View>
           <View style={styles.counter}>
             {Platform.OS === 'ios' ? (
               <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
@@ -250,6 +282,7 @@ export default function VenueScreen() {
           </View>
         </View>
 
+        {/* Content sheet: rounded top, overlaps the photo and slides over it. */}
         <View style={styles.body}>
           {/* ── Title block ─────────────────────────────────────── */}
           {v ? (
@@ -387,7 +420,9 @@ export default function VenueScreen() {
                 ) : (
                   <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
                 )}
-                {slots.data && !slots.isPlaceholderData && !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
+                {slots.data &&
+                !slots.isPlaceholderData &&
+                !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
                   <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
                     No open sessions on this day. Try another date.
                   </Text>
@@ -441,7 +476,7 @@ export default function VenueScreen() {
             </Animated.View>
           ) : null}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Sticky header: transparent over the photo, white with the name once scrolled. */}
       <StickyHeader progress={scrolled.progress} from="rgba(255,255,255,0)" floating style={styles.stickyBar}>
@@ -487,7 +522,12 @@ export default function VenueScreen() {
       </StickyHeader>
 
       {/* ── Price bar: slides up only once a slot is picked ───── */}
-      <PriceBar picks={chosen} bottomInset={insets.bottom} loading={hold.isPending} onContinue={() => chosen.length && hold.mutate(chosen)} />
+      <PriceBar
+        picks={chosen}
+        bottomInset={insets.bottom}
+        loading={hold.isPending}
+        onContinue={() => chosen.length && hold.mutate(chosen)}
+      />
 
       <CalendarModal
         visible={calendarOpen}
@@ -584,7 +624,15 @@ function AmenityStrip({ v }: { v: VenueDetail }) {
 }
 
 /** Time picker grouped by part of day, with a vertical timeline on the left. */
-function Timeline({ grouped, selectedIds, onPick }: { grouped: Record<DayPart, Slot[]>; selectedIds: Set<string>; onPick: (s: Slot) => void }) {
+function Timeline({
+  grouped,
+  selectedIds,
+  onPick,
+}: {
+  grouped: Record<DayPart, Slot[]>;
+  selectedIds: Set<string>;
+  onPick: (s: Slot) => void;
+}) {
   const parts = PARTS.filter((p) => grouped[p.key].length);
   return (
     <View>
@@ -732,19 +780,15 @@ const styles = StyleSheet.create({
   mtLg: { marginTop: space[5] },
   underline: { textDecorationLine: 'underline' },
 
-  hero: {
-    borderBottomLeftRadius: radius.xl + 8,
-    borderBottomRightRadius: radius.xl + 8,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceMuted,
-  },
+  // Full-bleed photo. Not clipped, so the iOS pull-down stretch can grow upward; the sheet covers its bottom.
+  hero: { backgroundColor: colors.surfaceMuted },
   stickyBar: { paddingHorizontal: gutter, paddingBottom: space[2] },
   heroBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[3], paddingTop: space[2] },
   barTitle: { flex: 1 },
   counter: {
     position: 'absolute',
     right: space[5],
-    bottom: space[4],
+    bottom: SHEET_OVERLAP + space[3],
     backgroundColor: 'rgba(22,27,29,0.32)',
     borderRadius: radius.pill,
     overflow: 'hidden',
@@ -755,7 +799,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  body: { paddingHorizontal: gutter, paddingTop: space[5], gap: space[4] },
+  body: {
+    marginTop: -SHEET_OVERLAP,
+    borderTopLeftRadius: SHEET_OVERLAP,
+    borderTopRightRadius: SHEET_OVERLAP,
+    backgroundColor: colors.bg,
+    paddingHorizontal: gutter,
+    paddingTop: space[6],
+    gap: space[4],
+  },
   titleBlock: { gap: space[2] },
   name: { fontFamily: font.semibold, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
   address: { fontSize: 13.5, lineHeight: 18 },

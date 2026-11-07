@@ -14,18 +14,21 @@ export function useScrolled(threshold = 6) {
   const progress = useSharedValue(0);
   const past = useRef(false);
   const [isScrolled, setIsScrolled] = useState(false); // for things that can't animate (e.g. swapping a variant)
-  const onScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const now = e.nativeEvent.contentOffset.y > threshold;
-      if (now !== past.current) {
-        past.current = now;
-        setIsScrolled(now);
-        progress.set(withTiming(now ? 1 : 0, { duration: 180 }));
-      }
+  /** Set "scrolled past the threshold" directly (for screens that track scroll on the UI thread). */
+  const setPast = useCallback(
+    (now: boolean) => {
+      if (now === past.current) return;
+      past.current = now;
+      setIsScrolled(now);
+      progress.set(withTiming(now ? 1 : 0, { duration: 180 }));
     },
-    [progress, threshold],
+    [progress],
   );
-  return { progress, onScroll, isScrolled };
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => setPast(e.nativeEvent.contentOffset.y > threshold),
+    [setPast, threshold],
+  );
+  return { progress, onScroll, isScrolled, setPast };
 }
 
 /**
