@@ -4,7 +4,10 @@ import Svg, { Path } from 'react-native-svg';
 // Pure encoder (no canvas/DOM) — keeps the bundle small.
 import QRCodeCore from 'qrcode/lib/core/qrcode';
 
-import { colors, radius } from '@/theme/tokens';
+import { radius } from '@/theme/tokens';
+
+const QR_BG = '#FFFFFF';
+const QR_FG = '#161B1D';
 
 /** Renders a QR as one SVG path (fast: a single native draw call). */
 export function QRCode({ value, size = 120 }: { value: string; size?: number }) {
@@ -29,9 +32,11 @@ export function QRCode({ value, size = 120 }: { value: string; size?: number }) 
 
   const pad = 2;
   return (
-    <View style={{ backgroundColor: colors.surface, borderRadius: radius.sm, padding: 6 }} accessibilityLabel="Entry pass QR code">
+    // Always black on white, in both themes: scanners need a light background (and the
+    // dark theme's surface is almost the colour of the modules).
+    <View style={{ backgroundColor: QR_BG, borderRadius: radius.sm, padding: 6 }} accessibilityLabel="Entry pass QR code">
       <Svg width={size} height={size} viewBox={`${-pad} ${-pad} ${n + pad * 2} ${n + pad * 2}`}>
-        <Path d={d} fill={colors.charcoal} />
+        <Path d={d} fill={QR_FG} />
       </Svg>
     </View>
   );

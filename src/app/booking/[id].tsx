@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, MapPin, Navigation, Share2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Share, View } from 'react-native';
-import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/brand/logo';
@@ -104,157 +104,196 @@ export default function BookingTicket() {
           </Text>
         )}
 
-        <Overline>{b?.status === 'cancelled' ? 'Booking cancelled' : b?.status === 'completed' ? 'Played' : 'Booking confirmed'}</Overline>
+        {b ? (
+          // Everything arrives together: no icons, labels or buttons before the booking itself.
+          <Animated.View entering={FadeIn.duration(260)} style={styles.stack}>
+          <Overline>{b?.status === 'cancelled' ? 'Booking cancelled' : b?.status === 'completed' ? 'Played' : 'Booking confirmed'}</Overline>
 
-        {/* Ticket */}
-        <Animated.View entering={FadeInDown.delay(80).duration(320)}>
-          <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={13} style={styles.ticket}>
-            {b ? <Photo source={b.venue.photo} style={styles.photo} /> : <Skeleton height={180} r={radius.md} />}
-            {b ? (
-              <View style={styles.formatBadge}>
-                <Text variant="labelStrong" color={colors.textOnDark}>
-                  {b.venue.formats[0]}
-                </Text>
-              </View>
-            ) : null}
-            <View style={styles.ticketBody}>
-              <Text variant="h3" style={styles.venueName}>
-                {b?.venue.name ?? ' '}
-              </Text>
-              <View style={styles.row}>
-                <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
-                <Text variant="body" color={colors.textMuted}>
-                  {b ? `${b.venue.area}, ${b.venue.city}` : ''}
-                </Text>
-              </View>
-              <View style={styles.when}>
-                <View style={styles.whenCol}>
-                  <CalendarDays size={22} color={colors.ink} strokeWidth={1.7} />
-                  <View style={styles.whenText}>
-                    <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
-                      {b ? `${weekday(b.day).toUpperCase()}, ${dayOfMonth(b.day)} ${MONTHS[Number(b.day.slice(5, 7)) - 1]}` : ' '}
-                    </Text>
-                    <Text variant="label" color={colors.textMuted}>
-                      {b?.day.slice(0, 4)}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.vr} />
-                <View style={styles.whenCol}>
-                  <Clock3 size={22} color={colors.ink} strokeWidth={1.7} />
-                  <View style={styles.whenText}>
-                    <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
-                      {b ? formatRange(b.start, b.end) : ' '}
-                    </Text>
-                    <Text variant="label" color={colors.textMuted}>
-                      {b ? formatDuration(b.end - b.start) : ''}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-            <TicketDivider />
-            <View style={styles.pass}>
-              <View style={styles.flex}>
-                <View style={styles.passBadge}>
-                  <Text variant="caption" style={styles.passBadgeText}>
-                    YOUR ENTRY PASS
+          {/* Ticket */}
+          <View>
+            <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={13} style={styles.ticket}>
+              <Photo source={b.venue.photo} style={styles.photo} />
+              {b ? (
+                <View style={styles.formatBadge}>
+                  <Text variant="labelStrong" color={colors.textOnDark}>
+                    {b.venue.formats[0]}
                   </Text>
                 </View>
-                <Text variant="h2" color={colors.textOnDark} style={styles.code} adjustsFontSizeToFit numberOfLines={1}>
-                  {b?.code ?? ' '}
+              ) : null}
+              <View style={styles.ticketBody}>
+                <Text variant="h3" style={styles.venueName}>
+                  {b?.venue.name ?? ' '}
                 </Text>
-                <Text variant="label" color={colors.textOnDarkMuted}>
-                  Show this code at reception
-                </Text>
+                <View style={styles.row}>
+                  <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
+                  <Text variant="body" color={colors.textMuted}>
+                    {b ? `${b.venue.area}, ${b.venue.city}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.when}>
+                  <View style={styles.whenCol}>
+                    <CalendarDays size={22} color={colors.ink} strokeWidth={1.7} />
+                    <View style={styles.whenText}>
+                      <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
+                        {b ? `${weekday(b.day).toUpperCase()}, ${dayOfMonth(b.day)} ${MONTHS[Number(b.day.slice(5, 7)) - 1]}` : ' '}
+                      </Text>
+                      <Text variant="label" color={colors.textMuted}>
+                        {b?.day.slice(0, 4)}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.vr} />
+                  <View style={styles.whenCol}>
+                    <Clock3 size={22} color={colors.ink} strokeWidth={1.7} />
+                    <View style={styles.whenText}>
+                      <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
+                        {b ? formatRange(b.start, b.end) : ' '}
+                      </Text>
+                      <Text variant="label" color={colors.textMuted}>
+                        {b ? formatDuration(b.end - b.start) : ''}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
               </View>
-              <View style={styles.passRule} />
-              {b ? (
-                b.passToken ? (
+              <TicketDivider />
+              <View style={styles.pass}>
+                <View style={styles.flex}>
+                  <View style={styles.passBadge}>
+                    <Text variant="caption" style={styles.passBadgeText}>
+                      YOUR ENTRY PASS
+                    </Text>
+                  </View>
+                  <Text variant="h2" color={colors.textOnDark} style={styles.code} adjustsFontSizeToFit numberOfLines={1}>
+                    {b?.code ?? ' '}
+                  </Text>
+                  <Text variant="label" color={colors.textOnDarkMuted}>
+                    Show this code at reception
+                  </Text>
+                </View>
+                <View style={styles.passRule} />
+                {b.passToken ? (
                   <QRCode value={b.passToken} size={84} />
                 ) : (
                   // Cancelled or played: the pass is no longer valid, so no QR is shown.
                   <View style={styles.noPass}>
                     <X size={28} color={colors.textOnDarkMuted} />
                   </View>
-                )
-              ) : (
-                <Skeleton width={96} height={96} />
-              )}
-            </View>
-          </TicketSurface>
-        </Animated.View>
-
-        {b ? (
-          <View style={styles.paid}>
-            <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
-            <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
-              Paid {formatTaka(b.amountPaid)}
-            </Text>
-            <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
-              via {b.method}
-            </Text>
+                )}
+              </View>
+            </TicketSurface>
           </View>
-        ) : null}
 
-        <View style={styles.actions}>
-          <Button label="Get directions" icon={Navigation} variant="light" onPress={directions} style={styles.flex} />
-          <Button label="Download ticket" icon={Download} variant="light" onPress={share} style={styles.flex} />
-        </View>
-
-        <PressableScale
-          scaleTo={0.99}
-          onPress={() =>
-            Alert.alert(
-              'Before you arrive',
-              'Arrive 15 minutes early, bring turf boots or flat trainers, and show your entry pass at reception.',
-            )
-          }>
-          <Card style={styles.tip}>
-            <Clock3 size={26} color={colors.ink} strokeWidth={1.7} />
-            <View style={styles.flex}>
-              <Text variant="bodyStrong">Before you arrive</Text>
-              <Text variant="label" color={colors.textMuted}>
-                Arrive 15 minutes early. Bring your boots.
+          {b ? (
+            <View style={styles.paid}>
+              <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
+              <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
+                Paid {formatTaka(b.amountPaid)}
+              </Text>
+              <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
+                via {b.method}
               </Text>
             </View>
-            <ChevronRight size={20} color={colors.ink} />
-          </Card>
-        </PressableScale>
+          ) : null}
 
-        <PressableScale
-          scaleTo={0.99}
-          onPress={() =>
-            Alert.alert('Split the fee', 'Share this booking with your squad and track who has paid their share. Coming in the next build.')
-          }>
-          <Card tone="lime" style={styles.tip}>
-            <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
-            <View style={styles.flex}>
-              <Text variant="bodyStrong">Need more players?</Text>
-              <Text variant="label" color={colors.text}>
-                Invite your squad or split the fee
-              </Text>
-            </View>
-            <View style={styles.darkArrow}>
-              <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
-            </View>
-          </Card>
-        </PressableScale>
+          <View style={styles.actions}>
+            <Button label="Get directions" icon={Navigation} variant="light" onPress={directions} style={styles.flex} />
+            <Button label="Download ticket" icon={Download} variant="light" onPress={share} style={styles.flex} />
+          </View>
 
-        <Button label="View my bookings" variant="dark" trailingIcon={ArrowRight} spread onPress={() => router.dismissTo('/bookings')} />
-        <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
-          <Text variant="bodyStrong" style={styles.u}>
-            Back to explore
-          </Text>
-        </Pressable>
-        {canCancel ? (
-          <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
-            <Text variant="label" color={colors.danger}>
-              {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
+          <PressableScale
+            scaleTo={0.99}
+            onPress={() =>
+              Alert.alert(
+                'Before you arrive',
+                'Arrive 15 minutes early, bring turf boots or flat trainers, and show your entry pass at reception.',
+              )
+            }>
+            <Card style={styles.tip}>
+              <Clock3 size={26} color={colors.ink} strokeWidth={1.7} />
+              <View style={styles.flex}>
+                <Text variant="bodyStrong">Before you arrive</Text>
+                <Text variant="label" color={colors.textMuted}>
+                  Arrive 15 minutes early. Bring your boots.
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.ink} />
+            </Card>
+          </PressableScale>
+
+          <PressableScale
+            scaleTo={0.99}
+            onPress={() =>
+              Alert.alert('Split the fee', 'Share this booking with your squad and track who has paid their share. Coming in the next build.')
+            }>
+            <Card tone="lime" style={styles.tip}>
+              <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
+              <View style={styles.flex}>
+                <Text variant="bodyStrong" color={colors.charcoal}>
+                  Need more players?
+                </Text>
+                <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
+                  Invite your squad or split the fee
+                </Text>
+              </View>
+              <View style={styles.darkArrow}>
+                <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
+              </View>
+            </Card>
+          </PressableScale>
+
+          <Button label="View my bookings" variant="dark" trailingIcon={ArrowRight} spread onPress={() => router.dismissTo('/bookings')} />
+          <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
+            <Text variant="bodyStrong" style={styles.u}>
+              Back to explore
             </Text>
           </Pressable>
-        ) : null}
+          {canCancel ? (
+            <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
+              <Text variant="label" color={colors.danger}>
+                {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
+              </Text>
+            </Pressable>
+          ) : null}
+          </Animated.View>
+        ) : (
+          <TicketSkeleton />
+        )}
       </ScrollView>
+    </View>
+  );
+}
+
+/** Same shape as the ticket, all placeholders: shown until the booking has loaded. */
+function TicketSkeleton() {
+  return (
+    <View style={styles.stack} accessibilityLabel="Loading your ticket">
+      <Skeleton width={140} height={12} />
+      <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={13} style={styles.ticket}>
+        <Skeleton height={180} r={radius.md} />
+        <View style={[styles.ticketBody, styles.skelBody]}>
+          <Skeleton width="62%" height={22} />
+          <Skeleton width="44%" height={16} />
+          <View style={styles.skelWhen}>
+            <Skeleton width="40%" height={40} />
+            <Skeleton width="40%" height={40} />
+          </View>
+        </View>
+        <TicketDivider />
+        <View style={[styles.pass, styles.skelPass]}>
+          <View style={[styles.flex, styles.skelPassText]}>
+            <Skeleton width={128} height={20} r={radius.xs} />
+            <Skeleton width="80%" height={22} />
+            <Skeleton width="70%" height={14} />
+          </View>
+          <Skeleton width={96} height={96} />
+        </View>
+      </TicketSurface>
+      <Skeleton height={56} r={radius.lg} />
+      <View style={styles.actions}>
+        <Skeleton height={56} r={radius.pill} style={styles.flex} />
+        <Skeleton height={56} r={radius.pill} style={styles.flex} />
+      </View>
     </View>
   );
 }
@@ -263,6 +302,11 @@ const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { paddingHorizontal: gutter, gap: space[4] },
   flex: { flex: 1 },
+  stack: { gap: space[4] },
+  skelBody: { gap: space[3], paddingBottom: space[4] },
+  skelWhen: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space[2] },
+  skelPass: { backgroundColor: colors.surfaceMuted },
+  skelPassText: { gap: space[2] },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   hello: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginTop: space[2] },
