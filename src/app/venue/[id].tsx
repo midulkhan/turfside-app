@@ -319,18 +319,30 @@ export default function VenueScreen() {
               <Text variant="overline" color={colors.limeText}>
                 {`FOOTBALL · ${v.formats.join(' / ').toUpperCase()}`}
               </Text>
-              <Text variant="h2" style={styles.name} numberOfLines={2}>
-                {v.name}
-              </Text>
-              {v.reviewCount > 0 ? (
-                <Pressable accessibilityRole="button" onPress={() => setTab('reviews')} style={styles.row} hitSlop={6}>
-                  <Star size={18} color="#F5B301" fill="#F5B301" />
-                  <Text variant="bodyStrong">{v.rating.toFixed(1)}</Text>
-                  <Text variant="body" color={colors.textMuted} style={styles.underline}>
-                    ({v.reviewCount} reviews)
-                  </Text>
-                </Pressable>
-              ) : null}
+              {/* Name on the left, rating on the right, sharing one baseline row. */}
+              <View style={styles.nameRow}>
+                <Text variant="h2" style={[styles.name, styles.flex]} numberOfLines={2}>
+                  {v.name}
+                </Text>
+                {v.reviewCount > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rated ${v.rating.toFixed(1)} from ${v.reviewCount} reviews`}
+                    onPress={() => setTab('reviews')}
+                    style={styles.ratingBox}
+                    hitSlop={8}>
+                    <View style={styles.row}>
+                      <Star size={16} color="#F5B301" fill="#F5B301" />
+                      <Text variant="bodyStrong" style={styles.ratingNum}>
+                        {v.rating.toFixed(1)}
+                      </Text>
+                    </View>
+                    <Text variant="caption" color={colors.textMuted} style={styles.underline}>
+                      {v.reviewCount} reviews
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
               <View style={styles.addressRow}>
                 <MapPin size={16} color={colors.textMuted} strokeWidth={1.7} />
                 <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.address]} numberOfLines={1}>
@@ -340,6 +352,17 @@ export default function VenueScreen() {
                   <Text variant="labelStrong">Map</Text>
                   <ArrowUpRight size={16} color={colors.ink} strokeWidth={2.2} />
                 </Pressable>
+              </View>
+              <View style={styles.fromRow}>
+                <Text variant="body" color={colors.textMuted} style={styles.address}>
+                  Starting at
+                </Text>
+                <Text variant="bodyStrong" style={styles.fromPrice}>
+                  {formatTaka(v.hourlyFrom)}
+                </Text>
+                <Text variant="body" color={colors.textMuted} style={styles.address}>
+                  / hour
+                </Text>
               </View>
             </Animated.View>
           ) : (
@@ -889,6 +912,11 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   titleBlock: { gap: space[2] },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  ratingBox: { alignItems: 'flex-end', gap: 1 },
+  ratingNum: { fontSize: 15, lineHeight: 19 },
+  fromRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5, paddingLeft: 24 },
+  fromPrice: { fontFamily: font.semibold, fontSize: 15, lineHeight: 19 },
   name: { fontFamily: font.semibold, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
   address: { fontSize: 13.5, lineHeight: 18 },
   dateNum: { fontSize: 16, lineHeight: 20 },
