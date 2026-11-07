@@ -71,7 +71,8 @@ import * as api from '@/features/api/client';
 import { haversineKm } from '@/lib/places';
 import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
-import { ApiError, type Slot, type VenueDetail } from '@/features/api/types';
+import { useCart } from '@/features/api/use-cart';
+import { ApiError, type Hold, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
 import { useSession } from '@/features/session/session';
 import { formatDistance } from '@/lib/geo';
@@ -128,8 +129,36 @@ export default function VenueScreen() {
   const [day, setDay] = useState<DayKey>(today);
   // Picked slots, kept across day changes (one order can span days at this turf).
   const [picked, setPicked] = useState<Picked[]>([]);
+  // The cart. When it's at this turf, its slots *are* the selection (shown "In your cart");
+  // whenever the cart changes (checkout removal, expiry, a new hold) the selection follows.
+  const cart = useCart();
+  const cartHere = cart.hold?.venue.id === id ? cart.hold : undefined;
+  const cartSig = cartHere?.slots?.map((sl) => sl.id).join(',') ?? '';
+  const [syncedCart, setSyncedCart] = useState('');
+  if (cartSig !== syncedCart) {
+    setSyncedCart(cartSig);
+    setPicked(
+      cartHere?.slots?.map((sl) => ({
+        id: sl.id,
+        day: sl.day,
+        start: sl.start,
+        end: sl.end,
+        price: sl.price ?? 0,
+        status: 'mine' as const,
+      })) ?? [],
+    );
+  }
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [tab, setTab] = useState<Tab>('book');
+  const [tab, setTabRaw] = useState<Tab>('book');
+  // Switching tabs never shrinks the page under your thumb: the new tab starts at least as
+  // tall as the one it replaces, so the scroll position (and the tab bar) stay exactly put.
+  const tabH = useRef(0);
+  const [tabMinH, setTabMinH] = useState(0);
+  const setTab = (t: Tab) => {
+    if (t === tab) return;
+    setTabMinH(tabH.current);
+    setTabRaw(t);
+  };
   const [rulesOpen, setRulesOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const holdKey = useRef<string | null>(null);
@@ -156,10 +185,10 @@ export default function VenueScreen() {
   // Your own hold counts as selectable: continuing with the same slots resumes it.
   const chosen = useMemo(
     () =>
-      picked.filter((p) => {
-        if (p.day !== day || !slots.data) return true;
+      picked.flatMap((p) => {
+        if (p.day !== day || !slots.data) return [p];
         const live = slots.data.slots.find((s) => s.id === p.id);
-        return !!live && (live.status === 'available' || live.status === 'mine');
+        return live && (live.status === 'available' || live.status === 'mine') ? [{ ...p, price: live.price }] : [];
       }),
     [picked, day, slots.data],
   );
@@ -361,120 +390,122 @@ export default function VenueScreen() {
               })}
           </View>
 
-          {tab === 'book' ? (
-            <Animated.View entering={FadeIn.duration(160)} style={styles.gap}>
-              <Card style={styles.bookCard}>
-                {/* Select date */}
-                <View style={styles.cardHead}>
-                  <Text variant="title">Select date</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setCalendarOpen(true)} style={styles.monthBtn} hitSlop={6}>
-                    <CalendarDays size={18} color={colors.ink} strokeWidth={1.8} />
-                    <Text variant="label">{monthYear(day)}</Text>
-                    <ChevronDown size={16} color={colors.ink} strokeWidth={2.2} />
-                  </Pressable>
-                </View>
-                <ScrollView ref={dateScroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
-                  {days.map((d) => {
-                    const active = d === day;
-                    return (
-                      <PressableScale
-                        key={d}
-                        scaleTo={0.94}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                        accessibilityLabel={formatDay(d)}
-                        onPress={() => {
-                          haptic.select();
-                          pickDay(d);
-                        }}
-                        style={[styles.date, active && styles.dateOn]}>
-                        <Text variant="label" color={active ? colors.ink : colors.textMuted}>
-                          {weekday(d)}
-                        </Text>
-                        <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
-                          {String(dayOfMonth(d)).padStart(2, '0')}
-                        </Text>
-                      </PressableScale>
-                    );
-                  })}
-                </ScrollView>
-
-                {/* Choose a time */}
-                <View style={[styles.cardHead, styles.mtLg]}>
-                  <Text variant="title">Choose a time</Text>
-                  {v ? (
-                    <Text variant="label" color={colors.textMuted}>
-                      {v.sessionLengthMin} min each
-                    </Text>
-                  ) : null}
-                </View>
-
-                {slots.isPending || slots.isPlaceholderData ? (
-                  <View style={styles.skeletonGrid}>
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} width="47%" height={72} r={radius.sm} />
-                    ))}
+          <View style={{ minHeight: tabMinH }} onLayout={(e) => (tabH.current = e.nativeEvent.layout.height)}>
+            {tab === 'book' ? (
+              <Animated.View entering={FadeIn.duration(160)} style={styles.gap}>
+                <Card style={styles.bookCard}>
+                  {/* Select date */}
+                  <View style={styles.cardHead}>
+                    <Text variant="title">Select date</Text>
+                    <Pressable accessibilityRole="button" onPress={() => setCalendarOpen(true)} style={styles.monthBtn} hitSlop={6}>
+                      <CalendarDays size={18} color={colors.ink} strokeWidth={1.8} />
+                      <Text variant="label">{monthYear(day)}</Text>
+                      <ChevronDown size={16} color={colors.ink} strokeWidth={2.2} />
+                    </Pressable>
                   </View>
-                ) : slots.isError ? (
-                  <ErrorState message={slots.error.message} onRetry={slots.refetch} />
-                ) : (
-                  <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
-                )}
-                {slots.data &&
-                !slots.isPlaceholderData &&
-                !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
-                  <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
-                    No open sessions on this day. Try another date.
-                  </Text>
-                ) : null}
-                <Text variant="caption" color={colors.textMuted} style={styles.mtSm}>
-                  Times shown in Dhaka time. Slots after 12 AM fall on the next calendar day.
-                </Text>
-              </Card>
-
-              {/* Rules accordion */}
-              <Animated.View layout={LinearTransition.duration(200)}>
-                <Card padded={false}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: rulesOpen }}
-                    onPress={() => setRulesOpen((o) => !o)}
-                    style={styles.accordionHead}>
-                    <FileText size={22} color={colors.ink} strokeWidth={1.6} />
-                    <Text variant="body" style={styles.flex}>
-                      Venue rules & cancellation
-                    </Text>
-                    <ChevronDown size={20} color={colors.ink} style={rulesOpen ? styles.flip : undefined} />
-                  </Pressable>
-                  {rulesOpen && v ? (
-                    <Animated.View entering={FadeIn.duration(180)} style={styles.accordionBody}>
-                      {v.rules.map((r) => (
-                        <View key={r} style={styles.ruleRow}>
-                          <CircleCheck size={16} color={colors.limeText} />
-                          <Text variant="label" color={colors.textMuted} style={styles.flex}>
-                            {r}
+                  <ScrollView ref={dateScroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
+                    {days.map((d) => {
+                      const active = d === day;
+                      return (
+                        <PressableScale
+                          key={d}
+                          scaleTo={0.94}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          accessibilityLabel={formatDay(d)}
+                          onPress={() => {
+                            haptic.select();
+                            pickDay(d);
+                          }}
+                          style={[styles.date, active && styles.dateOn]}>
+                          <Text variant="label" color={active ? colors.ink : colors.textMuted}>
+                            {weekday(d)}
                           </Text>
-                        </View>
-                      ))}
-                      <Divider style={styles.divider} />
-                      <Text variant="labelStrong">Cancellation</Text>
+                          <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
+                            {String(dayOfMonth(d)).padStart(2, '0')}
+                          </Text>
+                        </PressableScale>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Choose a time */}
+                  <View style={[styles.cardHead, styles.mtLg]}>
+                    <Text variant="title">Choose a time</Text>
+                    {v ? (
                       <Text variant="label" color={colors.textMuted}>
-                        {v.cancellationPolicy}
+                        {v.sessionLengthMin} min each
                       </Text>
-                    </Animated.View>
+                    ) : null}
+                  </View>
+
+                  {slots.isPending || slots.isPlaceholderData ? (
+                    <View style={styles.skeletonGrid}>
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <Skeleton key={i} width="47%" height={72} r={radius.sm} />
+                      ))}
+                    </View>
+                  ) : slots.isError ? (
+                    <ErrorState message={slots.error.message} onRetry={slots.refetch} />
+                  ) : (
+                    <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
+                  )}
+                  {slots.data &&
+                  !slots.isPlaceholderData &&
+                  !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
+                    <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
+                      No open sessions on this day. Try another date.
+                    </Text>
                   ) : null}
+                  <Text variant="caption" color={colors.textMuted} style={styles.mtSm}>
+                    Times shown in Dhaka time. Slots after 12 AM fall on the next calendar day.
+                  </Text>
                 </Card>
+
+                {/* Rules accordion */}
+                <Animated.View layout={LinearTransition.duration(200)}>
+                  <Card padded={false}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: rulesOpen }}
+                      onPress={() => setRulesOpen((o) => !o)}
+                      style={styles.accordionHead}>
+                      <FileText size={22} color={colors.ink} strokeWidth={1.6} />
+                      <Text variant="body" style={styles.flex}>
+                        Venue rules & cancellation
+                      </Text>
+                      <ChevronDown size={20} color={colors.ink} style={rulesOpen ? styles.flip : undefined} />
+                    </Pressable>
+                    {rulesOpen && v ? (
+                      <Animated.View entering={FadeIn.duration(180)} style={styles.accordionBody}>
+                        {v.rules.map((r) => (
+                          <View key={r} style={styles.ruleRow}>
+                            <CircleCheck size={16} color={colors.limeText} />
+                            <Text variant="label" color={colors.textMuted} style={styles.flex}>
+                              {r}
+                            </Text>
+                          </View>
+                        ))}
+                        <Divider style={styles.divider} />
+                        <Text variant="labelStrong">Cancellation</Text>
+                        <Text variant="label" color={colors.textMuted}>
+                          {v.cancellationPolicy}
+                        </Text>
+                      </Animated.View>
+                    ) : null}
+                  </Card>
+                </Animated.View>
               </Animated.View>
-            </Animated.View>
-          ) : tab === 'details' && v ? (
-            <Animated.View entering={FadeIn.duration(160)}>
-              <DetailsTab v={v} onDirections={openMap} />
-            </Animated.View>
-          ) : tab === 'reviews' ? (
-            <Animated.View entering={FadeIn.duration(160)}>
-              <ReviewsTab data={reviews.data} loading={reviews.isPending} />
-            </Animated.View>
-          ) : null}
+            ) : tab === 'details' && v ? (
+              <Animated.View entering={FadeIn.duration(160)}>
+                <DetailsTab v={v} onDirections={openMap} />
+              </Animated.View>
+            ) : tab === 'reviews' ? (
+              <Animated.View entering={FadeIn.duration(160)}>
+                <ReviewsTab data={reviews.data} loading={reviews.isPending} />
+              </Animated.View>
+            ) : null}
+          </View>
         </View>
       </Animated.ScrollView>
 
@@ -524,9 +555,26 @@ export default function VenueScreen() {
       {/* ── Price bar: slides up only once a slot is picked ───── */}
       <PriceBar
         picks={chosen}
+        cart={cart.hold}
         bottomInset={insets.bottom}
         loading={hold.isPending}
-        onContinue={() => chosen.length && hold.mutate(chosen)}
+        onContinue={() => {
+          if (!chosen.length) return void cart.open();
+          // Unchanged cart: straight to checkout, no request. Anything else re-holds (one cart, one turf).
+          if (
+            cartHere &&
+            chosen
+              .map((p) => p.id)
+              .sort()
+              .join(',') ===
+              cartHere.slots
+                ?.map((sl) => sl.id)
+                .sort()
+                .join(',')
+          )
+            return void cart.open();
+          hold.mutate(chosen);
+        }}
       />
 
       <CalendarModal
@@ -547,22 +595,53 @@ export default function VenueScreen() {
   );
 }
 
-/** Compact dark bar. Keeps showing the last picks while it slides away, so it never blanks mid-animation. */
+type BarContent = { key: string; summary: string; total: number; extra: string; cta: string };
+
+/**
+ * Compact dark bar. Shows your picks; with nothing picked it shows the cart (even one at
+ * another turf), so it's on screen whenever the cart has anything and hides only when empty.
+ * Keeps the last content while sliding away, so it never blanks mid-animation.
+ */
 function PriceBar({
   picks,
+  cart,
   bottomInset,
   loading,
   onContinue,
 }: {
   picks: Picked[];
+  cart?: Hold;
   bottomInset: number;
   loading: boolean;
   onContinue: () => void;
 }) {
-  const open = picks.length > 0;
-  const [last, setLast] = useState<Picked[]>(picks);
-  if (open && picks !== last) setLast(picks);
-  const shown = open ? picks : last;
+  let content: BarContent | null = null;
+  if (picks.length) {
+    const one = picks.length === 1 ? picks[0] : null;
+    const days = [...new Set(picks.map((p) => p.day))].sort();
+    content = {
+      key: 'picks',
+      summary: one
+        ? `${formatDay(one.day, { year: false })}  ·  ${formatRangeSpaced(one.start, one.end)}`
+        : `${picks.length} slots  ·  ${days.length === 1 ? formatDay(days[0], { year: false }) : `${days.length} days`}`,
+      total: picks.reduce((n, p) => n + p.price, 0),
+      extra: formatDuration(picks.reduce((n, p) => n + (p.end - p.start), 0)),
+      cta: 'Continue',
+    };
+  } else if (cart) {
+    const n = cart.slots?.length ?? 1;
+    content = {
+      key: 'cart',
+      summary: `In your cart  ·  ${cart.venue.name}`,
+      total: cart.total,
+      extra: n > 1 ? `${n} slots` : '1 slot',
+      cta: 'Checkout',
+    };
+  }
+  const open = !!content;
+  const [last, setLast] = useState<BarContent | null>(content);
+  if (content && (content.summary !== last?.summary || content.total !== last?.total || content.cta !== last?.cta)) setLast(content);
+  const shown = content ?? last;
   const visible = useSharedValue(open ? 1 : 0);
   useEffect(() => {
     visible.set(
@@ -573,27 +652,28 @@ function PriceBar({
     opacity: visible.get(),
     transform: [{ translateY: (1 - visible.get()) * 120 }],
   }));
-  const one = shown.length === 1 ? shown[0] : null;
-  const days = [...new Set(shown.map((p) => p.day))].sort();
-  const minutes = shown.reduce((n, p) => n + (p.end - p.start), 0);
-  const summary = one
-    ? `${formatDay(one.day, { year: false })}  ·  ${formatRangeSpaced(one.start, one.end)}`
-    : `${shown.length} slots  ·  ${days.length === 1 ? formatDay(days[0], { year: false }) : `${days.length} days`}`;
   return (
     <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.priceWrap, { bottom: Math.max(bottomInset, space[3]) }, anim]}>
       <View style={[styles.priceBar, shadow.float]}>
         <View style={styles.priceText}>
           <Text variant="caption" color={colors.textOnDarkMuted} numberOfLines={1}>
-            {shown.length ? summary : ''}
+            {shown?.summary ?? ''}
           </Text>
           <Text variant="h3" color={colors.textOnDark} style={styles.price}>
-            {shown.length ? formatTaka(shown.reduce((n, p) => n + p.price, 0)) : ''}
+            {shown ? formatTaka(shown.total) : ''}
             <Text variant="caption" color={colors.textOnDarkMuted}>
-              {shown.length ? `   ${formatDuration(minutes)}` : ''}
+              {shown ? `   ${shown.extra}` : ''}
             </Text>
           </Text>
         </View>
-        <Button label="Continue" trailingIcon={ArrowRight} small loading={loading} onPress={onContinue} style={styles.continue} />
+        <Button
+          label={shown?.cta ?? 'Continue'}
+          trailingIcon={ArrowRight}
+          small
+          loading={loading}
+          onPress={onContinue}
+          style={styles.continue}
+        />
       </View>
     </Animated.View>
   );

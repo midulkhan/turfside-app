@@ -87,6 +87,10 @@ export const getHold = (holdId: string, signal?: AbortSignal) => request<Hold>('
 export const releaseHold = (holdId: string) =>
   request<{ released: boolean }>('DELETE', `/v1/holds/${enc(holdId)}`, { auth: 'required', timeoutMs: 8000 });
 
+/** Take one slot out of the cart. Removing the last one empties it (`released: true`). */
+export const removeHoldSlot = (holdId: string, slotId: string) =>
+  request<{ released: boolean; hold: Hold | null }>('DELETE', `/v1/holds/${enc(holdId)}/slots/${enc(slotId)}`, { auth: 'required', timeoutMs: 8000 });
+
 /** Active holds: the cart. */
 export const getMyHolds = (signal?: AbortSignal) => request<Hold[]>('GET', '/v1/me/holds', { auth: 'required', signal });
 

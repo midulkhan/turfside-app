@@ -90,7 +90,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
               </View>
               <View style={styles.cta}>
                 <Text variant="label" color={colors.textOnDark} style={styles.ctaText}>
-                  View slots
+                  Book now
                 </Text>
                 <ArrowUpRight size={14} color={colors.textOnDark} strokeWidth={2} />
               </View>

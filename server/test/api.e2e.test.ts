@@ -308,6 +308,37 @@ d('cart: one order, one turf, many slots', () => {
     expect(mixed.status).toBe(400);
   });
 
+  it('removes one slot from the cart and frees it for others at once', async () => {
+    const a = await newUser('Remover');
+    const b = await newUser('Watcher');
+    const day = new Date(Date.now() + 6 * 3600_000 + 5 * 86400_000).toISOString().slice(0, 10);
+    const free = ((await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`)).json.slots as Json[]).filter((s) => s.status === 'available');
+    const [s1, s2] = free;
+    const hold = await call('POST', '/v1/holds', { slotIds: [s1.id, s2.id] }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(hold.json.lines[0].label).toMatch(/^\w{3} \d{1,2} \w{3} · \d{1,2}:\d{2}/); // "Sat 7 Nov · 9:00–10:30 AM"
+    expect(hold.json.slots[0].price).toBe(s1.price);
+    const path = (id: string) => `/v1/holds/${hold.json.holdId}/slots/${encodeURIComponent(id)}`;
+
+    // Someone else can't touch it.
+    expect((await call('DELETE', path(s1.id), undefined, b.accessToken)).status).toBe(410);
+
+    const one = await call('DELETE', path(s1.id), undefined, a.accessToken);
+    expect(one.status).toBe(200);
+    expect(one.json.released).toBe(false);
+    expect(one.json.hold.slots.map((s: Json) => s.id)).toEqual([s2.id]);
+    expect(one.json.hold.total).toBe(s2.price);
+    expect(one.json.hold.lines).toHaveLength(2); // one slot + service fee
+    const seen = (await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`, undefined, b.accessToken)).json.slots as Json[];
+    expect(seen.find((s) => s.id === s1.id)!.status).toBe('available');
+    expect(seen.find((s) => s.id === s2.id)!.status).toBe('held');
+    expect((await call('DELETE', path(s1.id), undefined, a.accessToken)).status).toBe(404);
+
+    // Removing the last slot empties the cart.
+    const last = await call('DELETE', path(s2.id), undefined, a.accessToken);
+    expect(last.json.released).toBe(true);
+    expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toHaveLength(0);
+  });
+
   it('pays several slots in one order and confirms them all', async () => {
     const a = await newUser('Multi Payer');
     const day = new Date(Date.now() + 6 * 3600_000 + 7 * 86400_000).toISOString().slice(0, 10);

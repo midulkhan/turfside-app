@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import {
   CalendarDays,
@@ -16,9 +16,10 @@ import {
   TicketPercent,
   Timer,
   UsersRound,
+  X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
@@ -39,7 +40,7 @@ import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { newIdempotencyKey } from '@/lib/ids';
 import { formatTaka } from '@/lib/money';
-import { formatDay, formatDuration, formatRange } from '@/lib/time';
+import { formatDay, formatRange } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 
 const POLL_ATTEMPTS = 8;
@@ -68,27 +69,31 @@ export default function Checkout() {
   const payKey = useRef(newIdempotencyKey());
   const paid = useRef(false);
 
-  // Leaving without paying gives the slot back to everyone right away instead of
-  // blocking it for the rest of the 10-minute hold. (A payment already in progress
-  // with bKash is kept by the server; only a plain hold is released.)
-  // The route-typed navigator doesn't list 'beforeRemove'; the stack does emit it.
-  const navigation = useNavigation() as unknown as { addListener: (e: 'beforeRemove', cb: () => void) => () => void };
-  useEffect(
-    () =>
-      navigation.addListener('beforeRemove', () => {
-        if (paid.current) return;
-        const venueId = hold.data?.venue.id;
-        api
-          .releaseHold(holdId)
-          .catch(() => {}) // offline: the hold simply expires on its own
-          .finally(() => {
-            qc.invalidateQueries({ queryKey: qk.myHolds });
-            if (venueId) qc.invalidateQueries({ queryKey: ['slots', venueId] });
-            qc.removeQueries({ queryKey: qk.hold(holdId) });
-          });
-      }),
-    [navigation, holdId, hold.data?.venue.id, qc],
-  );
+  // Leaving checkout keeps the cart: it stays held until it runs out (5 min) or the
+  // player removes its slots, and the turf page shows it in its bottom bar meanwhile.
+  const [removing, setRemoving] = useState<string | null>(null);
+  const removeSlot = async (slotId: string) => {
+    if (!hold.data || removing || paying) return;
+    haptic.select();
+    setRemoving(slotId);
+    try {
+      const res = await api.removeHoldSlot(hold.data.holdId, slotId);
+      qc.invalidateQueries({ queryKey: ['slots', hold.data.venue.id] }); // others see it free via realtime; this refreshes us
+      qc.invalidateQueries({ queryKey: qk.myHolds });
+      if (res.released || !res.hold) {
+        qc.removeQueries({ queryKey: qk.hold(hold.data.holdId) });
+        router.back(); // cart is empty: back to the turf
+        return;
+      }
+      qc.setQueryData(qk.hold(res.hold.holdId), res.hold);
+    } catch (e) {
+      haptic.error();
+      Alert.alert('Could not remove that slot', e instanceof Error ? e.message : 'Please try again.');
+      if (e instanceof ApiError && e.code === 'hold_expired') qc.invalidateQueries({ queryKey: qk.hold(hold.data.holdId) });
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   const expired = !!hold.data && left === 0;
 
@@ -167,7 +172,9 @@ export default function Checkout() {
             <View style={[styles.timer, expired && styles.timerExpired]}>
               <Timer size={16} color={expired ? colors.danger : colors.limeText} strokeWidth={2} />
               <Text variant="label" color={expired ? colors.danger : colors.limeText}>
-                {expired ? 'Your hold expired — go back and pick again' : `${(h.slots?.length ?? 1) > 1 ? `${h.slots!.length} slots held` : 'Slot held'} for you · ${label}`}
+                {expired
+                  ? 'Your hold expired — go back and pick again'
+                  : `${(h.slots?.length ?? 1) > 1 ? `${h.slots!.length} slots held` : 'Slot held'} for you · ${label}`}
               </Text>
             </View>
           ) : null}
@@ -195,10 +202,10 @@ export default function Checkout() {
               </View>
             </View>
             <TicketDivider />
-            {h?.slots && h.slots.length > 1 ? (
+            {h ? (
               <View style={styles.slotList}>
-                {h.slots.map((sl, i) => (
-                  <View key={sl.id} style={[styles.slotRow, i > 0 && styles.slotRowDivider]}>
+                {(h.slots ?? [{ id: '', day: h.day, start: h.start, end: h.end }]).map((sl, i) => (
+                  <View key={sl.id || i} style={[styles.slotRow, i > 0 && styles.slotRowDivider]}>
                     <CalendarDays size={16} color={colors.textMuted} strokeWidth={1.6} />
                     <Text variant="labelStrong" style={[styles.whenMain, styles.flex]} numberOfLines={1}>
                       {formatDay(sl.day, { year: false })}
@@ -207,34 +214,27 @@ export default function Checkout() {
                     <Text variant="labelStrong" style={styles.whenMain} numberOfLines={1}>
                       {formatRange(sl.start, sl.end)}
                     </Text>
+                    {sl.id ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${formatDay(sl.day, { year: false })}, ${formatRange(sl.start, sl.end)}`}
+                        disabled={!!removing || paying || expired}
+                        onPress={() => removeSlot(sl.id)}
+                        hitSlop={10}
+                        style={({ pressed }) => [styles.remove, pressed && styles.removePressed]}>
+                        {removing === sl.id ? (
+                          <ActivityIndicator size="small" color={colors.textMuted} />
+                        ) : (
+                          <X size={14} color={colors.ink} strokeWidth={2.2} />
+                        )}
+                      </Pressable>
+                    ) : null}
                   </View>
                 ))}
               </View>
             ) : (
-              <View style={styles.when}>
-                <View style={styles.whenCol}>
-                  <CalendarDays size={18} color={colors.ink} strokeWidth={1.6} />
-                  <View style={styles.whenText}>
-                    <Text variant="labelStrong" style={styles.whenMain}>
-                      {h ? formatDay(h.day, { year: false }) : ' '}
-                    </Text>
-                    <Text variant="body" color={colors.textMuted} style={styles.small}>
-                      {h?.venue.formats[0]}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.vr} />
-                <View style={styles.whenCol}>
-                  <Clock3 size={18} color={colors.ink} strokeWidth={1.6} />
-                  <View style={styles.whenText}>
-                    <Text variant="labelStrong" numberOfLines={1} style={styles.whenMain}>
-                      {h ? formatRange(h.start, h.end) : ' '}
-                    </Text>
-                    <Text variant="body" color={colors.textMuted} style={styles.small}>
-                      {h ? formatDuration(h.end - h.start) : ''}
-                    </Text>
-                  </View>
-                </View>
+              <View style={styles.slotList}>
+                <Skeleton height={20} />
               </View>
             )}
           </TicketSurface>
@@ -268,11 +268,9 @@ export default function Checkout() {
             <View style={styles.lines}>
               {h
                 ? h.lines.map((l, i) => (
-                    // Index in the key: a multi-slot order repeats "Turf booking" once per slot.
                     <View key={`${i}:${l.label}`} style={styles.line}>
                       <Text variant="body" color={colors.textMuted} style={styles.lineText}>
-                        {l.label}
-                        {l.detail ? `  ·  ${l.detail}` : ''}
+                        {l.label === 'Turf booking' && l.detail ? l.detail : l.label}
                       </Text>
                       <Text variant="labelStrong" style={styles.lineText}>
                         {formatTaka(l.amount)}
@@ -424,6 +422,16 @@ const styles = StyleSheet.create({
   small: { fontSize: 13, lineHeight: 17 },
   slotList: { paddingHorizontal: space[5], paddingVertical: space[3] },
   slotRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[3] },
+  remove: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    marginLeft: space[1],
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removePressed: { opacity: 0.6 },
   slotRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   lineText: { fontSize: 14, lineHeight: 19 },
   total: {
@@ -448,7 +456,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[4],
     height: 72,
   },
-  bkashLogo: { width: 92, height: 42 },
+  bkashLogo: { width: 70, height: 32 },
   vrPink: { width: 1, height: 30, backgroundColor: '#F5B5CF' },
   radioOn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.bkash, alignItems: 'center', justifyContent: 'center' },
   policy: {

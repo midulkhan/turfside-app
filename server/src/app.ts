@@ -408,6 +408,10 @@ export async function buildApp() {
   });
   app.get('/v1/holds/:id', { preHandler: requireUser }, async (req) => bookings.getHold(req.user!.userId, (req.params as { id: string }).id));
   /** Leaving checkout without paying frees the slots for everyone straight away. */
+  app.delete('/v1/holds/:id/slots/:slotId', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
+    const { id, slotId } = req.params as { id: string; slotId: string };
+    return bookings.removeHoldSlot(req.user!.userId, id, slotId);
+  });
   app.delete('/v1/holds/:id', { preHandler: requireUser }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
     return bookings.releaseHold(req.user!.userId, id);

@@ -57,16 +57,24 @@ export const SlotTicket = memo(function SlotTicket({
   onPress?: (s: Slot) => void;
 }) {
   const disabled = slot.status === 'booked' || slot.status === 'blocked' || slot.status === 'held';
-  const tone = TONES[selected ? 'selected' : slot.status];
+  // Your cart's slots read "In your cart" while selected; deselected, they look free again
+  // (they're released when you continue with the new selection).
+  const kind = slot.status === 'mine' ? (selected ? 'mine' : 'available') : selected ? 'selected' : slot.status;
+  const tone = TONES[kind];
   const range = formatRangeSpaced(slot.start, slot.end);
   // Size by length so long ranges ("11:00 PM – 12:00 AM") fit identically on iOS, Android and web.
   const timeSize = range.length <= 15 ? 13.5 : range.length <= 17 ? 12.5 : 11.5;
   const minutes = slot.end - slot.start;
-  const status = selected
-    ? 'Selected'
-    : ({ booked: 'Booked', blocked: 'Unavailable', held: 'Being booked', mine: 'In your cart', available: `${minutes} min` } as const)[
-        slot.status
-      ];
+  const status = (
+    {
+      selected: 'Selected',
+      booked: 'Booked',
+      blocked: 'Unavailable',
+      held: 'Being booked',
+      mine: 'In your cart',
+      available: `${minutes} min`,
+    } as const
+  )[kind];
 
   return (
     <PressableScale
@@ -99,7 +107,7 @@ export const SlotTicket = memo(function SlotTicket({
         </Text>
         <TicketDivider inset={space[3] + 2} gap={7} dashColor={tone.dash} />
         <View style={styles.row}>
-          {selected ? (
+          {kind === 'selected' || kind === 'mine' ? (
             <View style={styles.check}>
               <Check size={11} color={colors.ink} strokeWidth={3.5} />
             </View>

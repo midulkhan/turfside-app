@@ -24,6 +24,16 @@ type BookingRow = {
   total: number;
 };
 
+const clock = (m: number) => {
+  const h = Math.floor(m / 60) % 24;
+  return { t: `${h % 12 || 12}:${String(m % 60).padStart(2, '0')}`, ap: h < 12 ? 'AM' : 'PM' };
+};
+/** "9:00–10:30 AM", "10:30 AM–12:00 PM" (the app's own format). */
+const timeRange = (a: number, b: number) => {
+  const x = clock(a);
+  const y = clock(b);
+  return x.ap === y.ap ? `${x.t}–${y.t} ${y.ap}` : `${x.t} ${x.ap}–${y.t} ${y.ap}`;
+};
 const duration = (m: number) => (m % 60 === 0 ? (m === 60 ? '1 hour' : `${m / 60} hours`) : m > 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
 
 /** Idempotency: the same key from the same user always gets the same stored response. */
@@ -65,8 +75,8 @@ export const MAX_SLOTS_PER_ORDER = 6;
 /** Cart / checkout shape. `day`/`start`/`end` describe the first slot (older apps read only those). */
 async function holdShape(o: OrderRow) {
   const v = await getVenueRow(o.venue_id);
-  const slots = await q<{ id: string; day: string; start_min: number; end_min: number }>(
-    'select id, day::text, start_min, end_min from bookings where order_id = $1 order by day, start_min',
+  const slots = await q<{ id: string; day: string; start_min: number; end_min: number; total: number }>(
+    "select id, day::text, start_min, end_min, total from bookings where order_id = $1 and status in ('held','pending','confirmed') order by day, start_min",
     [o.id],
   );
   const first = slots[0];
@@ -74,7 +84,7 @@ async function holdShape(o: OrderRow) {
     holdId: o.id,
     expiresAt: o.hold_expires_at ? new Date(o.hold_expires_at).getTime() : Date.now(),
     venue: { id: v.id, name: v.name, area: v.area, city: v.city, photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null, formats: v.formats },
-    slots: slots.map((b) => ({ id: `${v.id}:${b.day}:${b.start_min}`, day: b.day, start: b.start_min, end: b.end_min })),
+    slots: slots.map((b) => ({ id: `${v.id}:${b.day}:${b.start_min}`, day: b.day, start: b.start_min, end: b.end_min, price: b.total })),
     day: first?.day ?? dhakaToday(),
     start: first?.start_min ?? 0,
     end: first?.end_min ?? 0,
@@ -133,11 +143,7 @@ export async function createHold(userId: string, slotIds: string[]) {
     })
     .sort((a, b) => a.from.getTime() - b.from.getTime());
 
-  const lines = [
-    ...picks.map((p) => ({ label: 'Turf booking', detail: `${dayLabel(p.day)} · ${duration(p.end - p.start)}`, amount: p.price })),
-    { label: 'Service fee', amount: config.SERVICE_FEE_POISHA },
-  ];
-  const total = picks.reduce((n, p) => n + p.price, 0) + config.SERVICE_FEE_POISHA;
+  const { lines, total } = priceOf(picks);
   const want = picks.map((p) => `${p.day}:${p.start}`).join(',');
 
   const result = await tx(async (c) => {
@@ -196,6 +202,56 @@ export async function createHold(userId: string, slotIds: string[]) {
   for (const p of picks) days.set(`${v.id}|${p.day}`, v.id);
   await Promise.all([...days.keys()].map((k) => invalidateDay(days.get(k)!, k.split('|')[1])));
   return holdShape(result.order);
+}
+
+/** One price line per slot ("Sat 7 Nov · 9:00–10:30 AM") plus the service fee. */
+function priceOf(slots: { day: string; start: number; end: number; price: number }[]) {
+  const lines = [
+    ...slots.map((p) => ({ label: `${dayLabel(p.day)} · ${timeRange(p.start, p.end)}`, amount: p.price })),
+    { label: 'Service fee', amount: config.SERVICE_FEE_POISHA },
+  ];
+  return { lines, total: slots.reduce((n, p) => n + p.price, 0) + config.SERVICE_FEE_POISHA };
+}
+
+/**
+ * Take one slot out of the cart; it is free for everyone straight away (realtime fires
+ * from the bookings trigger). Removing the last slot empties the cart.
+ * Not allowed while a bKash payment for the cart is in progress.
+ */
+export async function removeHoldSlot(userId: string, holdId: string, slotId: string) {
+  const p = parseSlot(slotId);
+  const out = await tx(async (c) => {
+    await c.query('select pg_advisory_xact_lock(hashtext($1))', [`cart:${userId}`]);
+    const o = (await c.query<OrderRow>(`select ${ORDER_COLS} from orders where id = $1 and user_id = $2 for update`, [holdId, userId])).rows[0];
+    if (!o || o.status === 'expired' || (o.hold_expires_at && new Date(o.hold_expires_at) < new Date()))
+      throw new ApiError('hold_expired', 'Your hold expired. Please pick the slot again.');
+    if (o.status === 'pending') throw new ApiError('conflict', 'A bKash payment for this cart is in progress. Finish or cancel it first.');
+    if (o.status !== 'held') throw new ApiError('conflict', 'This order is already booked.');
+    const gone = (
+      await c.query<{ venue_id: string; day: string }>(
+        "update bookings set status = 'expired', hold_expires_at = now() where order_id = $1 and status = 'held' and day = $2 and start_min = $3 returning venue_id, day::text",
+        [o.id, p.day, p.start],
+      )
+    ).rows[0];
+    if (!gone) throw new ApiError('not_found', 'That slot is not in your cart.');
+    const rest = (
+      await c.query<{ day: string; start_min: number; end_min: number; total: number }>(
+        "select day::text, start_min, end_min, total from bookings where order_id = $1 and status = 'held' order by day, start_min",
+        [o.id],
+      )
+    ).rows;
+    if (!rest.length) {
+      await c.query("update orders set status = 'expired', hold_expires_at = now() where id = $1", [o.id]);
+      return { order: null, freed: gone };
+    }
+    const { lines, total } = priceOf(rest.map((b) => ({ day: b.day, start: b.start_min, end: b.end_min, price: b.total })));
+    const order = (
+      await c.query<OrderRow>(`update orders set price_lines = $2, total = $3 where id = $1 returning ${ORDER_COLS}`, [o.id, JSON.stringify(lines), total])
+    ).rows[0];
+    return { order, freed: gone };
+  });
+  await invalidateDay(out.freed.venue_id, out.freed.day);
+  return out.order ? { released: false, hold: await holdShape(out.order) } : { released: true, hold: null };
 }
 
 const dayLabel = (day: string) =>
