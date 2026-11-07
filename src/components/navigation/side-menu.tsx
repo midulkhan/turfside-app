@@ -11,7 +11,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { Text } from '@/components/ui/text';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, getScheme, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 type Item = { icon: LucideIcon; label: string; href: Href };
@@ -55,6 +55,7 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
       visible={visible}
       onClose={onClose}
       side="left"
+      style={getScheme() === 'dark' ? styles.panelDark : undefined}
       width={Math.min(width * 0.84, 340)}
       onClosed={() => {
         const fn = pending.current;
@@ -85,9 +86,9 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
           }
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
           <View style={[styles.rowIcon, styles.logoutIcon]}>
-            <LogOut size={20} color={colors.danger} strokeWidth={1.9} />
+            <LogOut size={20} color={colors.ink} strokeWidth={1.9} />
           </View>
-          <Text variant="bodyStrong" color={colors.danger} style={styles.flex}>
+          <Text variant="bodyStrong" color={colors.ink} style={styles.flex}>
             Logout
           </Text>
         </Pressable>
@@ -97,6 +98,8 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
 }
 
 const styles = createStyles(() => ({
+  /** Darker than cards in dark mode, so the drawer reads as its own layer. */
+  panelDark: { backgroundColor: colors.deep },
   content: { paddingHorizontal: gutter, gap: space[4] },
   flex: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -111,5 +114,5 @@ const styles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoutIcon: { backgroundColor: colors.dangerSoft },
+  logoutIcon: { backgroundColor: colors.surfaceMuted },
 }));

@@ -16,7 +16,8 @@ import {
 type Tone = 'dark' | 'light';
 
 /** "TurfSides" wordmark — vector, matches the splash animation's final frame. */
-export function Wordmark({ height = 28, tone = 'dark' }: { height?: number; tone?: Tone }) {
+/** `fill` pins the letters' colour (e.g. on a panel that is light in both themes). */
+export function Wordmark({ height = 28, tone = 'dark', fill }: { height?: number; tone?: Tone; fill?: string }) {
   return (
     <Svg
       width={height * WORDMARK_ASPECT}
@@ -24,7 +25,7 @@ export function Wordmark({ height = 28, tone = 'dark' }: { height?: number; tone
       viewBox={WORDMARK_VIEWBOX}
       accessibilityRole="image"
       accessibilityLabel="TurfSides">
-      <Path d={WORDMARK_BODY} fill={tone === 'dark' ? colors.ink : colors.textOnDark} />
+      <Path d={WORDMARK_BODY} fill={fill ?? (tone === 'dark' ? colors.ink : colors.textOnDark)} />
       <Path d={WORDMARK_SLASH} fill={colors.orange} />
     </Svg>
   );

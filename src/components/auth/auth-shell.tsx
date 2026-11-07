@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import { StatusBar } from 'expo-status-bar';
 
 import { Wordmark } from '@/components/brand/logo';
 import { Text } from '@/components/ui/text';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, gutter, palettes, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 type Props = {
@@ -18,6 +19,9 @@ type Props = {
   children: ReactNode;
   wave?: 'a' | 'b';
 };
+
+/** The header is light in both themes, so its text uses the light palette. */
+const HEAD = palettes.light;
 
 /** Shared layout for sign in / sign up: light header, wave, dark form. */
 export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a' }: Props) {
@@ -37,28 +41,32 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
         keyboardShouldPersistTaps="handled"
         bounces={false}
         showsVerticalScrollIndicator={false}>
-        <View style={[styles.top, { paddingTop: insets.top + space[3] }]}>
+        {/* Dark icons over the light header, whatever the app theme. */}
+        <StatusBar style="dark" />
+        <View style={[styles.top, { paddingTop: insets.top + space[5] }]}>
           <View style={styles.topRow}>
             <View style={styles.brand}>
-              <Wordmark height={30} />
+              <Wordmark height={30} fill={HEAD.ink} />
               {badge ? (
                 <View style={styles.badge}>
-                  <Text variant="caption" style={styles.badgeText}>
+                  <Text variant="caption" color={HEAD.ink} style={styles.badgeText}>
                     {badge}
                   </Text>
                 </View>
               ) : null}
             </View>
             <Pressable accessibilityRole="link" hitSlop={10} onPress={() => router.replace(corner.href)} style={styles.corner}>
-              <Text variant="bodyStrong">{corner.label}</Text>
-              <ArrowUpRight size={18} color={colors.ink} strokeWidth={2.2} />
+              <Text variant="bodyStrong" color={HEAD.ink}>
+                {corner.label}
+              </Text>
+              <ArrowUpRight size={18} color={HEAD.ink} strokeWidth={2.2} />
             </Pressable>
           </View>
           <View style={styles.heading}>
-            <Text variant="h1" align="center">
+            <Text variant="h1" color={HEAD.ink} align="center">
               {title}
             </Text>
-            <Text variant="body" color={colors.textMuted} align="center">
+            <Text variant="body" color={HEAD.textMuted} align="center">
               {subtitle}
             </Text>
           </View>
@@ -81,14 +89,14 @@ const styles = createStyles(() => ({
   badge: {
     alignSelf: 'flex-start',
     borderWidth: 1.5,
-    borderColor: colors.deep,
+    borderColor: HEAD.ink,
     borderRadius: radius.xs,
     paddingHorizontal: 8,
     paddingVertical: 1,
   },
   badgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1 },
   corner: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
-  heading: { alignItems: 'center', gap: space[2], marginTop: space[5] },
+  heading: { alignItems: 'center', gap: space[2], marginTop: space[9] },
   wave: { backgroundColor: colors.authTop, marginTop: -1 },
   dark: { flex: 1, backgroundColor: colors.deep, paddingHorizontal: gutter, gap: space[4], marginTop: -1 },
 }));

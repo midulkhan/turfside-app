@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform, Pressable, Switch as NativeSwitch } from 'react-native';
+import { Pressable } from 'react-native';
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { haptic } from '@/lib/haptics';
@@ -13,8 +13,9 @@ const PAD = 2;
 const SPRING = { damping: 20, stiffness: 320, mass: 0.7 };
 
 /**
- * On/off switch. iOS uses the native control; Android draws the same iOS shape
- * (51×31 pill, 27pt knob with a soft shadow, spring slide, knob stretches while pressed).
+ * On/off switch, drawn by us on both platforms in the iOS shape (51×31 pill, 27pt knob with
+ * a soft shadow, spring slide, knob stretches while pressed). Not the native UISwitch: on the
+ * current iOS design it draws larger than the box React Native lays out, so it sat off-centre.
  */
 export function Switch({
   value,
@@ -27,20 +28,6 @@ export function Switch({
   disabled?: boolean;
   accessibilityLabel?: string;
 }) {
-  if (Platform.OS === 'ios')
-    return (
-      <NativeSwitch
-        value={value}
-        onValueChange={(v) => {
-          haptic.select();
-          onValueChange(v);
-        }}
-        disabled={disabled}
-        trackColor={{ true: colors.limeText, false: colors.surfaceMuted }}
-        ios_backgroundColor={colors.surfaceMuted}
-        accessibilityLabel={accessibilityLabel}
-      />
-    );
   return <AppleSwitch value={value} onValueChange={onValueChange} disabled={disabled} accessibilityLabel={accessibilityLabel} />;
 }
 

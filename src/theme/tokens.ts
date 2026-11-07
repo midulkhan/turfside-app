@@ -61,7 +61,7 @@ const dark: typeof light = {
   inverse: '#262E31',
   charcoal: '#161B1D',
   deep: '#07090A',
-  authTop: '#1B2124',
+  authTop: '#F4F5F0', // sign-in header stays light in dark mode too (dark text on it)
   inkRaised: '#2C3538',
   inkMuted: '#36403F',
   lime: '#DDF85C',

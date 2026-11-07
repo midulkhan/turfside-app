@@ -12,7 +12,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.turfsides",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "TurfSides uses your location to show turfs near you."
+        "NSLocationWhenInUseUsageDescription": "TurfSides uses your location to show turfs near you.",
+        "UIViewControllerBasedStatusBarAppearance": true
       }
     },
     "android": {

@@ -15,13 +15,14 @@ import { TicketDivider, TicketSurface } from './notch';
 
 const TONES = () => ({
   available: { fill: colors.surface, stroke: colors.borderStrong, sw: 1, fg: colors.ink, sub: colors.textMuted, dash: colors.border },
+  // The app's active colour (same lime as the chosen date), dark text, in both themes.
   selected: {
-    fill: colors.ink,
+    fill: colors.lime,
     stroke: colors.lime,
     sw: 1.5,
-    fg: colors.textOnDark,
-    sub: colors.textOnDark,
-    dash: 'rgba(255,255,255,0.28)',
+    fg: colors.charcoal,
+    sub: colors.charcoal,
+    dash: 'rgba(22,27,29,0.28)',
   },
   booked: {
     fill: colors.surfaceMuted,
@@ -54,7 +55,7 @@ const TONES = () => ({
 
 /**
  * Ticket-style time slot: time · tear line (with side notches) · duration or status.
- * Selected = charcoal with a lime outline; booked/unavailable = hatched grey.
+ * Selected = lime with dark text; booked/unavailable = hatched grey.
  */
 export const SlotTicket = memo(function SlotTicket({
   slot,
@@ -141,8 +142,8 @@ export const SlotTicket = memo(function SlotTicket({
         {loading ? <Animated.View style={[styles.bar, styles.barSub, barPulse]} /> : null}
         <Animated.View style={[styles.row, textIn]}>
           {kind === 'selected' || kind === 'mine' ? (
-            <View style={styles.check}>
-              <Check size={11} color={colors.ink} strokeWidth={3.5} />
+            <View style={[styles.check, kind === 'selected' && styles.checkOnLime]}>
+              <Check size={11} color={kind === 'selected' ? colors.lime : colors.charcoal} strokeWidth={3.5} />
             </View>
           ) : null}
           <Text variant="label" color={tone.sub} numberOfLines={1}>
@@ -163,4 +164,5 @@ const styles = createStyles(() => ({
   time: { fontSize: 13.5, letterSpacing: -0.2, fontFamily: 'Geist_700Bold' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   check: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  checkOnLime: { backgroundColor: colors.charcoal },
 }));
