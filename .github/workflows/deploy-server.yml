@@ -3,7 +3,8 @@ name: Deploy API (api.turfsides.com)
 on:
   push:
     branches: [main]
-    paths: ['server/**', '.github/workflows/deploy-server.yml']
+    # The suite also tests the app's API client against the server, so changes there count too.
+    paths: ['server/**', 'src/features/api/**', '.github/workflows/deploy-server.yml']
   workflow_dispatch: {}
 
 concurrency:
