@@ -10,6 +10,7 @@ export default function TabsLayout() {
   const { scheme } = useTheme(); // re-render (and re-theme every tab) on a theme switch
   return (
     <Tabs
+      backBehavior="initialRoute" // back from any tab goes to Explore (the anchor)
       screenLayout={themedScreen(scheme)}
       tabBar={(props) => <TabBar key={scheme} {...props} />}
       screenOptions={{

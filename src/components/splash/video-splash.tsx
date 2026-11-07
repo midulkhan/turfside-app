@@ -4,7 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { FadeOut } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { createStyles } from '@/theme/styles';
 
 const SOURCE = require('@/assets/video/splash.mp4');
@@ -53,16 +53,25 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
     return () => clearTimeout(t);
   }, []);
 
-  // finishing: the still covers the video → (60ms) video removed → (60ms) fade out.
+  // finishing: the still covers the video → (60ms) video removed → fade out → unmounted.
+  // The fade is a plain opacity animation and the unmount a timer, not an `exiting` layout
+  // animation: on some Android builds those never complete and the white layer stayed on top.
   const finishing = ended && appReady;
+  const opacity = useSharedValue(1);
   useEffect(() => {
     if (!finishing) return;
-    const t = setTimeout(() => (videoGone ? onDone() : setVideoGone(true)), 60);
+    if (!videoGone) {
+      const t = setTimeout(() => setVideoGone(true), 60);
+      return () => clearTimeout(t);
+    }
+    opacity.set(withTiming(0, { duration: 320 }));
+    const t = setTimeout(onDone, 340);
     return () => clearTimeout(t);
-  }, [finishing, videoGone, onDone]);
+  }, [finishing, videoGone, onDone, opacity]);
+  const fade = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
   return (
-    <Animated.View exiting={FadeOut.duration(320)} style={styles.root} pointerEvents="auto">
+    <Animated.View style={[styles.root, fade]} pointerEvents={finishing && videoGone ? 'none' : 'auto'}>
       <View style={styles.videoWrap}>
         {!videoGone ? (
           <VideoView

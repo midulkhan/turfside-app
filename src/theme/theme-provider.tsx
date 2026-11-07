@@ -31,8 +31,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [system, setSystem] = useState<Scheme>(systemScheme);
 
   useEffect(() => {
-    prefs
-      .get(PREF_KEY)
+    // Never wait on storage for long: the whole app (and the splash hand-off) sits behind this.
+    Promise.race([prefs.get(PREF_KEY), new Promise<null>((r) => setTimeout(() => r(null), 1500))])
       .then((v) => setPrefState(v === 'light' || v === 'dark' || v === 'system' ? v : 'system'))
       .catch(() => setPrefState('system'));
     // Fires for system changes and for our own overrides below.

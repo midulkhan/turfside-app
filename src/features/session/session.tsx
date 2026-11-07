@@ -60,6 +60,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {})
       .finally(() => setReady(true));
+    // Start-up never waits on storage for more than 3 s (the reads above still apply when they land).
+    const t = setTimeout(() => setReady(true), 3000);
+    return () => clearTimeout(t);
   }, []);
 
   // Refresh the profile in the background (roles may have changed). A revoked
