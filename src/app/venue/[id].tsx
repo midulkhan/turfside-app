@@ -78,6 +78,7 @@ import { useLiveSlots } from '@/features/api/realtime';
 import { useCart } from '@/features/api/use-cart';
 import { pageStatusBar } from '@/theme/theme-provider';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
+import { useTransitionSettled } from '@/lib/use-transition-settled';
 import { ApiError, type Hold, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
 import { useSession } from '@/features/session/session';
@@ -223,6 +224,10 @@ export default function VenueScreen() {
   const reviews = useReviews(id, visited.reviews);
   const toggle = useToggleSaved();
   const v = venue.data;
+  // Light first frame while the screen fades in (see the gallery below).
+  const settled = useTransitionSettled();
+  // The title only fades in when it arrives after the screen (not when it was cached).
+  const [titleWasMissing] = useState(() => !v);
   const isSaved = useIsSaved(id, !!v?.isSaved);
 
   const grouped = useMemo(() => {
@@ -338,8 +343,12 @@ export default function VenueScreen() {
     );
   }
 
-  const gallery = v?.photos.length ? v.photos : [null];
+  // Light first frame while the screen fades in; photos 2+, live blurs and the booking pane
+  // mount right after, so the transition itself gets every frame (no "pop").
+  const allPhotos = v?.photos.length ? v.photos : [null];
+  const gallery = settled ? allPhotos : allPhotos.slice(0, 1);
   const btnVariant = scrolled.isScrolled ? 'light' : 'blur';
+  const blurTarget = settled ? galleryRef : undefined;
 
   return (
     <View style={styles.root}>
@@ -364,13 +373,13 @@ export default function VenueScreen() {
             </BlurTargetView>
           </Animated.View>
           <View style={styles.counter}>
-            {Platform.OS === 'ios' ? (
+            {!settled ? null : Platform.OS === 'ios' ? (
               <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
             ) : Platform.OS === 'android' && Number(Platform.Version) >= 31 ? (
-              <BlurView intensity={30} tint="dark" blurTarget={galleryRef} blurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+              <BlurView intensity={30} tint="dark" blurTarget={blurTarget} blurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
             ) : null}
             <Text variant="caption" color={colors.textOnDark}>
-              {photoIndex + 1} / {gallery.length}
+              {photoIndex + 1} / {allPhotos.length}
             </Text>
           </View>
         </View>
@@ -379,7 +388,7 @@ export default function VenueScreen() {
         <View style={styles.body}>
           {/* ── Title block ─────────────────────────────────────── */}
           {v ? (
-            <Animated.View entering={FadeIn.duration(180)} style={styles.titleBlock}>
+            <Animated.View entering={titleWasMissing ? FadeIn.duration(180) : undefined} style={styles.titleBlock}>
               <Text variant="overline" color={colors.limeText}>
                 {`FOOTBALL · ${v.formats.join(' / ').toUpperCase()}`}
               </Text>
@@ -482,22 +491,26 @@ export default function VenueScreen() {
 
           <View style={{ minHeight: tabMinH }} onLayout={(e) => (tabH.current = e.nativeEvent.layout.height)}>
             <View style={[styles.gap, tab !== 'book' && styles.hidden]}>
-              <BookPane
-                v={v}
-                days={days}
-                day={day}
-                onPickDay={pickDay}
-                onOpenCalendar={openCalendar}
-                dateScroll={dateScroll}
-                grouped={grouped}
-                selectedIds={chosenIds}
-                onPick={togglePick}
-                state={slotState}
-                revealKey={slotState === 'ready' ? (shownDay ?? null) : null}
-                errorMessage={slots.error?.message}
-                onRetry={slots.refetch}
-                noneOpen={noneOpen}
-              />
+              {settled ? (
+                <BookPane
+                  v={v}
+                  days={days}
+                  day={day}
+                  onPickDay={pickDay}
+                  onOpenCalendar={openCalendar}
+                  dateScroll={dateScroll}
+                  grouped={grouped}
+                  selectedIds={chosenIds}
+                  onPick={togglePick}
+                  state={slotState}
+                  revealKey={slotState === 'ready' ? (shownDay ?? null) : null}
+                  errorMessage={slots.error?.message}
+                  onRetry={slots.refetch}
+                  noneOpen={noneOpen}
+                />
+              ) : (
+                <BookPanePlaceholder />
+              )}
             </View>
             {visited.details && v ? (
               <View style={tab !== 'details' && styles.hidden}>
@@ -520,7 +533,7 @@ export default function VenueScreen() {
             icon={ArrowLeft}
             label="Go back"
             variant={btnVariant}
-            blurTarget={galleryRef}
+            blurTarget={blurTarget}
             size={HERO_BTN}
             onPress={() => router.back()}
           />
@@ -534,7 +547,7 @@ export default function VenueScreen() {
               icon={Share2}
               label="Share turf"
               variant={btnVariant}
-              blurTarget={galleryRef}
+              blurTarget={blurTarget}
               size={HERO_BTN}
               onPress={() => v && Share.share({ message: `${v.name}, ${v.area} — book on TurfSides: https://turfsides.app/v/${v.id}` })}
             />
@@ -542,7 +555,7 @@ export default function VenueScreen() {
               icon={Heart}
               label={isSaved ? 'Remove from saved' : 'Save turf'}
               variant={btnVariant}
-              blurTarget={galleryRef}
+              blurTarget={blurTarget}
               size={HERO_BTN}
               fill={isSaved ? colors.danger : undefined}
               iconColor={isSaved ? colors.danger : undefined}
@@ -736,6 +749,25 @@ const DateChip = memo(function DateChip({ d, active, onPick }: { d: DayKey; acti
  * The "Book a slot" tab. Memoised with stable props, so switching tabs, scrolling past the
  * header or opening the price bar never re-renders the date strip or the ticket grid.
  */
+/** Plain (unanimated) stand-in for the booking pane during the opening transition. */
+function BookPanePlaceholder() {
+  return (
+    <View style={styles.placeholderCard}>
+      <View style={[styles.placeholderBar, { width: '40%' }]} />
+      <View style={styles.placeholderRow}>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <View key={i} style={styles.placeholderChip} />
+        ))}
+      </View>
+      <View style={[styles.placeholderBar, { width: '34%' }]} />
+      <View style={styles.placeholderRow}>
+        <View style={styles.placeholderTicket} />
+        <View style={styles.placeholderTicket} />
+      </View>
+    </View>
+  );
+}
+
 const BookPane = memo(function BookPane({
   v,
   days,
@@ -1040,6 +1072,18 @@ const ReviewsTab = memo(function ReviewsTab({ data, loading }: { data?: Awaited<
 });
 
 const styles = createStyles(() => ({
+  placeholderCard: {
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: space[4],
+    gap: space[4],
+  },
+  placeholderBar: { height: 18, borderRadius: radius.sm, backgroundColor: colors.surfaceMuted },
+  placeholderRow: { flexDirection: 'row', gap: space[3] },
+  placeholderChip: { width: 56, height: 66, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  placeholderTicket: { flex: 1, height: 64, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
