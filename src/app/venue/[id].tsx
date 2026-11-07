@@ -331,14 +331,12 @@ export default function VenueScreen() {
                     onPress={() => setTab('reviews')}
                     style={styles.ratingBox}
                     hitSlop={8}>
-                    <View style={styles.row}>
-                      <Star size={16} color="#F5B301" fill="#F5B301" />
-                      <Text variant="bodyStrong" style={styles.ratingNum}>
-                        {v.rating.toFixed(1)}
-                      </Text>
-                    </View>
-                    <Text variant="caption" color={colors.textMuted} style={styles.underline}>
-                      {v.reviewCount} reviews
+                    <Star size={15} color="#F5B301" fill="#F5B301" />
+                    <Text variant="bodyStrong" style={styles.ratingNum}>
+                      {v.rating.toFixed(1)}
+                    </Text>
+                    <Text variant="body" color={colors.textMuted} style={[styles.address, styles.underline]} numberOfLines={1}>
+                      ({v.reviewCount} reviews)
                     </Text>
                   </Pressable>
                 ) : null}
@@ -346,7 +344,7 @@ export default function VenueScreen() {
               <View style={styles.addressRow}>
                 <MapPin size={16} color={colors.textMuted} strokeWidth={1.7} />
                 <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.address]} numberOfLines={1}>
-                  {v.shortAddress} · {distance} away
+                  {v.shortAddress} · {distance} radius
                 </Text>
                 <Pressable accessibilityRole="link" onPress={openMap} hitSlop={8} style={styles.mapLink}>
                   <Text variant="labelStrong">Map</Text>
@@ -913,7 +911,7 @@ const styles = StyleSheet.create({
   },
   titleBlock: { gap: space[2] },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  ratingBox: { alignItems: 'flex-end', gap: 1 },
+  ratingBox: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
   ratingNum: { fontSize: 15, lineHeight: 19 },
   fromRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5, paddingLeft: 24 },
   fromPrice: { fontFamily: font.semibold, fontSize: 15, lineHeight: 19 },

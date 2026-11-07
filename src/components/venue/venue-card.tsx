@@ -51,7 +51,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
                 </Text>
                 <Text variant="body" color={colors.textMuted} numberOfLines={1} style={styles.meta}>
                   {venue.area}
-                  {venue.distanceKm != null ? ` · ${formatDistance(venue.distanceKm)}` : ''}
+                  {venue.distanceKm != null ? ` · ${formatDistance(venue.distanceKm)} radius` : ''}
                 </Text>
               </View>
               <View style={styles.price}>
