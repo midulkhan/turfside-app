@@ -10,7 +10,8 @@ export default function AuthLayout() {
   return (
     <Stack
       screenLayout={themedScreen(scheme)}
-      screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: colors.deep } }}
+      // Dark status bar icons over the sign-in header, which is light in both themes.
+      screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: colors.deep }, statusBarStyle: 'dark' }}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import {
   ArrowLeft,
   ArrowRight,
@@ -314,11 +314,15 @@ export default function VenueScreen() {
   const titleStyle = useAnimatedStyle(() => ({ opacity: scrolled.progress.get() }));
   // Light status bar over the photo, dark once the header turns white; only while this
   // screen is in front, and always back to dark when leaving (checkout is white).
+  // iOS reads it from this screen's options (react-native-screens); Android from StatusBar.
+  const navigation = useNavigation();
   useFocusEffect(
     useCallback(() => {
-      setStatusBarStyle(scrolled.isScrolled ? pageStatusBar() : 'light', true);
+      const style = scrolled.isScrolled ? pageStatusBar() : 'light';
+      navigation.setOptions({ statusBarStyle: style });
+      setStatusBarStyle(style, true);
       return () => setStatusBarStyle(pageStatusBar(), true);
-    }, [scrolled.isScrolled]),
+    }, [scrolled.isScrolled, navigation]),
   );
 
   const openMap = useCallback(

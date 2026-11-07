@@ -61,7 +61,14 @@ function RootNavigator() {
       {appReady ? (
         <Stack
           screenLayout={themedScreen(scheme, ['(tabs)'])}
-          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'ios_from_right' }}>
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'ios_from_right',
+            // iOS takes the status bar style from the screen in front (react-native-screens),
+            // not from <StatusBar>, so it is set here per screen as well.
+            statusBarStyle: scheme === 'dark' ? 'light' : 'dark',
+          }}>
           <Stack.Screen name="index" options={{ animation: 'none' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Protected guard={!user} redirectTo="/">
