@@ -3,7 +3,8 @@ import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, ty
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors } from '@/theme/tokens';
+import { colors, withAlpha } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 /**
  * Tracks whether a scroller has left the top. Pass `onScroll` to any
@@ -54,9 +55,13 @@ export function StickyHeader({
   floating?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  // Plain strings for the worklet (read at render, so they follow the active theme).
+  const to = colors.surface;
+  const line = colors.border;
+  const lineOff = withAlpha(colors.border, 0);
   const anim = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.get(), [0, 1], [from, colors.surface]),
-    borderBottomColor: interpolateColor(progress.get(), [0, 1], ['rgba(229,231,224,0)', colors.border]),
+    backgroundColor: interpolateColor(progress.get(), [0, 1], [from, to]),
+    borderBottomColor: interpolateColor(progress.get(), [0, 1], [lineOff, line]),
   }));
   return (
     <Animated.View style={[styles.base, floating && styles.floating, { paddingTop: safeTop ? insets.top : 0 }, anim]}>
@@ -66,7 +71,7 @@ export function StickyHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   base: { borderBottomWidth: StyleSheet.hairlineWidth, zIndex: 10 },
   floating: { position: 'absolute', left: 0, right: 0, top: 0 },
-});
+}));

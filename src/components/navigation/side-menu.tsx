@@ -1,7 +1,7 @@
 import { router, type Href } from 'expo-router';
 import { ChevronRight, CircleHelp, LogOut, UsersRound, X, type LucideIcon } from 'lucide-react-native';
 import { useRef } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/brand/logo';
@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/text';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 type Item = { icon: LucideIcon; label: string; href: Href };
 
@@ -95,7 +96,7 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   content: { paddingHorizontal: gutter, gap: space[4] },
   flex: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -111,4 +112,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoutIcon: { backgroundColor: colors.dangerSoft },
-});
+}));

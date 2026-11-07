@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { router, useScrollToTop } from 'expo-router';
 import { CalendarDays, Clock3, QrCode, RotateCcw } from 'lucide-react-native';
 import { memo, useMemo, useState, useRef } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import { formatTaka } from '@/lib/money';
 import { dhakaToday, formatDay, formatRange } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
@@ -35,12 +36,12 @@ const FILTERS: { key: Filter; label: string }[] = [
 /** Open = a game still ahead of you (booked, today or later). Everything else (played, past, cancelled) is closed. */
 const isOpen = (b: Booking, today: string) => (b.status === 'confirmed' || b.status === 'checked_in') && b.day >= today;
 
-const OPEN = { label: 'Open', bg: colors.limeSoft, fg: colors.limeText };
-const CLOSED = { label: 'Closed', bg: colors.surfaceMuted, fg: colors.textMuted };
+const OPEN = () => ({ label: 'Open', bg: colors.limeSoft, fg: colors.limeText });
+const CLOSED = () => ({ label: 'Closed', bg: colors.surfaceMuted, fg: colors.textMuted });
 
 const BookingRow = memo(function BookingRow({ b, today }: { b: Booking; today: string }) {
   const live = isOpen(b, today);
-  const s = live ? OPEN : CLOSED;
+  const s = live ? OPEN() : CLOSED();
   const open = () => router.push({ pathname: '/booking/[id]', params: { id: b.id } });
   // "Book again" goes to the turf itself, not this booking.
   const bookAgain = () => router.push({ pathname: '/venue/[id]', params: { id: b.venue.id } });
@@ -204,7 +205,7 @@ export default function Bookings() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   header: { paddingHorizontal: gutter, gap: space[4], paddingBottom: space[3] },
@@ -231,4 +232,4 @@ const styles = StyleSheet.create({
   pill: { borderRadius: radius.pill, paddingHorizontal: space[2], paddingVertical: 3 },
   link: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   u: { textDecorationLine: 'underline' },
-});
+}));

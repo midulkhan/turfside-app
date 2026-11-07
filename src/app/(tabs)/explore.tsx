@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
 import { Bell, ChevronDown, MapPin, Menu, Radar, Search } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, View } from 'react-native';
 
 import { SideMenu } from '@/components/navigation/side-menu';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
@@ -24,6 +24,7 @@ import { useSession } from '@/features/session/session';
 import { dhakaToday } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, size, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
@@ -110,13 +111,16 @@ export default function Explore() {
         {/* Feather the photo's edges into the page so it never shows a box. */}
         <LinearGradient
           pointerEvents="none"
-          colors={[colors.bg, 'rgba(244,245,240,0)']}
+          // Fully opaque until just past the photo's left edge, then feathers out (in light mode
+          // the photo's own background matches the page; in dark mode its edge must be covered).
+          colors={[colors.bg, colors.bg, colors.bgClear]}
+          locations={[0, 0.4, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.fadeLeft}
         />
-        <LinearGradient pointerEvents="none" colors={['rgba(244,245,240,0)', colors.bg]} style={styles.fadeBottom} />
-        <LinearGradient pointerEvents="none" colors={[colors.bg, 'rgba(244,245,240,0)']} style={styles.fadeTop} />
+        <LinearGradient pointerEvents="none" colors={[colors.bgClear, colors.bg]} style={styles.fadeBottom} />
+        <LinearGradient pointerEvents="none" colors={[colors.bg, colors.bgClear]} style={styles.fadeTop} />
         <View style={styles.heroText}>
           <View style={styles.accent} />
           <Text variant="display" style={styles.display}>
@@ -215,7 +219,7 @@ export default function Explore() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   sticky: { paddingBottom: space[2] },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: gutter, paddingTop: space[2] },
@@ -226,7 +230,7 @@ const styles = StyleSheet.create({
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
   hero: { height: 164, justifyContent: 'flex-end', paddingBottom: space[3], overflow: 'hidden' }, // keep the photo (and its pitch base) inside the fades
   heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
-  fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '55%' },
+  fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '62%' },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 },
   fadeTop: { position: 'absolute', left: 0, right: 0, top: -10, height: 50 },
   heroText: { paddingHorizontal: gutter, gap: space[2], maxWidth: 252 },
@@ -250,4 +254,4 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: gutter, paddingTop: space[6], paddingBottom: space[3] },
   card: { paddingHorizontal: gutter, paddingBottom: space[4] },
   skeletons: { paddingHorizontal: gutter, paddingTop: space[7], gap: space[4] },
-});
+}));

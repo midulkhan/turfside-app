@@ -14,6 +14,7 @@ import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withSp
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { colors, radius } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const OPEN = { duration: 320, easing: Easing.bezier(0.22, 1, 0.36, 1) }; // smooth "ease-out-quint"
 const CLOSE = { duration: 220, easing: Easing.bezier(0.4, 0, 1, 1) };
@@ -143,7 +144,7 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1 },
   scrim: { backgroundColor: colors.scrim },
   bottom: {
@@ -173,4 +174,4 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 6,
   },
-});
+}));

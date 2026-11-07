@@ -2,7 +2,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { router, useScrollToTop } from 'expo-router';
 import { useRef } from 'react';
 import { Heart } from 'lucide-react-native';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -14,6 +14,7 @@ import { useSaved } from '@/features/api/queries';
 import type { VenueSummary } from '@/features/api/types';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
@@ -75,9 +76,9 @@ export default function Saved() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3] },
   header: { paddingHorizontal: gutter, gap: space[1], paddingTop: space[2], paddingBottom: space[5] },
   item: { paddingHorizontal: gutter, paddingBottom: space[4] },
-});
+}));

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { CalendarDays, Clock3, UsersRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/card';
@@ -17,17 +17,18 @@ import type { PlayerRequest } from '@/features/api/types';
 import { formatTaka } from '@/lib/money';
 import { formatDay, formatRange } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
-const STATUS: Record<PlayerRequest['status'], { label: string; bg: string; fg: string }> = {
+const STATUS = (): Record<PlayerRequest['status'], { label: string; bg: string; fg: string }> => ({
   open: { label: 'Open', bg: colors.limeSoft, fg: colors.limeText },
   full: { label: 'Full', bg: colors.surfaceMuted, fg: colors.textMuted },
-  pending: { label: 'Waiting for organiser', bg: '#FFF4E5', fg: colors.warning },
+  pending: { label: 'Waiting for organiser', bg: colors.warningSoft, fg: colors.warning },
   accepted: { label: 'You’re in', bg: colors.limeSoft, fg: colors.limeText },
   declined: { label: 'Declined', bg: colors.dangerSoft, fg: colors.danger },
-};
+});
 
 function RequestCard({ r }: { r: PlayerRequest }) {
-  const s = STATUS[r.status];
+  const s = STATUS()[r.status];
   const pct = r.spotsTotal ? r.spotsFilled / r.spotsTotal : 0;
   return (
     <Card style={styles.card}>
@@ -115,7 +116,7 @@ export default function Requests() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { paddingHorizontal: gutter, gap: space[3], paddingTop: space[2] },
   tabs: { flexDirection: 'row', gap: space[2], marginBottom: space[1] },
@@ -128,4 +129,4 @@ const styles = StyleSheet.create({
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   track: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceMuted, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 4, backgroundColor: colors.lime },
-});
+}));

@@ -41,7 +41,8 @@ import { haptic } from '@/lib/haptics';
 import { newIdempotencyKey } from '@/lib/ids';
 import { formatTaka } from '@/lib/money';
 import { formatDay, formatRange } from '@/lib/time';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, getScheme, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const POLL_ATTEMPTS = 8;
 
@@ -312,7 +313,8 @@ export default function Checkout() {
           <View style={styles.method} accessibilityRole="radio" accessibilityState={{ selected: true }}>
             <Image
               source={require('@/assets/brand/bkash.png')}
-              style={styles.bkashLogo}
+              // bKash's dark-pink wordmark needs a light plate on the dark theme.
+              style={[styles.bkashLogo, getScheme() === 'dark' && styles.logoPlate]}
               contentFit="contain"
               accessibilityLabel="bKash"
               cachePolicy="memory-disk"
@@ -371,7 +373,7 @@ export default function Checkout() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
@@ -457,6 +459,7 @@ const styles = StyleSheet.create({
     height: 72,
   },
   bkashLogo: { width: 70, height: 32 },
+  logoPlate: { backgroundColor: '#FFFFFF', borderRadius: radius.xs, width: 82, paddingHorizontal: 6 },
   vrPink: { width: 1, height: 30, backgroundColor: '#F5B5CF' },
   radioOn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.bkash, alignItems: 'center', justifyContent: 'center' },
   policy: {
@@ -484,4 +487,4 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   u: { textDecorationLine: 'underline' },
-});
+}));

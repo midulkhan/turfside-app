@@ -1,8 +1,9 @@
 import { createContext, use, useId, useState, type ReactNode } from 'react';
-import { PixelRatio, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { PixelRatio, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { ClipPath, Defs, G, Line, Path, Pattern, Rect } from 'react-native-svg';
 
 import { colors, radius as radii } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 /**
  * Ticket outline as a single SVG path, built from the brand ticket artwork
@@ -136,7 +137,7 @@ export function TicketDivider({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   svg: { position: 'absolute', left: 0, top: 0 },
   dashes: { height: 1.5, alignSelf: 'stretch' },
-});
+}));

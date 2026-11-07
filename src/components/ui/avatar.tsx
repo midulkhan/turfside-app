@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { colors, radius } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Text } from './text';
 
@@ -53,7 +54,7 @@ export function AvatarStack({ names, size = 40 }: { names: string[]; size?: numb
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   base: { backgroundColor: colors.limeTint, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   stack: { flexDirection: 'row', alignItems: 'center' },
-});
+}));

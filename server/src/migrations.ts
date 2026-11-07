@@ -8,6 +8,7 @@ import m003 from '../db/migrations/003_security_realtime.sql';
 import m004 from '../db/migrations/004_user_places.sql';
 import m005 from '../db/migrations/005_avatars.sql';
 import m006 from '../db/migrations/006_orders.sql';
+import m007 from '../db/migrations/007_account_settings.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -16,6 +17,7 @@ const MIGRATIONS: [string, string][] = [
   ['004_user_places', m004],
   ['005_avatars', m005],
   ['006_orders', m006],
+  ['007_account_settings', m007],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

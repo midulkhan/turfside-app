@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 import { AuthShell } from '@/components/auth/auth-shell';
 import { SocialButtons } from '@/components/auth/social-buttons';
@@ -14,6 +14,7 @@ import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { isBdMobile, isEmail, isName, isStrongPassword } from '@/lib/validation';
 import { colors, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 export default function SignUp() {
   const [name, setName] = useState('');
@@ -130,8 +131,8 @@ export default function SignUp() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   form: { gap: space[4] },
   links: { gap: space[4], alignItems: 'center', marginTop: space[2] },
   u: { textDecorationLine: 'underline' },
-});
+}));

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Briefcase, Check, House, LocateFixed, MapPin, Pencil, Plus, X } from 'lucide-react-native';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Overline } from '@/components/ui/headers';
@@ -14,6 +14,7 @@ import { useSession } from '@/features/session/session';
 import { useLocate } from '@/features/session/use-locate';
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 export const placeIcon = (label: string) => (/^home$/i.test(label) ? House : /^work$/i.test(label) ? Briefcase : MapPin);
 const placeLine = (p: Pick<SavedPlace, 'name' | 'city' | 'address'>) => p.address || [p.name, p.city].filter(Boolean).join(', ');
@@ -162,7 +163,7 @@ function ActionRow({
       disabled={busy}
       style={({ pressed }) => [styles.action, active && styles.placeActive, pressed && styles.pressed]}>
       <View style={styles.actionIcon}>
-        <Icon size={22} color={colors.ink} strokeWidth={2} />
+        <Icon size={22} color={colors.charcoal} strokeWidth={2} />
       </View>
       <View style={styles.flex}>
         <Text variant="bodyStrong">{title}</Text>
@@ -175,7 +176,7 @@ function ActionRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   sticky: { paddingTop: space[2], paddingBottom: space[2] },
   root: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: gutter, paddingBottom: space[3] },
@@ -223,4 +224,4 @@ const styles = StyleSheet.create({
   edit: { width: 56, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, gap: 2 },
   empty: { paddingVertical: space[6], paddingHorizontal: space[4] },
-});
+}));

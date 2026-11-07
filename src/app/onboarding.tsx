@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight, CircleCheck, Clock3, MapPin, QrCode } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { FlatList, Pressable, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedScrollHandler,
@@ -21,6 +21,7 @@ import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { photos } from '@/lib/brand-photos';
 import { useSession } from '@/features/session/session';
 import { colors, gutter, radius, shadow, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 type Slide = {
   key: string;
@@ -96,8 +97,10 @@ function TicketHero() {
           <Text variant="label">7:00–8:30 PM</Text>
         </View>
         <View style={styles.confirmed}>
-          <CircleCheck size={16} color={colors.ink} strokeWidth={2.2} />
-          <Text variant="labelStrong">Booking confirmed</Text>
+          <CircleCheck size={16} color={colors.charcoal} strokeWidth={2.2} />
+          <Text variant="labelStrong" color={colors.charcoal}>
+            Booking confirmed
+          </Text>
         </View>
       </View>
       <TicketDivider gap={8} />
@@ -210,7 +213,7 @@ export default function Onboarding() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: 'row',
@@ -267,7 +270,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[3],
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     margin: space[2],
     marginTop: space[3],
     borderRadius: radius.lg,
@@ -280,4 +283,4 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: gutter, paddingBottom: space[3], gap: space[5] },
   dots: { flexDirection: 'row', gap: space[2], justifyContent: 'center' },
   dot: { height: 10, borderRadius: 5 },
-});
+}));

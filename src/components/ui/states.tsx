@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { colors, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Button } from './button';
 import { Text } from './text';
@@ -51,7 +52,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   wrap: { alignItems: 'center', gap: space[2], paddingVertical: space[8], paddingHorizontal: space[6] },
   icon: {
     width: 64,
@@ -63,4 +64,4 @@ const styles = StyleSheet.create({
     marginBottom: space[2],
   },
   btn: { marginTop: space[3] },
-});
+}));

@@ -1,8 +1,9 @@
 import { memo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 import { addDays, dayOfMonth, weekday, type DayKey } from '@/lib/time';
 import { colors, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
@@ -51,7 +52,7 @@ export const DateStrip = memo(function DateStrip({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   row: { gap: space[2], paddingHorizontal: space[5] },
   day: {
     width: 62,
@@ -64,5 +65,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  active: { backgroundColor: colors.ink, borderColor: colors.ink },
-});
+  active: { backgroundColor: colors.inverse, borderColor: colors.inverse },
+}));

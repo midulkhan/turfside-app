@@ -1,8 +1,9 @@
 import { Check } from 'lucide-react-native';
 import { Fragment } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { colors } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Text } from './text';
 
@@ -19,7 +20,7 @@ export function Stepper({ steps, current }: { steps: string[]; current: number }
             <View style={styles.step}>
               <View style={[styles.dot, done && styles.dotDone, active && styles.dotActive]}>
                 {done ? (
-                  <Check size={14} color={colors.ink} strokeWidth={3} />
+                  <Check size={14} color={colors.charcoal} strokeWidth={3} />
                 ) : (
                   <Text variant="caption" color={active ? colors.lime : colors.textMuted} style={styles.num}>
                     {String(i + 1).padStart(2, '0')}
@@ -41,7 +42,7 @@ export function Stepper({ steps, current }: { steps: string[]; current: number }
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   step: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
   labelActive: { fontFamily: 'Geist_700Bold' },
@@ -56,8 +57,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   dotDone: { backgroundColor: colors.lime, borderColor: colors.lime },
-  dotActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  dotActive: { backgroundColor: colors.inverse, borderColor: colors.ink },
   num: { fontFamily: 'Geist_700Bold' },
   line: { flex: 1, minWidth: 8, height: 1, backgroundColor: colors.borderStrong },
   lineOn: { backgroundColor: colors.ink },
-});
+}));

@@ -1,14 +1,17 @@
 import { Tabs } from 'expo-router/js-tabs';
 
 import { TabBar } from '@/components/navigation/tab-bar';
+import { themedScreen, useTheme } from '@/theme/theme-provider';
 import { colors } from '@/theme/tokens';
 
 export const unstable_settings = { anchor: 'explore' };
 
 export default function TabsLayout() {
+  const { scheme } = useTheme(); // re-render (and re-theme every tab) on a theme switch
   return (
     <Tabs
-      tabBar={(props) => <TabBar {...props} />}
+      screenLayout={themedScreen(scheme)}
+      tabBar={(props) => <TabBar key={scheme} {...props} />}
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: colors.bg },

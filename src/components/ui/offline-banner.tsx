@@ -1,10 +1,11 @@
 import { WifiOff } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOffline } from '@/lib/network';
 import { colors, radius, shadow, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Text } from './text';
 
@@ -25,7 +26,7 @@ export function OfflineBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   wrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 100 },
   pill: {
     flexDirection: 'row',
@@ -34,6 +35,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
     height: 30,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
   },
-});
+}));

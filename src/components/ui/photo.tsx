@@ -1,8 +1,9 @@
 import { Image, type ImageProps } from 'expo-image';
 import { ImageIcon } from 'lucide-react-native';
-import { StyleSheet, View, type ImageSourcePropType, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type ImageSourcePropType, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radius } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 type Props = Omit<ImageProps, 'source' | 'style'> & {
   source: ImageSourcePropType | string | null | undefined;
@@ -35,7 +36,7 @@ export function Photo({ source, style, rounded = radius.md, ...rest }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   img: { backgroundColor: colors.surfaceMuted, overflow: 'hidden' },
   placeholder: { backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
-});
+}));

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { LogIn } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 import { AuthShell } from '@/components/auth/auth-shell';
 import { SocialButtons } from '@/components/auth/social-buttons';
@@ -14,6 +14,7 @@ import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword, normaliseIdentifier } from '@/lib/validation';
 import { colors, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 export default function SignIn() {
   const { signIn } = useSession();
@@ -100,8 +101,8 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   form: { gap: space[5] },
   forgot: { alignSelf: 'flex-end', marginTop: -space[2] },
   links: { gap: space[5], alignItems: 'center', marginTop: space[3] },
-});
+}));

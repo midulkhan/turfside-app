@@ -17,6 +17,7 @@ import { useSession } from '@/features/session/session';
 import { currentPosition, describePlace, round3 } from '@/features/session/use-locate';
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, shadow, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 type Coords = { latitude: number; longitude: number };
 type Label = { name: string; city: string; full: string };
@@ -212,7 +213,7 @@ export default function PickLocation() {
         <Animated.View style={[styles.pinShadow, shadowStyle]} />
         <Animated.View style={[styles.pin, pinStyle]}>
           <View style={styles.pinHead}>
-            <MapPin size={22} color={colors.ink} fill={colors.lime} strokeWidth={2.2} />
+            <MapPin size={22} color={colors.charcoal} fill={colors.lime} strokeWidth={2.2} />
           </View>
           <View style={styles.pinStem} />
         </Animated.View>
@@ -278,7 +279,7 @@ export default function PickLocation() {
 const PIN = 44;
 const STEM = 14;
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.surfaceMuted },
   flex: { flex: 1, gap: 2 },
   pinLayer: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
@@ -288,15 +289,15 @@ const styles = StyleSheet.create({
     width: PIN,
     height: PIN,
     borderRadius: PIN / 2,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: colors.surface,
     ...shadow.card,
   },
-  pinStem: { width: 3, height: STEM, backgroundColor: colors.ink, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
-  pinShadow: { position: 'absolute', width: 14, height: 6, borderRadius: 7, backgroundColor: colors.ink },
+  pinStem: { width: 3, height: STEM, backgroundColor: colors.charcoal, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  pinShadow: { position: 'absolute', width: 14, height: 6, borderRadius: 7, backgroundColor: colors.charcoal },
   top: {
     position: 'absolute',
     left: 0,
@@ -341,4 +342,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ShoppingBag } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useCart } from '@/features/api/use-cart';
 import { colors, gutter, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 /**
  * Cart tab. With a slot held, tapping the tab goes straight to checkout (see the
@@ -34,7 +35,7 @@ export default function Cart() {
         <EmptyState
           icon={ShoppingBag}
           title="Your cart is empty"
-          body="Pick a slot on any turf. It's held for you for 10 minutes while you pay."
+          body="Pick a slot on any turf. It's held for you for 5 minutes while you pay."
           action="Find a turf"
           onAction={() => router.navigate('/explore')}
         />
@@ -43,8 +44,8 @@ export default function Cart() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: gutter, paddingBottom: space[5] },
   held: { paddingHorizontal: gutter, gap: space[4] },
-});
+}));

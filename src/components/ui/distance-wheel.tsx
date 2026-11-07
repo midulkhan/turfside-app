@@ -4,12 +4,22 @@ import { X } from 'lucide-react-native';
 import { memo, useEffect, useState } from 'react';
 import { BackHandler, Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { Extrapolation, FadeIn, FadeOut, interpolate, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  Extrapolation,
+  FadeIn,
+  FadeOut,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { haptic } from '@/lib/haptics';
-import { colors, gutter, space } from '@/theme/tokens';
+import { colors, getScheme, gutter, space, withAlpha } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Button } from './button';
 import { IconButton } from './icon-button';
@@ -49,10 +59,7 @@ function kmOf(deg: number) {
 }
 
 // ½ km marks where there's room (under 10 km), 1 km marks beyond.
-const TICKS = [
-  ...Array.from({ length: 20 }, (_, i) => i / 2),
-  ...Array.from({ length: MAX - 10 + 1 }, (_, i) => 10 + i),
-];
+const TICKS = [...Array.from({ length: 20 }, (_, i) => i / 2), ...Array.from({ length: MAX - 10 + 1 }, (_, i) => 10 + i)];
 const LABELS = [0, ...DISTANCES];
 const isTen = (km: number) => km % 10 === 0;
 const SPRING = { damping: 22, stiffness: 220, mass: 0.7 };
@@ -66,10 +73,7 @@ const DialFace = memo(function DialFace({ R }: { R: number }) {
         const mid = km % 5 === 0 && !major;
         const whole = Number.isInteger(km);
         return (
-          <View
-            key={km}
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-angleOf(km)}deg` }] }]}>
+          <View key={km} pointerEvents="none" style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-angleOf(km)}deg` }] }]}>
             <View
               style={[
                 styles.tick,
@@ -226,97 +230,96 @@ export function DistanceWheel({
 
   const content = (
     <>
-        {/* Pure blur (no white material), with soft fades only where text sits. */}
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={55} style={StyleSheet.absoluteFill} />
-        ) : androidBlur && blurTarget ? (
-          <BlurView
-            intensity={55}
-            blurTarget={blurTarget}
-            blurMethod="dimezisBlurView"
-            blurReductionFactor={2.2}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.frost]} />
-        )}
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.veil]} />
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(244,245,240,0.78)', 'rgba(244,245,240,0)']}
-          style={[styles.fadeTop, { height: insets.top + 140 }]}
+      {/* Pure blur (no white material), with soft fades only where text sits. */}
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={55} tint={getScheme()} style={StyleSheet.absoluteFill} />
+      ) : androidBlur && blurTarget ? (
+        <BlurView
+          intensity={55}
+          tint={getScheme()}
+          blurTarget={blurTarget}
+          blurMethod="dimezisBlurView"
+          blurReductionFactor={2.2}
+          style={StyleSheet.absoluteFill}
         />
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(244,245,240,0)', 'rgba(244,245,240,0.8)']}
-          style={[styles.fadeBottom, { height: insets.bottom + 190 }]}
-        />
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, styles.frost]} />
+      )}
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.veil]} />
+      <LinearGradient
+        pointerEvents="none"
+        colors={[withAlpha(colors.bg, 0.78), withAlpha(colors.bg, 0)]}
+        style={[styles.fadeTop, { height: insets.top + 140 }]}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={[withAlpha(colors.bg, 0), withAlpha(colors.bg, 0.8)]}
+        style={[styles.fadeBottom, { height: insets.bottom + 190 }]}
+      />
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
 
-        {/* the dial */}
-        <Animated.View entering={FadeIn.duration(240)} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          <View
-            pointerEvents="none"
-            style={[styles.disc, { left: pointerX, top: cy - R, width: R * 2, height: R * 2, borderRadius: R }]}>
-            <View style={[styles.innerRing, { borderRadius: R - 92, top: 92, left: 92, right: 92, bottom: 92 }]} />
-            <Animated.View style={[StyleSheet.absoluteFill, discStyle]}>
-              <DialFace R={R} />
-              {LABELS.map((km) => (
-                <Label key={km} km={km} R={R} a={a} active={km === pick} />
-              ))}
-            </Animated.View>
-          </View>
-          {/* pointer: lime notch on the rim, pointing into the dial */}
-          <View pointerEvents="none" style={[styles.pointer, { left: pointerX - 13, top: cy - 7 }]} />
-          <View pointerEvents="none" style={[styles.pointerLine, { left: pointerX, top: cy - 1.5 }]} />
-
-          {/* the readout, left of the pointer */}
-          <View pointerEvents="none" style={[styles.readout, { top: cy - 48, width: pointerX - gutter - space[3] }]}>
-            <Text variant="display" style={styles.readoutValue}>
-              {pick}
-              <Text variant="h3"> km</Text>
-            </Text>
-            <Text variant="label" color={colors.textMuted}>
-              from you
-            </Text>
-          </View>
-
-          {/* touch area: the whole right side, so the thumb can roll it from anywhere */}
-          <GestureDetector gesture={pan}>
-            <View
-              style={[styles.touch, { left: pointerX - 24, top: insets.top + 80, bottom: insets.bottom + 110 }]}
-              accessible
-              accessibilityRole="adjustable"
-              accessibilityLabel="Distance"
-              accessibilityValue={{ min: MIN, max: MAX, now: pick, text: `${pick} kilometres` }}
-              accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-              onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
-            />
-          </GestureDetector>
-        </Animated.View>
-
-        <View style={[styles.top, { paddingTop: insets.top + space[3] }]} pointerEvents="box-none">
-          <View style={styles.flex}>
-            <Text variant="overline" color={colors.textMuted}>
-              Distance
-            </Text>
-            <Text variant="h2">How far will you go?</Text>
-          </View>
-          <IconButton icon={X} label="Close" onPress={onClose} />
+      {/* the dial */}
+      <Animated.View entering={FadeIn.duration(240)} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+        <View pointerEvents="none" style={[styles.disc, { left: pointerX, top: cy - R, width: R * 2, height: R * 2, borderRadius: R }]}>
+          <View style={[styles.innerRing, { borderRadius: R - 92, top: 92, left: 92, right: 92, bottom: 92 }]} />
+          <Animated.View style={[StyleSheet.absoluteFill, discStyle]}>
+            <DialFace R={R} />
+            {LABELS.map((km) => (
+              <Label key={km} km={km} R={R} a={a} active={km === pick} />
+            ))}
+          </Animated.View>
         </View>
+        {/* pointer: lime notch on the rim, pointing into the dial */}
+        <View pointerEvents="none" style={[styles.pointer, { left: pointerX - 13, top: cy - 7 }]} />
+        <View pointerEvents="none" style={[styles.pointerLine, { left: pointerX, top: cy - 1.5 }]} />
 
-        <View style={[styles.footer, { paddingBottom: insets.bottom + space[5] }]} pointerEvents="box-none">
-          <Text variant="label" color={colors.textMuted} align="center">
-            Roll the dial with your thumb
+        {/* the readout, left of the pointer */}
+        <View pointerEvents="none" style={[styles.readout, { top: cy - 48, width: pointerX - gutter - space[3] }]}>
+          <Text variant="display" style={styles.readoutValue}>
+            {pick}
+            <Text variant="h3"> km</Text>
           </Text>
-          <Button
-            label={`Apply · ${pick} km`}
-            onPress={() => {
-              onApply(pick);
-              onClose();
-            }}
-          />
+          <Text variant="label" color={colors.textMuted}>
+            from you
+          </Text>
         </View>
+
+        {/* touch area: the whole right side, so the thumb can roll it from anywhere */}
+        <GestureDetector gesture={pan}>
+          <View
+            style={[styles.touch, { left: pointerX - 24, top: insets.top + 80, bottom: insets.bottom + 110 }]}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel="Distance"
+            accessibilityValue={{ min: MIN, max: MAX, now: pick, text: `${pick} kilometres` }}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
+          />
+        </GestureDetector>
+      </Animated.View>
+
+      <View style={[styles.top, { paddingTop: insets.top + space[3] }]} pointerEvents="box-none">
+        <View style={styles.flex}>
+          <Text variant="overline" color={colors.textMuted}>
+            Distance
+          </Text>
+          <Text variant="h2">How far will you go?</Text>
+        </View>
+        <IconButton icon={X} label="Close" onPress={onClose} />
+      </View>
+
+      <View style={[styles.footer, { paddingBottom: insets.bottom + space[5] }]} pointerEvents="box-none">
+        <Text variant="label" color={colors.textMuted} align="center">
+          Roll the dial with your thumb
+        </Text>
+        <Button
+          label={`Apply · ${pick} km`}
+          onPress={() => {
+            onApply(pick);
+            onClose();
+          }}
+        />
+      </View>
     </>
   );
 
@@ -339,13 +342,22 @@ export function DistanceWheel({
   ) : null;
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   flex: { flex: 1 },
-  frost: { backgroundColor: 'rgba(244,245,240,0.72)' }, // Android: no live blur behind a modal
+  frost: { backgroundColor: withAlpha(colors.bg, 0.72) }, // Android: no live blur behind a modal
   veil: { backgroundColor: 'rgba(22,27,29,0.06)' },
   fadeTop: { position: 'absolute', left: 0, right: 0, top: 0 },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  top: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'flex-start', gap: space[3], paddingHorizontal: gutter },
+  top: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[3],
+    paddingHorizontal: gutter,
+  },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: gutter, gap: space[3] },
   disc: {
     position: 'absolute',
@@ -380,4 +392,4 @@ const styles = StyleSheet.create({
   readout: { position: 'absolute', left: gutter, alignItems: 'flex-end' },
   readoutValue: { fontVariant: ['tabular-nums'] },
   touch: { position: 'absolute', right: 0 },
-});
+}));

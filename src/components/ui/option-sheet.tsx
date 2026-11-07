@@ -1,9 +1,10 @@
 import { Check } from 'lucide-react-native';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Sheet } from './sheet';
 import { Text } from './text';
@@ -56,7 +57,7 @@ export function OptionSheet<T extends string>({
                   ) : null}
                 </View>
                 <View style={[styles.radio, active && styles.radioOn]}>
-                  {active ? <Check size={15} color={colors.ink} strokeWidth={3} /> : null}
+                  {active ? <Check size={15} color={colors.charcoal} strokeWidth={3} /> : null}
                 </View>
               </Pressable>
             );
@@ -67,7 +68,7 @@ export function OptionSheet<T extends string>({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   body: { paddingHorizontal: gutter, paddingTop: space[2] },
   title: { marginBottom: space[4] },
   list: { gap: space[2] },
@@ -94,4 +95,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioOn: { backgroundColor: colors.lime, borderColor: colors.lime },
-});
+}));

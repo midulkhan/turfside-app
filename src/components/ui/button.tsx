@@ -1,21 +1,22 @@
 import type { LucideIcon } from 'lucide-react-native';
-import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { haptic } from '@/lib/haptics';
 import { colors, radius, size, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
 
 type Variant = 'primary' | 'dark' | 'outline' | 'ghost' | 'light';
 
-const palette: Record<Variant, { bg: string; fg: string; border: string; accent: string }> = {
-  primary: { bg: colors.lime, fg: colors.ink, border: colors.lime, accent: colors.ink },
-  dark: { bg: colors.ink, fg: colors.textOnDark, border: colors.ink, accent: colors.lime },
+const palette = (): Record<Variant, { bg: string; fg: string; border: string; accent: string }> => ({
+  primary: { bg: colors.lime, fg: colors.charcoal, border: colors.lime, accent: colors.charcoal },
+  dark: { bg: colors.inverse, fg: colors.textOnDark, border: colors.inverse, accent: colors.lime },
   outline: { bg: colors.surface, fg: colors.ink, border: colors.borderStrong, accent: colors.ink },
   light: { bg: colors.surface, fg: colors.ink, border: colors.border, accent: colors.ink },
   ghost: { bg: 'transparent', fg: colors.ink, border: 'transparent', accent: colors.ink },
-};
+});
 
 export type ButtonProps = {
   label: string;
@@ -45,7 +46,7 @@ export function Button({
   style,
   accessibilityHint,
 }: ButtonProps) {
-  const p = palette[variant];
+  const p = palette()[variant];
   const inactive = disabled || loading;
   return (
     <PressableScale
@@ -67,7 +68,7 @@ export function Button({
         style,
       ]}>
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? colors.ink : p.fg} />
+        <ActivityIndicator color={variant === 'primary' ? colors.charcoal : p.fg} />
       ) : (
         <>
           {spread ? <View style={styles.spacer} /> : null}
@@ -87,7 +88,7 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   base: {
     height: size.control,
     borderRadius: radius.pill,
@@ -103,4 +104,4 @@ const styles = StyleSheet.create({
   label: { fontSize: 16.5 },
   spacer: { width: 28, alignItems: 'flex-end' },
   inactive: { opacity: 0.5 },
-});
+}));

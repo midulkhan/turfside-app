@@ -17,6 +17,7 @@ import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
 import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
 import { verifyAccess, verifyPass } from './lib/tokens';
+import * as account from './services/account';
 import * as auth from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
@@ -53,13 +54,20 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   return r.data;
 }
 
-const meta = (req: FastifyRequest) => ({ ip: req.ip, ua: req.headers['user-agent'] });
+// "x-device" is a short label the app sends ("iPhone 15 · iOS 18.1"), shown under Signed-in devices.
+const deviceLabel = (h: unknown) => (typeof h === 'string' ? h.replace(/[^\w .,·()+-]/g, '').trim().slice(0, 60) || undefined : undefined);
+const meta = (req: FastifyRequest) => ({ ip: req.ip, ua: req.headers['user-agent'], device: deviceLabel(req.headers['x-device']) });
 const idem = (req: FastifyRequest) => (typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined);
 
 async function requireUser(req: FastifyRequest) {
   const h = req.headers.authorization;
   if (!h?.startsWith('Bearer ')) throw new ApiError('unauthorized', 'Please sign in.');
   req.user = await verifyAccess(h.slice(7));
+}
+/** For account-security actions: the session itself must still be signed in (not just a valid 15-min token). */
+async function requireLiveUser(req: FastifyRequest) {
+  await requireUser(req);
+  await account.assertLiveSession(req.user!.sessionId);
 }
 async function requireOwner(req: FastifyRequest) {
   await requireUser(req);
@@ -262,6 +270,24 @@ export async function buildApp() {
 
   // ── Me ────────────────────────────────────────────────────────────────────
   app.get('/v1/me', { preHandler: requireUser }, async (req) => auth.me(req.user!.userId));
+  // ── Account: settings, devices, password, deletion ──────────────────────
+  app.get('/v1/me/settings', { preHandler: requireUser }, async (req) => account.getSettings(req.user!.userId));
+  app.put('/v1/me/settings', { preHandler: requireUser }, async (req) =>
+    account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional() }).strict(), req.body)),
+  );
+  app.get('/v1/me/sessions', { preHandler: requireLiveUser }, async (req) => account.listSessions(req.user!.userId, req.user!.sessionId));
+  app.delete('/v1/me/sessions/:id', { preHandler: requireLiveUser }, async (req) => {
+    const id = (req.params as { id: string }).id;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError('not_found', 'That device is already signed out.');
+    return account.revokeSession(req.user!.userId, id);
+  });
+  app.post('/v1/me/sessions/revoke-others', { preHandler: requireLiveUser }, async (req) => account.revokeOtherSessions(req.user!.userId, req.user!.sessionId));
+  const sensitive = { preHandler: requireLiveUser, config: { rateLimit: { max: 8, timeWindow: '15 minutes', keyGenerator: perSession } } };
+  app.post('/v1/me/password', sensitive, async (req) => {
+    const b = parse(z.object({ current: z.string().min(1).max(200), next: password }), req.body);
+    return account.changePassword(req.user!.userId, req.user!.sessionId, b.current, b.next);
+  });
+  app.post('/v1/me/delete', sensitive, async (req) => account.deleteAccount(req.user!.userId, parse(z.object({ password: z.string().min(1).max(200) }), req.body).password));
   app.get('/v1/me/saved', { preHandler: requireUser }, async (req) => {
     const ids = await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1 order by created_at desc', [req.user!.userId]);
     const rows = await allVenueRows();

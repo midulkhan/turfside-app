@@ -358,3 +358,77 @@ d('cart: one order, one turf, many slots', () => {
     expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toEqual([]);
   });
 });
+
+d('account: settings, devices, password, deletion', () => {
+  const login = async (phone: string, password: string, device: string) =>
+    call('POST', '/v1/auth/login', { identifier: phone, password }, undefined, { 'x-device': device });
+
+  it('toggles the notification setting', async () => {
+    const a = await newUser('Settings');
+    expect((await call('GET', '/v1/me/settings', undefined, a.accessToken)).json).toEqual({ notifications: true });
+    expect((await call('PUT', '/v1/me/settings', { notifications: false }, a.accessToken)).json).toEqual({ notifications: false });
+    expect((await call('PUT', '/v1/me/settings', { other: 1 }, a.accessToken)).status).toBe(400);
+  });
+
+  it('lists devices, signs out one, then all others', async () => {
+    const a = await newUser('Devices');
+    const phone = a.phone;
+    const p = (await login(phone, 'correct horse 1', 'iPhone 15 · iOS 18.1')).json;
+    const q = (await login(phone, 'correct horse 1', 'Pixel 8 · Android 15')).json;
+    const list = (await call('GET', '/v1/me/sessions', undefined, p.accessToken)).json as Json[];
+    expect(list.length).toBe(3);
+    expect(list.find((s) => s.current)!.device).toBe('iPhone 15 · iOS 18.1');
+    const pixel = list.find((s) => s.device === 'Pixel 8 · Android 15')!;
+    expect((await call('DELETE', `/v1/me/sessions/${pixel.id}`, undefined, p.accessToken)).status).toBe(200);
+    // The signed-out device can't use security actions any more, nor refresh.
+    expect((await call('GET', '/v1/me/sessions', undefined, q.accessToken)).status).toBe(401);
+    expect((await call('POST', '/v1/auth/refresh', { refreshToken: q.refreshToken })).status).toBe(401);
+    const others = await call('POST', '/v1/me/sessions/revoke-others', {}, p.accessToken);
+    expect(others.json.signedOut).toBe(1);
+    expect(((await call('GET', '/v1/me/sessions', undefined, p.accessToken)).json as Json[]).length).toBe(1);
+    // Still signed in here after a refresh rotation.
+    const r = (await call('POST', '/v1/auth/refresh', { refreshToken: p.refreshToken }, undefined, { 'x-device': 'iPhone 15 · iOS 18.1' })).json;
+    expect((await call('GET', '/v1/me/sessions', undefined, r.accessToken)).json[0].current).toBe(true);
+  });
+
+  it('changes the password and signs out other devices', async () => {
+    const a = await newUser('Passwords');
+    const other = (await login(a.phone, 'correct horse 1', 'Old phone')).json;
+    expect((await call('POST', '/v1/me/password', { current: 'wrong pass 1', next: 'new horse 22' }, a.accessToken)).status).toBe(400);
+    const ok = await call('POST', '/v1/me/password', { current: 'correct horse 1', next: 'new horse 22' }, a.accessToken);
+    expect(ok.status).toBe(200);
+    expect(ok.json.signedOut).toBe(1);
+    expect((await call('POST', '/v1/auth/refresh', { refreshToken: other.refreshToken })).status).toBe(401);
+    expect((await login(a.phone, 'correct horse 1', 'x')).status).toBe(401);
+    expect((await login(a.phone, 'new horse 22', 'x')).status).toBe(200);
+  });
+
+  it('deletes the account: data gone, phone free, sessions ended', async () => {
+    const a = await newUser('Leaver');
+    await call('PUT', '/v1/me/saved/v_bashundhara', undefined, a.accessToken);
+    expect((await call('POST', '/v1/me/delete', { password: 'nope nope 1' }, a.accessToken)).status).toBe(400);
+    const del = await call('POST', '/v1/me/delete', { password: 'correct horse 1' }, a.accessToken);
+    expect(del.status).toBe(200);
+    expect((await call('GET', '/v1/me', undefined, a.accessToken)).status).toBe(401);
+    expect((await call('POST', '/v1/auth/refresh', { refreshToken: a.refreshToken })).status).toBe(401);
+    expect((await login(a.phone, 'correct horse 1', 'x')).status).toBe(401);
+    // The number is free to sign up again (a taken number answers "already registered" outside prod;
+    // 429 here is only the per-number SMS cooldown from this test's own sign-up).
+    const again = await call('POST', '/v1/auth/signup/start', { name: 'Comeback', phone: a.phone, password: 'correct horse 1' });
+    expect([200, 429]).toContain(again.status);
+    expect(again.json.note).toBeUndefined();
+  });
+
+  it('refuses deletion while a game is still ahead', async () => {
+    const a = await newUser('Has game');
+    const day = new Date(Date.now() + 6 * 3600_000 + 9 * 86400_000).toISOString().slice(0, 10);
+    const slot = ((await call('GET', `/v1/venues/v_badda_pitch/slots?day=${day}`)).json.slots as Json[]).find((s) => s.status === 'available')!;
+    const hold = await call('POST', '/v1/holds', { slotId: slot.id }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, a.accessToken, { 'Idempotency-Key': randomUUID() });
+    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, a.accessToken);
+    const del = await call('POST', '/v1/me/delete', { password: 'correct horse 1' }, a.accessToken);
+    expect(del.status).toBe(409);
+    expect(del.json.error.message).toMatch(/upcoming booking/);
+  });
+});

@@ -72,11 +72,11 @@ async function consumeOtp(phone: string, purpose: Purpose, code: string) {
   });
 }
 
-async function createSession(u: UserRow, meta: { ip: string; ua?: string }) {
+async function createSession(u: UserRow, meta: { ip: string; ua?: string; device?: string }) {
   const refresh = randomToken(32);
   const s = await one<{ id: string }>(
-    "insert into sessions (user_id, refresh_hash, expires_at, user_agent, ip) values ($1,$2, now() + make_interval(days => $3), $4, $5) returning id",
-    [u.id, sha256(refresh), REFRESH_DAYS, meta.ua?.slice(0, 200) ?? null, meta.ip],
+    "insert into sessions (user_id, refresh_hash, expires_at, user_agent, ip, device) values ($1,$2, now() + make_interval(days => $3), $4, $5, $6) returning id",
+    [u.id, sha256(refresh), REFRESH_DAYS, meta.ua?.slice(0, 200) ?? null, meta.ip, meta.device ?? null],
   );
   return { user: publicUser(u), accessToken: await signAccess(u.id, u.roles, s!.id), refreshToken: refresh };
 }
@@ -90,7 +90,7 @@ export async function signupStart(input: { name: string; phone: string; email?: 
   return issueOtp(input.phone, 'signup', { name: input.name, email: input.email ?? null, passwordHash, role: input.role }, ip);
 }
 
-export async function signupVerify(phone: string, code: string, meta: { ip: string; ua?: string }) {
+export async function signupVerify(phone: string, code: string, meta: { ip: string; ua?: string; device?: string }) {
   const p = (await consumeOtp(phone, 'signup', code)) as { name: string; email: string | null; passwordHash: string; role: string } | null;
   if (!p) throw new ApiError('invalid', 'Start sign-up again.');
   const roles = p.role === 'owner' ? ['player', 'owner'] : ['player'];
@@ -107,7 +107,7 @@ export async function signupVerify(phone: string, code: string, meta: { ip: stri
 }
 
 // ── Sign in ─────────────────────────────────────────────────────────────────
-export async function login(identifier: { kind: 'phone' | 'email'; value: string }, password: string, meta: { ip: string; ua?: string }) {
+export async function login(identifier: { kind: 'phone' | 'email'; value: string }, password: string, meta: { ip: string; ua?: string; device?: string }) {
   if ((await hit(`login:${identifier.value}`, 900)) > 10) throw new ApiError('rate_limited', 'Too many attempts. Try again in 15 minutes.');
   const u = await one<UserRow>(`select id, name, phone, email, roles, password_hash, avatar_key from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`, [identifier.value]);
   const ok = await verifyPassword(password, u?.password_hash ?? (await getDummyHash()));
@@ -116,16 +116,19 @@ export async function login(identifier: { kind: 'phone' | 'email'; value: string
 }
 
 /** Refresh-token rotation with reuse detection: a stolen, already-used token revokes the whole family. */
-export async function refresh(token: string, meta: { ip: string; ua?: string }) {
+export async function refresh(token: string, meta: { ip: string; ua?: string; device?: string }) {
   const s = await one<{ id: string; user_id: string; expires_at: Date; revoked_at: Date | null; replaced_by: string | null }>(
     'select id, user_id, expires_at, revoked_at, replaced_by from sessions where refresh_hash = $1',
     [sha256(token)],
   );
   if (!s) throw new ApiError('unauthorized', 'Please sign in again.');
-  if (s.revoked_at || s.replaced_by) {
+  // An already-rotated token coming back means it was copied: end every session (theft response).
+  if (s.replaced_by) {
     await q('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [s.user_id]);
     throw new ApiError('unauthorized', 'Please sign in again.');
   }
+  // Simply signed out (this device, or from another device): just ask to sign in again.
+  if (s.revoked_at) throw new ApiError('unauthorized', 'Please sign in again.');
   if (new Date(s.expires_at) < new Date()) throw new ApiError('unauthorized', 'Please sign in again.');
   const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1', [s.user_id]);
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
@@ -147,7 +150,7 @@ export async function resetStart(phone: string, ip: string) {
   return issueOtp(phone, 'reset', null, ip);
 }
 
-export async function resetVerify(phone: string, code: string, newPassword: string, meta: { ip: string; ua?: string }) {
+export async function resetVerify(phone: string, code: string, newPassword: string, meta: { ip: string; ua?: string; device?: string }) {
   await consumeOtp(phone, 'reset', code);
   const hash = await hashPassword(newPassword);
   const u = await one<UserRow>('update users set password_hash = $2, updated_at = now() where phone = $1 returning id, name, phone, email, roles, password_hash, avatar_key', [phone, hash]);
@@ -157,7 +160,7 @@ export async function resetVerify(phone: string, code: string, newPassword: stri
 }
 
 export async function me(userId: string) {
-  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1', [userId]);
+  const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1 and deleted_at is null', [userId]);
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   return publicUser(u);
 }

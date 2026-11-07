@@ -1,8 +1,20 @@
 import { router, useScrollToTop } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { Bell, Camera, ChevronRight, CircleHelp, FileText, LogOut, MapPin, ShieldCheck, type LucideIcon } from 'lucide-react-native';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import {
+  Bell,
+  Camera,
+  ChevronRight,
+  CircleHelp,
+  FileText,
+  LogOut,
+  MapPin,
+  Moon,
+  ShieldCheck,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, View, type ScrollViewInstance } from 'react-native';
 
 import { LogoMark } from '@/components/brand/logo';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
@@ -12,13 +24,17 @@ import { Card, Divider } from '@/components/ui/card';
 import { Overline } from '@/components/ui/headers';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { useBookings } from '@/features/api/queries';
+import { useSettings, useUpdateSettings } from '@/features/api/queries';
+import { Segmented } from '@/components/ui/segmented';
+import { Switch } from '@/components/ui/switch';
+import { useTheme, type ThemePref } from '@/theme/theme-provider';
 import { uploadPhoto } from '@/features/api/uploads';
 import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { PRESETS } from '@/lib/images';
 import { useSession } from '@/features/session/session';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, gutter, radius, space, withAlpha } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 import Constants from 'expo-constants';
 
 function Row({
@@ -27,30 +43,45 @@ function Row({
   detail,
   onPress,
   danger,
+  right,
 }: {
   icon: LucideIcon;
   label: string;
   detail?: string;
-  onPress: () => void;
+  onPress?: () => void;
   danger?: boolean;
+  /** A control in place of the chevron (switch, segmented control); the row itself isn't pressable. */
+  right?: ReactNode;
 }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+  const body = (
+    <>
       <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Icon size={20} color={danger ? colors.danger : colors.ink} strokeWidth={1.9} />
+        <Icon size={20} color={danger ? colors.danger : colors.ink} strokeWidth={1.8} />
       </View>
-      <Text variant="bodyStrong" color={danger ? colors.danger : colors.text} style={styles.flex}>
+      <Text variant="body" color={danger ? colors.danger : colors.text} style={styles.flex} numberOfLines={1}>
         {label}
       </Text>
       {detail ? (
-        <Text variant="label" color={colors.textMuted}>
+        <Text variant="label" color={colors.textMuted} numberOfLines={1} style={styles.detail}>
           {detail}
         </Text>
       ) : null}
-      {!danger ? <ChevronRight size={20} color={colors.textSubtle} /> : null}
+      {right ?? (!danger ? <ChevronRight size={20} color={colors.textSubtle} /> : null)}
+    </>
+  );
+  if (right) return <View style={styles.row}>{body}</View>;
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+      {body}
     </Pressable>
   );
 }
+
+const THEMES: { value: ThemePref; label: string }[] = [
+  { value: 'system', label: 'Auto' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 export default function Profile() {
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -96,9 +127,10 @@ export default function Profile() {
           { text: 'Cancel', style: 'cancel' },
         ])
       : pickPhoto();
-  const { data } = useBookings();
-  const played = data?.filter((b) => b.status === 'completed').length ?? 0;
-  const upcoming = data?.filter((b) => b.status === 'confirmed').length ?? 0;
+  const settings = useSettings();
+  const updateSettings = useUpdateSettings();
+  const notificationsOn = settings.data?.notifications ?? true;
+  const theme = useTheme();
   const soon = (t: string) => () => Alert.alert(t, 'Coming in the next build.');
 
   return (
@@ -124,9 +156,9 @@ export default function Profile() {
             <Avatar name={user?.name ?? 'Player'} uri={user?.avatarUrl} size={64} />
             <View style={styles.camera}>
               {photoBusy ? (
-                <ActivityIndicator size="small" color={colors.ink} />
+                <ActivityIndicator size="small" color={colors.charcoal} />
               ) : (
-                <Camera size={14} color={colors.ink} strokeWidth={2.4} />
+                <Camera size={14} color={colors.charcoal} strokeWidth={2.4} />
               )}
             </View>
             {photoBusy ? <View style={styles.dim} /> : null}
@@ -139,28 +171,35 @@ export default function Profile() {
           </View>
         </Card>
 
-        <View style={styles.stats}>
-          <Card tone="dark" style={styles.stat}>
-            <Text variant="number" color={colors.lime}>
-              {upcoming}
-            </Text>
-            <Text variant="label" color={colors.textOnDarkMuted}>
-              Upcoming
-            </Text>
-          </Card>
-          <Card tone="lime" style={styles.stat}>
-            <Text variant="number">{played}</Text>
-            <Text variant="label">Games played</Text>
-          </Card>
-        </View>
-
         <Overline>Account</Overline>
         <Card padded={false}>
-          <Row icon={MapPin} label="Home area" detail={place.name} onPress={() => router.navigate('/explore')} />
+          <Row icon={MapPin} label="Set address" detail={place.name} onPress={() => router.push('/locations')} />
           <Divider />
-          <Row icon={Bell} label="Notifications" onPress={() => router.push('/notifications')} />
+          <Row
+            icon={Bell}
+            label="Notifications"
+            right={
+              <Switch
+                value={notificationsOn}
+                disabled={settings.isPending}
+                accessibilityLabel="App notifications"
+                onValueChange={(v) =>
+                  updateSettings.mutate(
+                    { notifications: v },
+                    { onError: (e) => Alert.alert('Couldn’t change notifications', errorMessage(e)) },
+                  )
+                }
+              />
+            }
+          />
           <Divider />
-          <Row icon={ShieldCheck} label="Privacy & security" onPress={soon('Privacy & security')} />
+          <Row
+            icon={theme.scheme === 'dark' ? Moon : Sun}
+            label="Appearance"
+            right={<Segmented options={THEMES} value={theme.pref} onChange={theme.setPref} accessibilityLabel="Appearance" />}
+          />
+          <Divider />
+          <Row icon={ShieldCheck} label="Privacy & security" onPress={() => router.push('/privacy')} />
         </Card>
 
         <Overline>Support</Overline>
@@ -193,7 +232,7 @@ export default function Profile() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
   sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3] },
@@ -211,10 +250,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dim: { position: 'absolute', left: 0, top: 0, width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.45)' },
+  dim: { position: 'absolute', left: 0, top: 0, width: 64, height: 64, borderRadius: 32, backgroundColor: withAlpha(colors.surface, 0.45) },
   me: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  stats: { flexDirection: 'row', gap: space[3] },
-  stat: { flex: 1, gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[4], minHeight: 60 },
   pressed: { backgroundColor: colors.bg },
   rowIcon: {
@@ -226,5 +263,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowIconDanger: { backgroundColor: colors.dangerSoft },
+  detail: { maxWidth: '45%' },
   footer: { alignItems: 'center', gap: space[2], marginTop: space[4] },
-});
+}));

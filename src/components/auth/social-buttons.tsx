@@ -1,9 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { colors, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 function Google() {
   return (
@@ -67,7 +68,7 @@ export function SocialButtons({ caption, onPress }: { caption: string; onPress: 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   wrap: { gap: space[5], marginTop: space[2] },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   rule: { flex: 1, height: 1, backgroundColor: colors.borderOnDark },
@@ -82,4 +83,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.inkRaised,
   },
-});
+}));

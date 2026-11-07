@@ -8,6 +8,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { haptic } from '@/lib/haptics';
 import { dayOfWeekIndex, dhakaToday, formatDay, type DayKey } from '@/lib/time';
 import { colors, radius, shadow, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Button } from './button';
 import { Text } from './text';
@@ -136,7 +137,7 @@ export function Calendar({ mode = 'single', value, onChange, min, max, limit = 3
                   ]}>
                   <Text
                     variant={on || isToday ? 'labelStrong' : 'label'}
-                    color={disabled ? colors.borderStrong : on ? colors.ink : colors.text}>
+                    color={disabled ? colors.borderStrong : on ? colors.charcoal : colors.text}>
                     {Number(d.slice(8))}
                   </Text>
                 </Pressable>
@@ -262,7 +263,7 @@ export function CalendarModal({
 }
 
 const CELL = 44;
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space[5] },
   scrim: { backgroundColor: colors.scrim },
   card: { width: '100%', maxWidth: 380, backgroundColor: colors.surface, borderRadius: radius.xl, padding: space[5], gap: space[3] },
@@ -296,4 +297,4 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-});
+}));

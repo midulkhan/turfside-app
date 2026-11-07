@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react-native';
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { Extrapolation, interpolate, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -9,10 +9,11 @@ import type { Slot } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatRangeSpaced } from '@/lib/time';
 import { colors, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { TicketDivider, TicketSurface } from './notch';
 
-const TONES = {
+const TONES = () => ({
   available: { fill: colors.surface, stroke: colors.borderStrong, sw: 1, fg: colors.ink, sub: colors.textMuted, dash: colors.border },
   selected: {
     fill: colors.ink,
@@ -31,7 +32,14 @@ const TONES = {
     dash: colors.borderStrong,
   },
   // Another player is paying for it right now: warm, clearly "not yours", no hatch.
-  held: { fill: '#FFF6E5', stroke: '#F2C46D', sw: 1, fg: '#8A5A00', sub: '#8A5A00', dash: '#F2C46D' },
+  held: {
+    fill: colors.warningSoft,
+    stroke: colors.warningLine,
+    sw: 1,
+    fg: colors.warningText,
+    sub: colors.warningText,
+    dash: colors.warningLine,
+  },
   // Your own hold (back from checkout): pick it again to continue to checkout.
   mine: { fill: colors.limeSoft, stroke: colors.limeText, sw: 1.5, fg: colors.ink, sub: colors.limeText, dash: colors.lime },
   blocked: {
@@ -42,7 +50,7 @@ const TONES = {
     sub: colors.textSubtle,
     dash: colors.borderStrong,
   },
-};
+});
 
 /**
  * Ticket-style time slot: time · tear line (with side notches) · duration or status.
@@ -81,7 +89,7 @@ export const SlotTicket = memo(function SlotTicket({
   // Your cart's slots read "In your cart" while selected; deselected, they look free again
   // (they're released when you continue with the new selection).
   const kind = loading ? 'available' : slot.status === 'mine' ? (selected ? 'mine' : 'available') : selected ? 'selected' : slot.status;
-  const tone = TONES[kind];
+  const tone = TONES()[kind];
   const range = formatRangeSpaced(slot.start, slot.end);
   // Size by length so long ranges ("11:00 PM – 12:00 AM") fit identically on iOS, Android and web.
   const timeSize = range.length <= 15 ? 13.5 : range.length <= 17 ? 12.5 : 11.5;
@@ -146,7 +154,7 @@ export const SlotTicket = memo(function SlotTicket({
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   // Placeholder bars sit exactly where the text lines are; the text stays (invisible) to hold the size.
   bar: { position: 'absolute', alignSelf: 'center', borderRadius: 4, backgroundColor: colors.surfaceMuted },
   barTime: { top: space[3] + 3, width: '62%', height: 12 },
@@ -155,4 +163,4 @@ const styles = StyleSheet.create({
   time: { fontSize: 13.5, letterSpacing: -0.2, fontFamily: 'Geist_700Bold' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   check: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
-});
+}));

@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ArrowUpRight, Heart, Lightbulb, Star, UsersRound } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { Card, Divider } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { haptic } from '@/lib/haptics';
 import { formatDistance } from '@/lib/geo';
 import { formatTaka } from '@/lib/money';
 import { colors, font, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 /** Founder-approved venue card. Memoised: list re-renders skip unchanged cards. */
 export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummary }) {
@@ -131,7 +132,7 @@ function LiveDot() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   liveWrap: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
   liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: '#A8D52B' },
   card: { padding: 6 },
@@ -177,9 +178,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     height: 34,
     paddingHorizontal: space[3] + 2,
     borderRadius: radius.pill,
   },
-});
+}));

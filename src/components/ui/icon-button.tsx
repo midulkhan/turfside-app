@@ -3,7 +3,8 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { ComponentRef, RefObject } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radius, size } from '@/theme/tokens';
+import { colors, getScheme, radius, size, withAlpha } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
@@ -27,13 +28,13 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-const tones = {
+const tones = () => ({
   light: { bg: colors.surface, fg: colors.ink, border: colors.border },
-  dark: { bg: colors.ink, fg: colors.textOnDark, border: colors.ink },
+  dark: { bg: colors.inverse, fg: colors.textOnDark, border: colors.inverse },
   glass: { bg: colors.glass, fg: colors.ink, border: 'rgba(255,255,255,0.6)' },
-  lime: { bg: colors.lime, fg: colors.ink, border: colors.lime },
+  lime: { bg: colors.lime, fg: colors.charcoal, border: colors.lime },
   blur: { bg: 'transparent', fg: colors.ink, border: 'rgba(255,255,255,0.55)' },
-};
+});
 
 const androidBlur = Platform.OS === 'android' && Number(Platform.Version) >= 31;
 
@@ -51,7 +52,7 @@ export function IconButton({
   size: s = size.iconButton,
   style,
 }: Props) {
-  const t = tones[variant];
+  const t = tones()[variant];
   return (
     <PressableScale
       accessibilityRole="button"
@@ -65,9 +66,15 @@ export function IconButton({
       {variant === 'blur' ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.blurClip, { borderRadius: s / 2 }]}>
           {Platform.OS === 'ios' ? (
-            <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={30} tint={getScheme()} style={StyleSheet.absoluteFill} />
           ) : androidBlur && blurTarget ? (
-            <BlurView intensity={30} tint="light" blurTarget={blurTarget} blurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+            <BlurView
+              intensity={30}
+              tint={getScheme()}
+              blurTarget={blurTarget}
+              blurMethod="dimezisBlurView"
+              style={StyleSheet.absoluteFill}
+            />
           ) : null}
           <View style={[StyleSheet.absoluteFill, styles.blurTint]} />
         </View>
@@ -87,7 +94,7 @@ export function IconButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   base: { borderRadius: radius.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.45 },
   count: {
@@ -98,7 +105,7 @@ const styles = StyleSheet.create({
     height: 18,
     paddingHorizontal: 4,
     borderRadius: 9,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     borderWidth: 1.5,
     borderColor: colors.surface,
     alignItems: 'center',
@@ -107,7 +114,7 @@ const styles = StyleSheet.create({
   countText: { color: colors.lime, fontFamily: 'Geist_700Bold', fontSize: 10, lineHeight: 12 },
   blurClip: { overflow: 'hidden' },
   iconLayer: { zIndex: 1 },
-  blurTint: { backgroundColor: 'rgba(255,255,255,0.42)' },
+  blurTint: { backgroundColor: withAlpha(colors.surface, 0.42) },
   badge: {
     position: 'absolute',
     top: 9,
@@ -119,4 +126,4 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.surface,
   },
-});
+}));

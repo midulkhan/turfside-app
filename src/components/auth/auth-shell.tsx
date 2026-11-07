@@ -1,13 +1,14 @@
 import { ArrowUpRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { Wordmark } from '@/components/brand/logo';
 import { Text } from '@/components/ui/text';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 type Props = {
   title: string;
@@ -63,7 +64,7 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
           </View>
         </View>
         <Svg width="100%" height={110} viewBox={`0 0 ${w} 110`} preserveAspectRatio="none" style={styles.wave}>
-          <Path d={d} fill={colors.ink} />
+          <Path d={d} fill={colors.deep} />
         </Svg>
         <View style={[styles.dark, { paddingBottom: insets.bottom + space[6] }]}>{children}</View>
       </ScrollView>
@@ -71,16 +72,16 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.ink },
-  grow: { flexGrow: 1, backgroundColor: colors.ink },
-  top: { backgroundColor: colors.bg, paddingHorizontal: gutter, paddingBottom: space[2] },
+const styles = createStyles(() => ({
+  flex: { flex: 1, backgroundColor: colors.deep },
+  grow: { flexGrow: 1, backgroundColor: colors.deep },
+  top: { backgroundColor: colors.authTop, paddingHorizontal: gutter, paddingBottom: space[2] },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brand: { gap: space[1] },
   badge: {
     alignSelf: 'flex-start',
     borderWidth: 1.5,
-    borderColor: colors.ink,
+    borderColor: colors.deep,
     borderRadius: radius.xs,
     paddingHorizontal: 8,
     paddingVertical: 1,
@@ -88,6 +89,6 @@ const styles = StyleSheet.create({
   badgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1 },
   corner: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
   heading: { alignItems: 'center', gap: space[2], marginTop: space[5] },
-  wave: { backgroundColor: colors.bg, marginTop: -1 },
-  dark: { flex: 1, backgroundColor: colors.ink, paddingHorizontal: gutter, gap: space[4], marginTop: -1 },
-});
+  wave: { backgroundColor: colors.authTop, marginTop: -1 },
+  dark: { flex: 1, backgroundColor: colors.deep, paddingHorizontal: gutter, gap: space[4], marginTop: -1 },
+}));

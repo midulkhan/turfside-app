@@ -41,9 +41,11 @@ export const getConfig = (signal?: AbortSignal) => request<AppConfig>('GET', '/v
 export const signupStart = (b: { name: string; phone: string; email?: string; password: string }) =>
   request<CodeSent>('POST', '/v1/auth/signup/start', { body: { ...b, role: 'player' } });
 
-export const signupVerify = (phone: string, code: string) => request<AuthResult>('POST', '/v1/auth/signup/verify', { body: { phone, code } });
+export const signupVerify = (phone: string, code: string) =>
+  request<AuthResult>('POST', '/v1/auth/signup/verify', { body: { phone, code } });
 
-export const login = (identifier: string, password: string) => request<AuthResult>('POST', '/v1/auth/login', { body: { identifier, password } });
+export const login = (identifier: string, password: string) =>
+  request<AuthResult>('POST', '/v1/auth/login', { body: { identifier, password } });
 
 export const resetStart = (phone: string) => request<CodeSent>('POST', '/v1/auth/password/reset/start', { body: { phone } });
 
@@ -59,16 +61,26 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
   request<ExploreResult>('GET', '/v1/venues/explore', {
     auth: 'optional',
     signal,
-    query: { lat: p.lat, lng: p.lng, day: p.day, format: p.format, floodlit: p.floodlitOnly ? 'true' : undefined, q: p.query?.trim(), radius: p.radiusKm },
+    query: {
+      lat: p.lat,
+      lng: p.lng,
+      day: p.day,
+      format: p.format,
+      floodlit: p.floodlitOnly ? 'true' : undefined,
+      q: p.query?.trim(),
+      radius: p.radiusKm,
+    },
   });
 
-export const getVenue = (id: string, signal?: AbortSignal) => request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
+export const getVenue = (id: string, signal?: AbortSignal) =>
+  request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
 
 /** `fresh`: skip the server's short cache (used right after a realtime change). */
 export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal, fresh?: boolean) =>
   request<DaySlots>('GET', `/v1/venues/${enc(venueId)}/slots`, { auth: 'optional', query: fresh ? { day, fresh: '1' } : { day }, signal });
 
-export const getReviews = (venueId: string, signal?: AbortSignal) => request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { signal });
+export const getReviews = (venueId: string, signal?: AbortSignal) =>
+  request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { signal });
 
 export const getSaved = (signal?: AbortSignal) => request<VenueSummary[]>('GET', '/v1/me/saved', { auth: 'required', signal });
 
@@ -76,12 +88,13 @@ export const setSaved = (venueId: string, value: boolean) =>
   request<{ venueId: string; isSaved: boolean }>(value ? 'PUT' : 'DELETE', `/v1/me/saved/${enc(venueId)}`, { auth: 'required' });
 
 // ---- checkout ---------------------------------------------------------------
-/** Reserve a slot for 10 minutes. The server re-checks availability atomically. */
+/** Reserve slots for 5 minutes. The server re-checks availability atomically. */
 /** Put slots (one turf) in the cart. Replaces any previous cart; its slots are freed at once. */
 export const createHold = (slotIds: string | string[], idempotencyKey: string) =>
   request<Hold>('POST', '/v1/holds', { auth: 'required', body: { slotIds: Array.isArray(slotIds) ? slotIds : [slotIds] }, idempotencyKey });
 
-export const getHold = (holdId: string, signal?: AbortSignal) => request<Hold>('GET', `/v1/holds/${enc(holdId)}`, { auth: 'required', signal });
+export const getHold = (holdId: string, signal?: AbortSignal) =>
+  request<Hold>('GET', `/v1/holds/${enc(holdId)}`, { auth: 'required', signal });
 
 /** Give the slot back (leaving checkout without paying). Holds with a payment in progress are kept. */
 export const releaseHold = (holdId: string) =>
@@ -89,7 +102,10 @@ export const releaseHold = (holdId: string) =>
 
 /** Take one slot out of the cart. Removing the last one empties it (`released: true`). */
 export const removeHoldSlot = (holdId: string, slotId: string) =>
-  request<{ released: boolean; hold: Hold | null }>('DELETE', `/v1/holds/${enc(holdId)}/slots/${enc(slotId)}`, { auth: 'required', timeoutMs: 8000 });
+  request<{ released: boolean; hold: Hold | null }>('DELETE', `/v1/holds/${enc(holdId)}/slots/${enc(slotId)}`, {
+    auth: 'required',
+    timeoutMs: 8000,
+  });
 
 /** Active holds: the cart. */
 export const getMyHolds = (signal?: AbortSignal) => request<Hold[]>('GET', '/v1/me/holds', { auth: 'required', signal });
@@ -117,11 +133,13 @@ export const getPaymentStatus = (paymentId: string) =>
 // ---- bookings ---------------------------------------------------------------
 export const getBookings = (signal?: AbortSignal) => request<Booking[]>('GET', '/v1/me/bookings', { auth: 'required', signal });
 
-export const getBooking = (id: string, signal?: AbortSignal) => request<Booking>('GET', `/v1/bookings/${enc(id)}`, { auth: 'required', signal });
+export const getBooking = (id: string, signal?: AbortSignal) =>
+  request<Booking>('GET', `/v1/bookings/${enc(id)}`, { auth: 'required', signal });
 
 export const cancelBooking = (id: string) => request<{ ok: true }>('POST', `/v1/bookings/${enc(id)}/cancel`, { auth: 'required' });
 
-export const getNotifications = (signal?: AbortSignal) => request<NotificationItem[]>('GET', '/v1/me/notifications', { auth: 'required', signal });
+export const getNotifications = (signal?: AbortSignal) =>
+  request<NotificationItem[]>('GET', '/v1/me/notifications', { auth: 'required', signal });
 
 export const getRequests = (signal?: AbortSignal) => request<PlayerRequest[]>('GET', '/v1/me/requests', { auth: 'required', signal });
 
@@ -134,7 +152,20 @@ export const removeAvatar = () => request<User>('DELETE', '/v1/me/avatar', { aut
 // ---- saved locations --------------------------------------------------------
 export const getPlaces = (signal?: AbortSignal) => request<SavedPlace[]>('GET', '/v1/me/places', { auth: 'required', signal });
 export const createPlace = (p: SavedPlaceInput) => request<SavedPlace>('POST', '/v1/me/places', { auth: 'required', body: p });
-export const updatePlace = (id: string, p: SavedPlaceInput) => request<SavedPlace>('PUT', `/v1/me/places/${enc(id)}`, { auth: 'required', body: p });
+export const updatePlace = (id: string, p: SavedPlaceInput) =>
+  request<SavedPlace>('PUT', `/v1/me/places/${enc(id)}`, { auth: 'required', body: p });
 export const deletePlace = (id: string) => request<{ ok: true }>('DELETE', `/v1/me/places/${enc(id)}`, { auth: 'required' });
 
 export type ExploreLike = ExploreResult;
+
+// ── Account: settings, devices, password, deletion ──────────────────────
+export type Settings = { notifications: boolean };
+export type DeviceSession = { id: string; device: string; lastActive: number; current: boolean };
+export const getSettings = (signal?: AbortSignal) => request<Settings>('GET', '/v1/me/settings', { auth: 'required', signal });
+export const updateSettings = (patch: Partial<Settings>) => request<Settings>('PUT', '/v1/me/settings', { auth: 'required', body: patch });
+export const getSessions = (signal?: AbortSignal) => request<DeviceSession[]>('GET', '/v1/me/sessions', { auth: 'required', signal });
+export const revokeSession = (id: string) => request<{ ok: true }>('DELETE', `/v1/me/sessions/${enc(id)}`, { auth: 'required' });
+export const revokeOtherSessions = () => request<{ signedOut: number }>('POST', '/v1/me/sessions/revoke-others', { auth: 'required', body: {} });
+export const changePassword = (current: string, next: string) =>
+  request<{ ok: true; signedOut: number }>('POST', '/v1/me/password', { auth: 'required', body: { current, next } });
+export const deleteAccount = (password: string) => request<{ deleted: true }>('POST', '/v1/me/delete', { auth: 'required', body: { password } });

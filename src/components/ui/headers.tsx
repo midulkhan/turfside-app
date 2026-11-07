@@ -1,9 +1,10 @@
 import { ArrowLeft, type LucideIcon } from 'lucide-react-native';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { colors, gutter, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { IconButton } from './icon-button';
 import { Text } from './text';
@@ -57,10 +58,10 @@ export function Overline({ children, color = colors.textMuted }: { children: str
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: gutter, paddingVertical: space[2], gap: space[3] },
   center: { flex: 1, alignItems: 'center' },
   side: { width: 48, alignItems: 'flex-end' },
   section: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[3] },
   sectionTitle: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.2 },
-});
+}));

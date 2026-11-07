@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, LockKeyhole } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword } from '@/lib/validation';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 /** Step 2 of password reset: SMS code + new password. Signs out every other device. */
 export default function ResetPassword() {
@@ -55,7 +56,7 @@ export default function ResetPassword() {
         </View>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           <View style={styles.badge}>
-            <LockKeyhole size={26} color={colors.ink} strokeWidth={2} />
+            <LockKeyhole size={26} color={colors.charcoal} strokeWidth={2} />
           </View>
           <Text variant="h1" color={colors.textOnDark}>
             New password
@@ -97,10 +98,10 @@ export default function ResetPassword() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.ink },
+const styles = createStyles(() => ({
+  root: { flex: 1, backgroundColor: colors.deep },
   top: { paddingHorizontal: gutter, paddingTop: space[2] },
   back: { borderColor: colors.borderOnDark, backgroundColor: colors.inkRaised },
   body: { paddingHorizontal: gutter, gap: space[4], paddingTop: space[6], paddingBottom: space[8] },
   badge: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
-});
+}));

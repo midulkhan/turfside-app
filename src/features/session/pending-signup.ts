@@ -19,4 +19,5 @@ export const pendingSignup = {
 };
 
 /** Human message for any thrown value. */
-export const errorMessage = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+export const errorMessage = (e: unknown) =>
+  e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.';

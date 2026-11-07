@@ -1,5 +1,14 @@
+import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import { tokens } from './tokens';
 import { ApiError, type ApiErrorCode, type AuthResult } from './types';
+
+/** Short device label, e.g. "Pixel 8 · Android 15" or "iPhone 15 Pro · iOS 18.1". */
+const DEVICE = (() => {
+  if (Platform.OS === 'web') return 'Web browser';
+  const os = `${Platform.OS === 'ios' ? 'iOS' : 'Android'} ${Device.osVersion ?? ''}`.trim();
+  return `${Device.modelName ?? (Platform.OS === 'ios' ? 'iPhone' : 'Android phone')} · ${os}`.slice(0, 60);
+})();
 
 /** Set EXPO_PUBLIC_API_URL in .env to point the app at another server (e.g. a local one). */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.turfsides.com').replace(/\/+$/, '');
@@ -62,6 +71,7 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (o.body !== undefined) headers['Content-Type'] = 'application/json';
   if (o.idempotencyKey) headers['Idempotency-Key'] = o.idempotencyKey;
+  headers['X-Device'] = DEVICE; // shown under Privacy & security → Signed-in devices
   if (o.auth && o.auth !== 'none') {
     await tokens.load();
     if (tokens.access) headers.Authorization = `Bearer ${tokens.access}`;
@@ -84,7 +94,10 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
     });
   } catch (e) {
     if (o.signal?.aborted) throw e; // the caller cancelled; let React Query drop it quietly
-    throw new ApiError('network', isAbort(e) ? 'The server took too long to answer. Try again.' : 'Can’t reach TurfSides. Check your internet connection.');
+    throw new ApiError(
+      'network',
+      isAbort(e) ? 'The server took too long to answer. Try again.' : 'Can’t reach TurfSides. Check your internet connection.',
+    );
   } finally {
     clearTimeout(timer);
     o.signal?.removeEventListener('abort', onAbort);
@@ -100,7 +113,15 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
   if (res.ok) return data as T;
 
   const err = (data as { error?: { code?: string; message?: string } } | null)?.error;
-  const code = (err?.code && KNOWN_CODES.has(err.code as ApiErrorCode) ? err.code : res.status === 401 ? 'unauthorized' : res.status >= 500 ? 'internal' : 'invalid') as ApiErrorCode;
+  const code = (
+    err?.code && KNOWN_CODES.has(err.code as ApiErrorCode)
+      ? err.code
+      : res.status === 401
+        ? 'unauthorized'
+        : res.status >= 500
+          ? 'internal'
+          : 'invalid'
+  ) as ApiErrorCode;
   throw new ApiError(code, err?.message ?? (res.status >= 500 ? 'Something went wrong on our side. Try again.' : 'Request failed.'));
 }
 

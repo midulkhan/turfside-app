@@ -173,5 +173,30 @@ export function useDeletePlace() {
 
 /** Slots on hold for this player (the cart). Light polling keeps the badge honest as holds expire. */
 export function useMyHolds(enabled = true) {
-  return useQuery({ queryKey: qk.myHolds, queryFn: ({ signal }) => api.getMyHolds(signal), staleTime: 10_000, refetchInterval: 30_000, enabled });
+  return useQuery({
+    queryKey: qk.myHolds,
+    queryFn: ({ signal }) => api.getMyHolds(signal),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    enabled,
+  });
+}
+
+/** Account settings, with an optimistic toggle (rolls back if the server refuses). */
+export function useSettings() {
+  return useQuery({ queryKey: ['settings'], queryFn: ({ signal }) => api.getSettings(signal), staleTime: 5 * 60_000 });
+}
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.updateSettings,
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: ['settings'] });
+      const prev = qc.getQueryData<api.Settings>(['settings']);
+      qc.setQueryData<api.Settings>(['settings'], (s) => ({ notifications: true, ...s, ...patch }));
+      return { prev };
+    },
+    onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(['settings'], ctx.prev),
+    onSuccess: (s) => qc.setQueryData(['settings'], s),
+  });
 }

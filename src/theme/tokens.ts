@@ -11,15 +11,20 @@
  */
 import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
-export const colors = {
+/** Light palette (the original "Floodlight" look). */
+const light = {
   // Brand — "Floodlight" palette
-  ink: '#161B1D', // charcoal: dark surfaces, primary text
+  ink: '#161B1D', // primary text and icons (flips to near-white in dark mode)
+  inverse: '#161B1D', // strong dark surfaces: tab bar, price bar, primary buttons, selected ticket
+  charcoal: '#161B1D', // text/icons on lime and other always-light fills (same in both themes)
+  deep: '#161B1D', // sign-in screens' dark panel (stays the darkest tone in both themes)
+  authTop: '#F4F5F0', // sign-in screens' upper panel
   inkRaised: '#20272A', // raised dark surfaces (inputs on dark)
   inkMuted: '#2C3437',
   lime: '#DDF85C',
   limeSoft: '#F3FCCB', // lime tint backgrounds
   limeTint: '#E9FA9A',
-  limeText: '#4E6B00', // lime-family text readable on white (4.5:1+)
+  limeText: '#4E6B00', // lime-family text readable on the page (4.5:1+)
   orange: '#FF5A1F',
 
   // Neutrals
@@ -39,11 +44,84 @@ export const colors = {
   danger: '#D92D20',
   dangerSoft: '#FEECEB',
   warning: '#B54708',
+  warningSoft: '#FFF6E5',
+  warningLine: '#F2C46D',
+  warningText: '#8A5A00',
   bkash: '#E2136E',
   bkashSoft: '#FFF1F7',
   scrim: 'rgba(22,27,29,0.55)',
   glass: 'rgba(255,255,255,0.78)',
-} as const;
+  /** Fully transparent version of `bg`, for fades that end in the page colour. */
+  bgClear: 'rgba(244,245,240,0)',
+};
+
+/** Dark palette: same roles, tuned for contrast on a near-black page. */
+const dark: typeof light = {
+  ink: '#EEF1EA',
+  inverse: '#262E31',
+  charcoal: '#161B1D',
+  deep: '#07090A',
+  authTop: '#1B2124',
+  inkRaised: '#2C3538',
+  inkMuted: '#36403F',
+  lime: '#DDF85C',
+  limeSoft: '#27300F',
+  limeTint: '#3A4714',
+  limeText: '#C8E64F',
+  orange: '#FF6A33',
+
+  bg: '#0E1213',
+  surface: '#171C1E',
+  surfaceMuted: '#222A2C',
+  text: '#EEF1EA',
+  textMuted: '#A3ABAE',
+  textSubtle: '#7D8689',
+  textOnDark: '#FFFFFF',
+  textOnDarkMuted: '#A9B1B4',
+  border: '#283033',
+  borderStrong: '#3A4447',
+  borderOnDark: 'rgba(255,255,255,0.10)',
+
+  danger: '#FF6B5E',
+  dangerSoft: '#3A1A17',
+  warning: '#F5A35C',
+  warningSoft: '#33260F',
+  warningLine: '#7A5A1E',
+  warningText: '#F2C46D',
+  bkash: '#F0357F',
+  bkashSoft: '#3A1426',
+  scrim: 'rgba(0,0,0,0.62)',
+  glass: 'rgba(23,28,30,0.78)',
+  bgClear: 'rgba(14,18,19,0)',
+};
+
+export type Scheme = 'light' | 'dark';
+export type Palette = { readonly [K in keyof typeof light]: string };
+export const palettes: Record<Scheme, Palette> = { light, dark };
+
+let activeScheme: Scheme = 'light';
+let version = 0;
+/** The scheme every colour and themed style currently resolves to. */
+export const getScheme = () => activeScheme;
+/** Switch palettes (the theme provider re-renders the app right after). */
+export function applyScheme(s: Scheme) {
+  if (s === activeScheme) return;
+  activeScheme = s;
+  version++;
+}
+export const themeVersion = () => version;
+
+/** `#RRGGBB` + alpha → rgba(), for fades and frosted fills built from palette colours. */
+export function withAlpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/** Live colours: `colors.text` always reads the active palette, so read it at render time. */
+export const colors: Palette = Object.defineProperties(
+  {},
+  Object.fromEntries(Object.keys(light).map((k) => [k, { get: () => palettes[activeScheme][k as keyof Palette], enumerable: true }])),
+) as Palette;
 
 export const radius = {
   xs: 8,

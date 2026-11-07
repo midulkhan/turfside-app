@@ -2,7 +2,7 @@ import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { ArrowLeft, MapPin, Search as SearchIcon, X } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -20,6 +20,7 @@ import { useSession } from '@/features/session/session';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { dhakaToday } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
@@ -149,7 +150,7 @@ export default function Search() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   sticky: { paddingTop: space[2], paddingBottom: space[2] },
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
@@ -168,4 +169,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   item: { paddingHorizontal: gutter, paddingBottom: space[4] },
-});
+}));

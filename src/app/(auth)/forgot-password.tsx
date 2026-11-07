@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowLeft, KeyRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { isBdMobile } from '@/lib/validation';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 export default function ForgotPassword() {
   const [phone, setPhone] = useState('');
@@ -43,7 +44,7 @@ export default function ForgotPassword() {
       </View>
       <View style={styles.body}>
         <View style={styles.badge}>
-          <KeyRound size={26} color={colors.ink} strokeWidth={2} />
+          <KeyRound size={26} color={colors.charcoal} strokeWidth={2} />
         </View>
         <Text variant="h1" color={colors.textOnDark}>
           Reset password
@@ -64,10 +65,10 @@ export default function ForgotPassword() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.ink },
+const styles = createStyles(() => ({
+  root: { flex: 1, backgroundColor: colors.deep },
   top: { paddingHorizontal: gutter, paddingTop: space[2] },
   back: { borderColor: colors.borderOnDark, backgroundColor: colors.inkRaised },
   body: { paddingHorizontal: gutter, gap: space[4], marginTop: space[6] },
   badge: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
-});
+}));

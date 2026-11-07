@@ -1,6 +1,6 @@
 import { ArrowRight, Check, ChevronsRight } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { ActivityIndicator, View, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -16,6 +16,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { haptic } from '@/lib/haptics';
 import { colors, motion, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { Text } from './text';
 
@@ -121,11 +122,11 @@ export function SlideToPay({
         </Animated.View>
         <Animated.View style={[styles.knob, knob]}>
           {busy ? (
-            <ActivityIndicator color={colors.ink} />
+            <ActivityIndicator color={colors.charcoal} />
           ) : done ? (
-            <Check size={24} color={colors.ink} strokeWidth={3} />
+            <Check size={24} color={colors.charcoal} strokeWidth={3} />
           ) : (
-            <ArrowRight size={24} color={colors.ink} strokeWidth={2.6} />
+            <ArrowRight size={24} color={colors.charcoal} strokeWidth={2.6} />
           )}
         </Animated.View>
       </View>
@@ -133,8 +134,8 @@ export function SlideToPay({
   );
 }
 
-const styles = StyleSheet.create({
-  track: { height: H, borderRadius: radius.pill, backgroundColor: colors.ink, justifyContent: 'center', overflow: 'hidden' },
+const styles = createStyles(() => ({
+  track: { height: H, borderRadius: radius.pill, backgroundColor: colors.inverse, justifyContent: 'center', overflow: 'hidden' },
   dim: { opacity: 0.6 },
   fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(221,248,92,0.16)', borderRadius: radius.pill },
   labelWrap: { position: 'absolute', left: KNOB + 18, right: 52, alignItems: 'center' },
@@ -150,4 +151,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

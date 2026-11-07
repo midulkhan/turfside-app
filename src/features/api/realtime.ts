@@ -36,7 +36,9 @@ export function useAppConfig() {
 function refreshDay(qc: QueryClient, venueId: string, day: string) {
   const key = qk.slots(venueId, day as DayKey);
   if (!qc.getQueryState(key)) return; // nobody is looking at that day
-  qc.fetchQuery({ queryKey: key, queryFn: ({ signal }) => api.getSlots(venueId, day as DayKey, signal, true), staleTime: 0 }).catch(() => {});
+  qc.fetchQuery({ queryKey: key, queryFn: ({ signal }) => api.getSlots(venueId, day as DayKey, signal, true), staleTime: 0 }).catch(
+    () => {},
+  );
 }
 
 /**

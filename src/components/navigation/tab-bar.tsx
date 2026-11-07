@@ -16,6 +16,7 @@ import { Text } from '@/components/ui/text';
 import { useCart } from '@/features/api/use-cart';
 import { haptic } from '@/lib/haptics';
 import { colors, radius, shadow, size, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const TABS: Record<string, { icon: LucideIcon; label: string }> = {
   explore: { icon: House, label: 'Explore' },
@@ -86,7 +87,7 @@ const TabItem = memo(function TabItem({
       </Animated.View>
       {count ? (
         <View pointerEvents="none" style={styles.badge}>
-          <Text variant="caption" color={colors.ink} style={styles.badgeText}>
+          <Text variant="caption" color={colors.charcoal} style={styles.badgeText}>
             {count > 9 ? '9+' : count}
           </Text>
         </View>
@@ -115,8 +116,6 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
   useEffect(() => {
     position.set(withSpring(activeIndex, INDICATOR_SPRING));
   }, [activeIndex, position]);
-
-
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, space[3]) }]}>
@@ -152,12 +151,12 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   wrap: { position: 'absolute', left: space[4], right: space[4] },
   bar: {
     height: size.tabBar,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: PAD,
@@ -180,9 +179,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.lime,
     borderWidth: 1.5,
-    borderColor: colors.ink,
+    borderColor: colors.inverse,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: { fontSize: 10, lineHeight: 12, fontFamily: 'Geist_700Bold' },
-});
+}));

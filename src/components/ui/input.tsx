@@ -1,24 +1,16 @@
 import { Eye, EyeOff, type LucideIcon } from 'lucide-react-native';
 import { forwardRef, useState, type ReactNode } from 'react';
-import {
-  Platform,
-  StyleSheet,
-  TextInput,
-  View,
-  type TextInputInstance,
-  type TextInputProps,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Platform, TextInput, View, type TextInputInstance, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, font, radius, size, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
 
 export type Tone = 'light' | 'dark';
 
-const tones = {
+const tones = () => ({
   light: {
     bg: colors.surface,
     border: colors.border,
@@ -35,7 +27,7 @@ const tones = {
     placeholder: '#7D878B',
     label: colors.textOnDark,
   },
-};
+});
 
 export type InputProps = TextInputProps & {
   label?: string;
@@ -53,7 +45,7 @@ export const Input = forwardRef<TextInputInstance, InputProps>(function Input(
   { label, hint, error, tone = 'light', icon: Icon, leading, trailing, containerStyle, style, onFocus, onBlur, ...rest },
   ref,
 ) {
-  const t = tones[tone];
+  const t = tones()[tone];
   const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.wrap, containerStyle]}>
@@ -129,7 +121,7 @@ export const PasswordInput = forwardRef<TextInputInstance, InputProps>(function 
 /** Bangladesh mobile input. Stores only the 10 national digits (1XXXXXXXXX). */
 export const PhoneInput = forwardRef<TextInputInstance, InputProps & { value: string; onChangeText: (v: string) => void }>(
   function PhoneInput({ value, onChangeText, tone = 'light', ...rest }, ref) {
-    const t = tones[tone];
+    const t = tones()[tone];
     return (
       <Input
         ref={ref}
@@ -165,7 +157,7 @@ export const PhoneInput = forwardRef<TextInputInstance, InputProps & { value: st
   },
 );
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   wrap: { gap: space[2] },
   field: {
     height: size.control,
@@ -188,4 +180,4 @@ const styles = StyleSheet.create({
   flag: { width: 26, height: 18, borderRadius: 3, backgroundColor: '#006A4E', alignItems: 'center', justifyContent: 'center' },
   flagDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#F42A41', marginLeft: -2 },
   prefixDivider: { width: 1, height: 26, marginLeft: space[2] },
-});
+}));

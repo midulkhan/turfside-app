@@ -12,7 +12,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
-import { StyleSheet } from 'react-native';
+
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -23,14 +23,20 @@ import { installNavGuard } from '@/lib/nav-guard';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors } from '@/theme/tokens';
+import { ThemeProvider, themedScreen, useTheme } from '@/theme/theme-provider';
+import { createStyles } from '@/theme/styles';
 
 installNavGuard(); // one tap = one screen, even on a fast double tap
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// The intro plays once per launch, even when the screens re-mount for a theme switch.
+let splashPlayed = false;
+
 function RootNavigator() {
   const { ready, user } = useSession();
-  const [splashDone, setSplashDone] = useState(false);
+  const { scheme } = useTheme(); // re-render on a theme switch; screens re-mount via screenLayout
+  const [splashDone, setSplashDone] = useState(splashPlayed);
   const [fontsLoaded, fontError] = useFonts({
     Geist_400Regular,
     Geist_500Medium,
@@ -43,12 +49,17 @@ function RootNavigator() {
     'Taka-ExtraBold': require('@/assets/fonts/Taka-ExtraBold.ttf'),
   });
   const appReady = ready && (fontsLoaded || !!fontError);
-  const finishSplash = useCallback(() => setSplashDone(true), []);
+  const finishSplash = useCallback(() => {
+    splashPlayed = true;
+    setSplashDone(true);
+  }, []);
 
   return (
     <>
       {appReady ? (
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'ios_from_right' }}>
+        <Stack
+          screenLayout={themedScreen(scheme, ['(tabs)'])}
+          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'ios_from_right' }}>
           <Stack.Screen name="index" options={{ animation: 'none' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Protected guard={!user} redirectTo="/">
@@ -65,13 +76,19 @@ function RootNavigator() {
             <Stack.Screen name="locations" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
             <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="payment-return" options={{ animation: 'none' }} />
+            <Stack.Screen name="privacy" />
           </Stack.Protected>
         </Stack>
       ) : null}
-      {appReady ? <OfflineBanner /> : null}
+      {appReady ? <OfflineBanner key={scheme} /> : null}
       {!splashDone ? <VideoSplash appReady={appReady} onDone={finishSplash} /> : null}
     </>
   );
+}
+
+function ThemedStatusBar() {
+  const { scheme } = useTheme();
+  return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
 }
 
 export default function RootLayout() {
@@ -80,11 +97,13 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
           <SessionProvider>
-            <StatusBar style="dark" />
-            {/* whole app = Android blur source; full-screen overlays render above it */}
-            <OverlayProvider>
-              <RootNavigator />
-            </OverlayProvider>
+            <ThemeProvider>
+              <ThemedStatusBar />
+              {/* whole app = Android blur source; full-screen overlays render above it */}
+              <OverlayProvider>
+                <RootNavigator />
+              </OverlayProvider>
+            </ThemeProvider>
           </SessionProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>
@@ -92,4 +111,4 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: '#FFFFFF' } });
+const styles = createStyles(() => ({ root: { flex: 1, backgroundColor: colors.bg } }));

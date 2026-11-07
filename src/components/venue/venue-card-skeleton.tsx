@@ -1,8 +1,9 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 export function VenueCardSkeleton() {
   return (
@@ -17,7 +18,7 @@ export function VenueCardSkeleton() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   card: { padding: 6 },
   body: { padding: space[3], gap: space[3] },
-});
+}));

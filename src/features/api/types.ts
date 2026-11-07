@@ -41,7 +41,7 @@ export type VenueDetail = VenueSummary & {
 export type Review = { id: string; author: string; rating: number; at: number; text: string };
 export type ReviewSummary = { average: number; count: number; histogram: Record<1 | 2 | 3 | 4 | 5, number>; items: Review[] };
 
-/** held = another player is checking out (up to 10 min); mine = your own hold, resumable via holdId. */
+/** held = another player is checking out (up to 5 min); mine = your own hold, resumable via holdId. */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
 export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string };
 export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number };
@@ -157,7 +157,16 @@ export type AppConfig = {
 };
 
 /** A location the player saved ("Home", "Work", …). Coordinates are rounded to ~100 m. */
-export type SavedPlace = { id: string; label: string; name: string; city: string; address: string; lat: number; lng: number; createdAt: number };
+export type SavedPlace = {
+  id: string;
+  label: string;
+  name: string;
+  city: string;
+  address: string;
+  lat: number;
+  lng: number;
+  createdAt: number;
+};
 export type SavedPlaceInput = Omit<SavedPlace, 'id' | 'createdAt'>;
 
 /** A short-lived signed upload to Cloudflare R2. Send exactly these headers with the PUT. */

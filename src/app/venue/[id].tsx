@@ -76,6 +76,7 @@ import { haversineKm } from '@/lib/places';
 import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
 import { useCart } from '@/features/api/use-cart';
+import { pageStatusBar } from '@/theme/theme-provider';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { ApiError, type Hold, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
@@ -98,6 +99,7 @@ import {
   type DayPart,
 } from '@/lib/time';
 import { colors, font, gutter, radius, shadow, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const DAYS_AHEAD = 60; // booking horizon (server config in production)
 const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
@@ -314,8 +316,8 @@ export default function VenueScreen() {
   // screen is in front, and always back to dark when leaving (checkout is white).
   useFocusEffect(
     useCallback(() => {
-      setStatusBarStyle(scrolled.isScrolled ? 'dark' : 'light', true);
-      return () => setStatusBarStyle('dark', true);
+      setStatusBarStyle(scrolled.isScrolled ? pageStatusBar() : 'light', true);
+      return () => setStatusBarStyle(pageStatusBar(), true);
     }, [scrolled.isScrolled]),
   );
 
@@ -716,10 +718,10 @@ const DateChip = memo(function DateChip({ d, active, onPick }: { d: DayKey; acti
         onPick(d);
       }}
       style={[styles.date, active && styles.dateOn]}>
-      <Text variant="label" color={active ? colors.ink : colors.textMuted}>
+      <Text variant="label" color={active ? colors.charcoal : colors.textMuted}>
         {weekday(d)}
       </Text>
-      <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
+      <Text variant="bodyStrong" color={active ? colors.charcoal : colors.ink} style={styles.dateNum}>
         {String(dayOfMonth(d)).padStart(2, '0')}
       </Text>
     </PressableScale>
@@ -1033,7 +1035,7 @@ const ReviewsTab = memo(function ReviewsTab({ data, loading }: { data?: Awaited<
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
@@ -1156,7 +1158,7 @@ const styles = StyleSheet.create({
   priceBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     borderRadius: radius.pill,
     paddingLeft: space[6],
     paddingRight: 8,
@@ -1166,4 +1168,4 @@ const styles = StyleSheet.create({
   priceText: { flex: 1, gap: 3 },
   price: { fontSize: 18, lineHeight: 22 },
   continue: { minWidth: 136, height: 52 },
-});
+}));

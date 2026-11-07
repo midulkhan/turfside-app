@@ -39,7 +39,12 @@ export async function currentPosition() {
     Alert.alert(
       'Location is off',
       'Allow location to see turfs near you, or set your location on the map.',
-      canAskAgain ? [{ text: 'OK' }] : [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }],
+      canAskAgain
+        ? [{ text: 'OK' }]
+        : [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
     );
     return null;
   }

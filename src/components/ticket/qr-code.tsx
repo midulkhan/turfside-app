@@ -31,7 +31,7 @@ export function QRCode({ value, size = 120 }: { value: string; size?: number }) 
   return (
     <View style={{ backgroundColor: colors.surface, borderRadius: radius.sm, padding: 6 }} accessibilityLabel="Entry pass QR code">
       <Svg width={size} height={size} viewBox={`${-pad} ${-pad} ${n + pad * 2} ${n + pad * 2}`}>
-        <Path d={d} fill={colors.ink} />
+        <Path d={d} fill={colors.charcoal} />
       </Svg>
     </View>
   );

@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, MapPin, Navigation, Share2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +24,7 @@ import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { dhakaInstant, formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -88,7 +89,7 @@ export default function BookingTicket() {
         {justBooked ? (
           <Animated.View entering={FadeInDown.duration(320)} style={styles.hello}>
             <Animated.View entering={ZoomIn.delay(120).springify()} style={styles.check}>
-              <Check size={24} color={colors.ink} strokeWidth={3} />
+              <Check size={24} color={colors.charcoal} strokeWidth={3} />
             </Animated.View>
             <View style={styles.flex}>
               <Text variant="h1">You’re all set.</Text>
@@ -186,11 +187,11 @@ export default function BookingTicket() {
 
         {b ? (
           <View style={styles.paid}>
-            <Check size={20} color={colors.ink} strokeWidth={2.6} />
-            <Text variant="bodyStrong" style={styles.flex}>
+            <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
+            <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
               Paid {formatTaka(b.amountPaid)}
             </Text>
-            <Text variant="label" color={colors.textMuted}>
+            <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
               via {b.method}
             </Text>
           </View>
@@ -258,7 +259,7 @@ export default function BookingTicket() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { paddingHorizontal: gutter, gap: space[4] },
   flex: { flex: 1 },
@@ -289,7 +290,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[4],
-    backgroundColor: colors.ink,
+    backgroundColor: colors.inverse,
     borderRadius: radius.md,
     padding: space[4],
     marginTop: 6,
@@ -302,7 +303,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     marginBottom: space[2],
   },
-  passBadgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1.6, color: colors.ink },
+  passBadgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1.6, color: colors.charcoal },
+  onLimeMuted: { opacity: 0.7 },
   code: { fontFamily: 'Geist_700Bold', fontSize: 18, lineHeight: 24, letterSpacing: -0.2 },
   passRule: { width: 1, alignSelf: 'stretch', backgroundColor: colors.borderOnDark },
   paid: {
@@ -316,8 +318,16 @@ const styles = StyleSheet.create({
   },
   actions: { flexDirection: 'row', gap: space[3] },
   tip: { flexDirection: 'row', alignItems: 'center', gap: space[4], paddingVertical: space[4] },
-  darkArrow: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  darkArrow: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.inverse, alignItems: 'center', justifyContent: 'center' },
   back: { alignSelf: 'center', minHeight: 44, justifyContent: 'center' },
-  noPass: { width: 96, height: 96, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderOnDark, alignItems: 'center', justifyContent: 'center' },
+  noPass: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderOnDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   u: { textDecorationLine: 'underline' },
-});
+}));

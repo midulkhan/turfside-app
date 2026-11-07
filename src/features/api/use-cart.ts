@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { qk, useMyHolds } from './queries';
 
 /**
- * The cart is the slot you're holding (up to 10 min). `open()` jumps straight
+ * The cart is the slot you're holding (up to 5 min). `open()` jumps straight
  * to its checkout; there is no separate cart page.
  */
 export function useCart() {

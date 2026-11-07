@@ -1,6 +1,7 @@
 import { BlurTargetView } from 'expo-blur';
 import { createContext, use, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { createStyles } from '@/theme/styles';
 
 /**
  * App-wide overlay layer + blur source.
@@ -46,4 +47,4 @@ export function Overlay({ children }: { children: ReactNode }) {
   return null;
 }
 
-const styles = StyleSheet.create({ flex: { flex: 1 } });
+const styles = createStyles(() => ({ flex: { flex: 1 } }));

@@ -5,6 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
+import { createStyles } from '@/theme/styles';
 
 const SOURCE = require('@/assets/video/splash.mp4');
 const LAST_FRAME = require('@/assets/video/splash-end.webp'); // the video's final frame, as a still
@@ -80,7 +81,7 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: {
     position: 'absolute',
     top: 0,
@@ -95,4 +96,4 @@ const styles = StyleSheet.create({
   videoWrap: { width: '100%', aspectRatio: 16 / 9, maxWidth: 560 },
   video: { width: '100%', height: '100%', backgroundColor: '#FFFFFF' },
   still: { ...StyleSheet.absoluteFill, backgroundColor: '#FFFFFF' },
-});
+}));

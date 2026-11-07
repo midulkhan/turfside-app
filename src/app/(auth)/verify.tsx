@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, ShieldCheck } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
+import { Pressable, TextInput, View, type TextInputInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const LEN = 6;
 const RESEND_S = 30;
@@ -83,7 +84,7 @@ export default function Verify() {
       </View>
       <View style={styles.body}>
         <View style={styles.badge}>
-          <ShieldCheck size={28} color={colors.ink} strokeWidth={2} />
+          <ShieldCheck size={28} color={colors.charcoal} strokeWidth={2} />
         </View>
         <Text variant="h1" color={colors.textOnDark}>
           Verify your number
@@ -134,11 +135,7 @@ export default function Verify() {
         ) : null}
 
         <Button label="Verify and continue" onPress={() => submit()} loading={loading} disabled={code.length !== LEN || locked} />
-        <Pressable
-          disabled={left > 0}
-          onPress={resend}
-          style={styles.resend}
-          accessibilityRole="button">
+        <Pressable disabled={left > 0} onPress={resend} style={styles.resend} accessibilityRole="button">
           <Text variant="bodyStrong" color={left > 0 ? colors.textOnDarkMuted : colors.lime}>
             {left > 0 ? `Resend code in 0:${String(left).padStart(2, '0')}` : 'Resend code'}
           </Text>
@@ -153,8 +150,8 @@ export default function Verify() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.ink },
+const styles = createStyles(() => ({
+  root: { flex: 1, backgroundColor: colors.deep },
   top: { paddingHorizontal: gutter, paddingTop: space[2] },
   back: { borderColor: colors.borderOnDark, backgroundColor: colors.inkRaised },
   body: { paddingHorizontal: gutter, gap: space[4], marginTop: space[6] },
@@ -174,4 +171,4 @@ const styles = StyleSheet.create({
   cellError: { borderColor: '#FF8A80' },
   hidden: { position: 'absolute', opacity: 0, height: 1, width: 1, fontFamily: font.regular },
   resend: { alignSelf: 'center', minHeight: 44, justifyContent: 'center' },
-});
+}));

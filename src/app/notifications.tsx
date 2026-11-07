@@ -1,5 +1,5 @@
 import { BellRing, CreditCard, Megaphone } from 'lucide-react-native';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { Text } from '@/components/ui/text';
 import { useNotifications } from '@/features/api/queries';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, space } from '@/theme/tokens';
+import { createStyles } from '@/theme/styles';
 
 const ICON = { booking: BellRing, payment: CreditCard, promo: Megaphone };
 
@@ -48,7 +49,7 @@ export default function Notifications() {
             return (
               <Card key={n.id} style={styles.item}>
                 <View style={[styles.icon, !n.read && styles.iconUnread]}>
-                  <Icon size={20} color={colors.ink} strokeWidth={1.9} />
+                  <Icon size={20} color={n.read ? colors.ink : colors.charcoal} strokeWidth={1.9} />
                 </View>
                 <View style={styles.flex}>
                   <View style={styles.top}>
@@ -74,7 +75,7 @@ export default function Notifications() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   list: { paddingHorizontal: gutter, gap: space[3], paddingTop: space[2] },
@@ -89,4 +90,4 @@ const styles = StyleSheet.create({
   },
   iconUnread: { backgroundColor: colors.lime },
   top: { flexDirection: 'row', alignItems: 'center', gap: space[2], marginBottom: 2 },
-});
+}));
