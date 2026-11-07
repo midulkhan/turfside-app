@@ -90,6 +90,9 @@ export async function buildApp() {
   });
   await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'DELETE'] });
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
+  // Per signed-in session rather than per IP: many players can share one carrier IP, and rate
+  // limiting runs before auth, so the bearer token is the session key (IP for signed-out users).
+  const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
@@ -171,7 +174,9 @@ export async function buildApp() {
   });
 
   // ── Venues (public; hearts filled in when signed in) ──────────────────────
-  app.get('/v1/venues/explore', { preHandler: optionalUser }, async (req) => {
+  // Explore + search. The app debounces, narrows locally and caches, so a person typing sends a
+  // handful of requests; 60/min per session only ever stops scripts or runaway loops.
+  app.get('/v1/venues/explore', { preHandler: optionalUser, config: { rateLimit: { max: 60, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
     const p = parse(
       z.object({
         lat: z.coerce.number().min(-90).max(90),
@@ -389,9 +394,6 @@ export async function buildApp() {
   });
 
   // ── Holds & checkout ──────────────────────────────────────────────────────
-  // Cart & payment limits are per signed-in session, not per IP: many players can share one
-  // carrier IP, and rate limiting runs before auth, so the bearer token is the session key.
-  const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;
   app.post('/v1/holds', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
     // One cart per player: a new selection replaces the old cart. `slotId` (single) is still accepted.
     const body = parse(

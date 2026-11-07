@@ -15,6 +15,7 @@ import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { KNOWN_AREAS } from '@/lib/places';
 import { useExplore } from '@/features/api/queries';
+import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { dhakaToday } from '@/lib/time';
@@ -24,25 +25,50 @@ import { colors, gutter, radius, space } from '@/theme/tokens';
 const NO_ANCHOR = { disabled: true };
 
 /**
- * Search: input is debounced (300 ms) and each new query aborts the previous
- * request, so fast typing never floods the server or shows stale results.
+ * Search, kept light on the server the way big apps do it:
+ * - debounced (300 ms), nothing under 2 letters, each new query aborts the last;
+ * - queries are normalised (trim + lowercase) so "Bad" and "bad" share one cache entry;
+ * - narrowing is local: the server matches `name + area` containing the text, so once
+ *   "bad" is fetched, "badd", "badda"… are a subset of it and are filtered on the phone
+ *   instantly, with no request (and no debounce wait);
+ * - React Query caches each query, so going back to a previous one costs nothing.
  */
+const norm = (s: string) => s.trim().toLowerCase();
+
 export default function Search() {
   const insets = useSafeAreaInsets();
   const { place, setPlace } = useSession();
   const [text, setText] = useState('');
-  const q = useDebouncedValue(text.trim(), 300);
-  const enabled = q.length >= 2;
+  const typed = norm(text);
+  const q = useDebouncedValue(typed, 300);
+  const placeKey = `${place.lat},${place.lng}`;
+
+  // Last full answer from the server; any longer query containing its text is a subset of it.
+  const [base, setBase] = useState<{ q: string; place: string; venues: VenueSummary[] } | null>(null);
+  const covers = (s: string) => !!base && base.place === placeKey && s.length >= 2 && s.includes(base.q);
+
+  const enabled = q.length >= 2 && !covers(q); // no request until there's a query, or when we can narrow locally
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day: dhakaToday(), format: 'any' as const, query: q }),
     [place.lat, place.lng, q],
   );
-  const { data, isFetching, isPlaceholderData, isError, refetch } = useExplore(params, enabled); // no request until there's a query
+  const { data, isFetching, isPlaceholderData, isError, refetch } = useExplore(params, enabled);
+  if (enabled && data && !isPlaceholderData && !isFetching && (base?.q !== q || base.place !== placeKey)) {
+    setBase({ q, place: placeKey, venues: [...data.near, ...data.further] });
+  }
+
+  const local = covers(typed); // instant: filter what we already have, no debounce, no request
   // Typing ahead of the debounce, or a new query in flight: never show the previous query's results.
-  const searching = enabled && (isFetching && (isPlaceholderData || !data) || text.trim() !== q);
+  const searching = !local && typed.length >= 2 && ((isFetching && (isPlaceholderData || !data)) || typed !== q);
   const scrolled = useScrolled();
-  const results = enabled && data && !searching && !isError ? [...data.near, ...data.further] : [];
-  const areas = enabled ? KNOWN_AREAS.filter((a) => a.name.toLowerCase().includes(q.toLowerCase())) : KNOWN_AREAS.slice(0, 6);
+  const results = local
+    ? base!.venues.filter((v) => `${v.name} ${v.area}`.toLowerCase().includes(typed))
+    : enabled && data && !searching && !isError
+      ? [...data.near, ...data.further]
+      : [];
+  const shownQ = local ? typed : q;
+  const hasQuery = typed.length >= 2;
+  const areas = hasQuery ? KNOWN_AREAS.filter((a) => a.name.toLowerCase().includes(typed)) : KNOWN_AREAS.slice(0, 6);
 
   return (
     <View style={styles.root}>
@@ -87,7 +113,7 @@ export default function Search() {
         )}
         ListHeaderComponent={
           <View style={styles.areas}>
-            {areas.length ? <Overline>{enabled ? 'Areas' : 'Popular areas'}</Overline> : null}
+            {areas.length ? <Overline>{hasQuery ? 'Areas' : 'Popular areas'}</Overline> : null}
             <View style={styles.areaWrap}>
               {areas.map((a) => (
                 <Pressable
@@ -111,10 +137,10 @@ export default function Search() {
             <View style={styles.item}>
               <VenueCardSkeleton />
             </View>
-          ) : isError && enabled ? (
+          ) : isError && enabled && !local ? (
             <ErrorState message="Couldn’t search right now. Check your connection." onRetry={refetch} />
-          ) : enabled ? (
-            <EmptyState icon={SearchIcon} title="No turfs found" body={`Nothing matches “${q}” yet. Try an area name like Uttara.`} />
+          ) : hasQuery ? (
+            <EmptyState icon={SearchIcon} title="No turfs found" body={`Nothing matches “${shownQ}” yet. Try an area name like Uttara.`} />
           ) : null
         }
         contentContainerStyle={{ paddingBottom: insets.bottom + space[6] }}
