@@ -1,14 +1,11 @@
-import * as Device from 'expo-device';
-import { Platform } from 'react-native';
 import { tokens } from './tokens';
 import { ApiError, type ApiErrorCode, type AuthResult } from './types';
 
-/** Short device label, e.g. "Pixel 8 · Android 15" or "iPhone 15 Pro · iOS 18.1". */
-const DEVICE = (() => {
-  if (Platform.OS === 'web') return 'Web browser';
-  const os = `${Platform.OS === 'ios' ? 'iOS' : 'Android'} ${Device.osVersion ?? ''}`.trim();
-  return `${Device.modelName ?? (Platform.OS === 'ios' ? 'iPhone' : 'Android phone')} · ${os}`.slice(0, 60);
-})();
+/** Device label for "Signed-in devices" (set at app start, see lib/device-label). */
+let DEVICE = 'Unknown device';
+export function setDeviceLabel(label: string) {
+  DEVICE = label.slice(0, 60);
+}
 
 /** Set EXPO_PUBLIC_API_URL in .env to point the app at another server (e.g. a local one). */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.turfsides.com').replace(/\/+$/, '');

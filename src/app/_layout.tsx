@@ -19,6 +19,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VideoSplash } from '@/components/splash/video-splash';
 import { OfflineBanner } from '@/components/ui/offline-banner';
 import { OverlayProvider } from '@/components/ui/overlay-host';
+import { installDeviceLabel } from '@/lib/device-label';
 import { installNavGuard } from '@/lib/nav-guard';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
@@ -27,6 +28,7 @@ import { ThemeProvider, themedScreen, useTheme } from '@/theme/theme-provider';
 import { createStyles } from '@/theme/styles';
 
 installNavGuard(); // one tap = one screen, even on a fast double tap
+installDeviceLabel();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
