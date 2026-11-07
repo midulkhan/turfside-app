@@ -87,12 +87,7 @@ export function TicketSurface({ fill, stroke, strokeWidth = 1, radius = radii.md
       {size.w ? (
         // Exact pixel size (a percentage height mis-resolves on iOS), drawn through a viewBox.
         // The path keeps a 2px inner margin, so a measurement a hair off can't clip an edge.
-        <Svg
-          pointerEvents="none"
-          style={styles.svg}
-          width={size.w}
-          height={size.h}
-          viewBox={`0 0 ${size.w} ${size.h}`}>
+        <Svg pointerEvents="none" style={styles.svg} width={size.w} height={size.h} viewBox={`0 0 ${size.w} ${size.h}`}>
           {hatch ? (
             <Defs>
               <Pattern id={`h${uid}`} width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -132,19 +127,16 @@ export function TicketDivider({
     <View
       style={{ height: gap * 2, justifyContent: 'center' }}
       onLayout={(e) => report?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}>
-      {/* Real dash marks: iOS renders a one-sided dashed border as a solid line. */}
-      <View style={[styles.dashes, { marginHorizontal: inset }]}>
-        {DASHES.map((i) => (
-          <View key={i} style={[styles.dash, { backgroundColor: dashColor }]} />
-        ))}
-      </View>
+      {/* One SVG line with a dash pattern (iOS draws a one-sided dashed *border* solid, and
+          80 separate dash Views per ticket made every slot grid heavy to mount). */}
+      <Svg height={1.5} style={[styles.dashes, { marginHorizontal: inset }]}>
+        <Line x1={0} y1={0.75} x2="100%" y2={0.75} stroke={dashColor} strokeWidth={1.5} strokeDasharray="5 4" />
+      </Svg>
     </View>
   );
 }
 
-const DASHES = Array.from({ length: 80 }, (_, i) => i);
 const styles = StyleSheet.create({
   svg: { position: 'absolute', left: 0, top: 0 },
-  dashes: { height: 1.5, flexDirection: 'row', gap: 4, overflow: 'hidden' },
-  dash: { width: 5, height: 1.5, borderRadius: 1 },
+  dashes: { height: 1.5, alignSelf: 'stretch' },
 });

@@ -29,7 +29,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentRef, type RefObject } from 'react';
 import {
   Alert,
   Linking,
@@ -45,12 +45,15 @@ import {
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { setStatusBarStyle } from 'expo-status-bar';
 import Animated, {
+  cancelAnimation,
   Easing,
   FadeIn,
   LinearTransition,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,6 +76,7 @@ import { haversineKm } from '@/lib/places';
 import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
 import { useCart } from '@/features/api/use-cart';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { ApiError, type Hold, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
 import { useSession } from '@/features/session/session';
@@ -118,6 +122,7 @@ const AMENITY_ICON: Record<string, LucideIcon> = {
   Roof: Umbrella,
 };
 type Tab = 'book' | 'details' | 'reviews';
+const FIRST_BATCH = 8;
 
 export default function VenueScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -128,6 +133,7 @@ export default function VenueScreen() {
   const today = dhakaToday();
 
   const [day, setDay] = useState<DayKey>(today);
+  const days = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i)), [today]);
   // Picked slots, kept across day changes (one order can span days at this turf).
   const [picked, setPicked] = useState<Picked[]>([]);
   // The cart. When it's at this turf, its slots *are* the selection (shown "In your cart");
@@ -151,30 +157,70 @@ export default function VenueScreen() {
   }
   const [photoIndex, setPhotoIndex] = useState(0);
   const [tab, setTabRaw] = useState<Tab>('book');
+  // Panes are mounted on first visit and then kept alive (hidden), so switching back never rebuilds them.
+  const [visited, setVisited] = useState<Record<Tab, boolean>>({ book: true, details: false, reviews: false });
+  // Lime underline slides on the UI thread the instant you tap, independent of React rendering.
+  const tabX = useRef<Partial<Record<Tab, { x: number; w: number }>>>({});
+  const lineX = useSharedValue(0);
+  const lineW = useSharedValue(0);
+  const moveLine = (t: Tab, animate: boolean) => {
+    const m = tabX.current[t];
+    if (!m) return;
+    const cfg = { duration: 240, easing: Easing.bezier(0.22, 1, 0.36, 1) };
+    lineX.set(animate ? withTiming(m.x, cfg) : m.x);
+    lineW.set(animate ? withTiming(m.w, cfg) : m.w);
+  };
+  const lineStyle = useAnimatedStyle(() => ({ width: lineW.get(), transform: [{ translateX: lineX.get() }] }));
   // Switching tabs never shrinks the page under your thumb: the new tab starts at least as
   // tall as the one it replaces, so the scroll position (and the tab bar) stay exactly put.
   const tabH = useRef(0);
   const [tabMinH, setTabMinH] = useState(0);
   const setTab = (t: Tab) => {
     if (t === tab) return;
+    moveLine(t, true);
     setTabMinH(tabH.current);
+    setVisited((v) => (v[t] ? v : { ...v, [t]: true }));
     setTabRaw(t);
   };
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const holdKey = useRef<string | null>(null);
   const dateScroll = useRef<ScrollViewInstance>(null);
   const galleryRef = useRef<ComponentRef<typeof View>>(null); // Android: what the photo buttons blur
 
   const venue = useVenue(id);
-  const live = useLiveSlots(id, day); // instant updates when someone else holds or books
-  const slots = useSlots(id, day, live);
-  const reviews = useReviews(id, tab === 'reviews');
+  // Day handling, built for fast tapping:
+  //  - `day` drives the date chips and updates instantly.
+  //  - `gridDay` (deferred) re-renders the ticket grid at low priority, so a new tap interrupts it.
+  //  - `queryDay` asks the server: immediately if the day is already cached, otherwise once taps
+  //    settle (160 ms). Superseded requests are aborted by React Query (the signal is wired through).
+  const gridDay = useDeferredValue(day);
+  const settledDay = useDebouncedValue(gridDay, 160);
+  const queryDay = qc.getQueryData(qk.slots(id, gridDay)) !== undefined ? gridDay : settledDay;
+  const live = useLiveSlots(id, queryDay); // instant updates when someone else holds or books
+  const slots = useSlots(id, queryDay, live);
+  const shownDay = slots.data?.day;
+  const slotState: SlotState =
+    slots.isError && queryDay === day && !slots.isFetching
+      ? 'error'
+      : !slots.data
+        ? 'first'
+        : shownDay !== day || slots.isPlaceholderData
+          ? 'loading'
+          : 'ready';
+  // Warm the neighbouring days once a day is on screen, so the next taps are instant.
+  useEffect(() => {
+    if (slotState !== 'ready') return;
+    const t = setTimeout(() => {
+      const i = days.indexOf(day);
+      for (const d of [days[i + 1], days[i + 2], days[i - 1]])
+        if (d) qc.prefetchQuery({ queryKey: qk.slots(id, d), queryFn: ({ signal }) => api.getSlots(id, d, signal), staleTime: 30_000 });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [slotState, day, days, id, qc]);
+  const reviews = useReviews(id, visited.reviews);
   const toggle = useToggleSaved();
   const v = venue.data;
   const isSaved = useIsSaved(id, !!v?.isSaved);
-
-  const days = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i)), [today]);
 
   const grouped = useMemo(() => {
     const g: Record<DayPart, Slot[]> = { morning: [], afternoon: [], evening: [], night: [] };
@@ -187,24 +233,28 @@ export default function VenueScreen() {
   const chosen = useMemo(
     () =>
       picked.flatMap((p) => {
-        if (p.day !== day || !slots.data) return [p];
+        if (!slots.data || p.day !== slots.data.day || slots.isPlaceholderData) return [p];
         const live = slots.data.slots.find((s) => s.id === p.id);
         return live && (live.status === 'available' || live.status === 'mine') ? [{ ...p, price: live.price }] : [];
       }),
-    [picked, day, slots.data],
+    [picked, slots.data, slots.isPlaceholderData],
   );
   const chosenIds = useMemo(() => new Set(chosen.map((p) => p.id)), [chosen]);
-  const togglePick = (s: Slot) =>
-    setPicked((cur) => {
-      if (cur.some((p) => p.id === s.id)) return cur.filter((p) => p.id !== s.id);
-      if (cur.length >= MAX_SLOTS) {
-        haptic.error();
-        Alert.alert('That’s the maximum', `You can book up to ${MAX_SLOTS} slots in one go.`);
-        return cur;
-      }
-      // The slot's own id carries its date (`venue:YYYY-MM-DD:start`), never the date strip's state.
-      return [...cur, { ...s, day: (s.id.split(':')[1] as DayKey) ?? day }];
-    });
+  // Stable identity: tickets are memoised, so a tab tap or a pick never re-renders the whole grid.
+  const togglePick = useCallback(
+    (s: Slot) =>
+      setPicked((cur) => {
+        if (cur.some((p) => p.id === s.id)) return cur.filter((p) => p.id !== s.id);
+        if (cur.length >= MAX_SLOTS) {
+          haptic.error();
+          Alert.alert('That’s the maximum', `You can book up to ${MAX_SLOTS} slots in one go.`);
+          return cur;
+        }
+        // The slot's own id carries its date (`venue:YYYY-MM-DD:start`), never the date strip's state.
+        return [...cur, { ...s, day: (s.id.split(':')[1] as DayKey) ?? day }];
+      }),
+    [day],
+  );
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';
 
   const hold = useMutation({
@@ -231,7 +281,9 @@ export default function VenueScreen() {
     },
   });
 
-  const pickDay = (d: DayKey) => setDay(d);
+  const pickDay = useCallback((d: DayKey) => setDay(d), []);
+  const openCalendar = useCallback(() => setCalendarOpen(true), []);
+  const noneOpen = slotState === 'ready' && !slots.data!.slots.some((s) => s.status === 'available' || s.status === 'mine');
 
   const heroH = Math.round(width * 0.68) + insets.top * 0.4;
   // Header goes white (and shows the name) once the photo has scrolled under it.
@@ -266,6 +318,11 @@ export default function VenueScreen() {
     }, [scrolled.isScrolled]),
   );
 
+  const openMap = useCallback(
+    () => v && Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${v.latitude},${v.longitude}`),
+    [v],
+  );
+
   if (venue.isError) {
     return (
       <View style={[styles.root, { paddingTop: insets.top + space[8] }]}>
@@ -276,7 +333,6 @@ export default function VenueScreen() {
 
   const gallery = v?.photos.length ? v.photos : [null];
   const btnVariant = scrolled.isScrolled ? 'light' : 'blur';
-  const openMap = () => v && Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${v.latitude},${v.longitude}`);
 
   return (
     <View style={styles.root}>
@@ -400,134 +456,51 @@ export default function VenueScreen() {
                       haptic.select();
                       setTab(key);
                     }}
+                    onLayout={(e) => {
+                      const { x, width } = e.nativeEvent.layout;
+                      tabX.current[key] = { x, w: width };
+                      if (key === tab) moveLine(key, false);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8 }}
                     style={styles.tab}>
-                    <Text variant={active ? 'bodyStrong' : 'body'} color={active ? colors.text : colors.textMuted}>
+                    {/* Same weight in both states, so the labels never reflow when you switch. */}
+                    <Text variant="bodyStrong" color={active ? colors.text : colors.textMuted}>
                       {label}
                     </Text>
-                    {active ? (
-                      <Animated.View layout={LinearTransition.duration(200)} style={styles.tabLine} />
-                    ) : (
-                      <View style={styles.tabLineOff} />
-                    )}
                   </Pressable>
                 );
               })}
+            <Animated.View pointerEvents="none" style={[styles.tabLine, lineStyle]} />
           </View>
 
           <View style={{ minHeight: tabMinH }} onLayout={(e) => (tabH.current = e.nativeEvent.layout.height)}>
-            {tab === 'book' ? (
-              <Animated.View entering={FadeIn.duration(160)} style={styles.gap}>
-                <Card style={styles.bookCard}>
-                  {/* Select date */}
-                  <View style={styles.cardHead}>
-                    <Text variant="title">Select date</Text>
-                    <Pressable accessibilityRole="button" onPress={() => setCalendarOpen(true)} style={styles.monthBtn} hitSlop={6}>
-                      <CalendarDays size={18} color={colors.ink} strokeWidth={1.8} />
-                      <Text variant="label">{monthYear(day)}</Text>
-                      <ChevronDown size={16} color={colors.ink} strokeWidth={2.2} />
-                    </Pressable>
-                  </View>
-                  <ScrollView ref={dateScroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
-                    {days.map((d) => {
-                      const active = d === day;
-                      return (
-                        <PressableScale
-                          key={d}
-                          scaleTo={0.94}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          accessibilityLabel={formatDay(d)}
-                          onPress={() => {
-                            haptic.select();
-                            pickDay(d);
-                          }}
-                          style={[styles.date, active && styles.dateOn]}>
-                          <Text variant="label" color={active ? colors.ink : colors.textMuted}>
-                            {weekday(d)}
-                          </Text>
-                          <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
-                            {String(dayOfMonth(d)).padStart(2, '0')}
-                          </Text>
-                        </PressableScale>
-                      );
-                    })}
-                  </ScrollView>
-
-                  {/* Choose a time */}
-                  <View style={[styles.cardHead, styles.mtLg]}>
-                    <Text variant="title">Choose a time</Text>
-                    {v ? (
-                      <Text variant="label" color={colors.textMuted}>
-                        {v.sessionLengthMin} min each
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {slots.isPending || slots.isPlaceholderData ? (
-                    <View style={styles.skeletonGrid}>
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <Skeleton key={i} width="47%" height={72} r={radius.sm} />
-                      ))}
-                    </View>
-                  ) : slots.isError ? (
-                    <ErrorState message={slots.error.message} onRetry={slots.refetch} />
-                  ) : (
-                    <Timeline grouped={grouped} selectedIds={chosenIds} onPick={togglePick} />
-                  )}
-                  {slots.data &&
-                  !slots.isPlaceholderData &&
-                  !slots.data.slots.some((s) => s.status === 'available' || s.status === 'mine') ? (
-                    <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
-                      No open sessions on this day. Try another date.
-                    </Text>
-                  ) : null}
-                  <Text variant="caption" color={colors.textMuted} style={styles.mtSm}>
-                    Times shown in Dhaka time. Slots after 12 AM fall on the next calendar day.
-                  </Text>
-                </Card>
-
-                {/* Rules accordion */}
-                <Animated.View layout={LinearTransition.duration(200)}>
-                  <Card padded={false}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: rulesOpen }}
-                      onPress={() => setRulesOpen((o) => !o)}
-                      style={styles.accordionHead}>
-                      <FileText size={22} color={colors.ink} strokeWidth={1.6} />
-                      <Text variant="body" style={styles.flex}>
-                        Venue rules & cancellation
-                      </Text>
-                      <ChevronDown size={20} color={colors.ink} style={rulesOpen ? styles.flip : undefined} />
-                    </Pressable>
-                    {rulesOpen && v ? (
-                      <Animated.View entering={FadeIn.duration(180)} style={styles.accordionBody}>
-                        {v.rules.map((r) => (
-                          <View key={r} style={styles.ruleRow}>
-                            <CircleCheck size={16} color={colors.limeText} />
-                            <Text variant="label" color={colors.textMuted} style={styles.flex}>
-                              {r}
-                            </Text>
-                          </View>
-                        ))}
-                        <Divider style={styles.divider} />
-                        <Text variant="labelStrong">Cancellation</Text>
-                        <Text variant="label" color={colors.textMuted}>
-                          {v.cancellationPolicy}
-                        </Text>
-                      </Animated.View>
-                    ) : null}
-                  </Card>
-                </Animated.View>
-              </Animated.View>
-            ) : tab === 'details' && v ? (
-              <Animated.View entering={FadeIn.duration(160)}>
+            <View style={[styles.gap, tab !== 'book' && styles.hidden]}>
+              <BookPane
+                v={v}
+                days={days}
+                day={day}
+                onPickDay={pickDay}
+                onOpenCalendar={openCalendar}
+                dateScroll={dateScroll}
+                grouped={grouped}
+                selectedIds={chosenIds}
+                onPick={togglePick}
+                state={slotState}
+                revealKey={slotState === 'ready' ? (shownDay ?? null) : null}
+                errorMessage={slots.error?.message}
+                onRetry={slots.refetch}
+                noneOpen={noneOpen}
+              />
+            </View>
+            {visited.details && v ? (
+              <View style={tab !== 'details' && styles.hidden}>
                 <DetailsTab v={v} onDirections={openMap} />
-              </Animated.View>
-            ) : tab === 'reviews' ? (
-              <Animated.View entering={FadeIn.duration(160)}>
+              </View>
+            ) : null}
+            {visited.reviews ? (
+              <View style={tab !== 'reviews' && styles.hidden}>
                 <ReviewsTab data={reviews.data} loading={reviews.isPending} />
-              </Animated.View>
+              </View>
             ) : null}
           </View>
         </View>
@@ -727,21 +700,193 @@ function AmenityStrip({ v }: { v: VenueDetail }) {
   );
 }
 
-/** Time picker grouped by part of day, with a vertical timeline on the left. */
-function Timeline({
+type SlotState = 'first' | 'loading' | 'ready' | 'error';
+
+/** One date in the strip. Memoised: a tap re-renders just the two chips that changed. */
+const DateChip = memo(function DateChip({ d, active, onPick }: { d: DayKey; active: boolean; onPick: (d: DayKey) => void }) {
+  return (
+    <PressableScale
+      scaleTo={0.94}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={formatDay(d)}
+      onPress={() => {
+        haptic.select();
+        onPick(d);
+      }}
+      style={[styles.date, active && styles.dateOn]}>
+      <Text variant="label" color={active ? colors.ink : colors.textMuted}>
+        {weekday(d)}
+      </Text>
+      <Text variant="bodyStrong" color={colors.ink} style={styles.dateNum}>
+        {String(dayOfMonth(d)).padStart(2, '0')}
+      </Text>
+    </PressableScale>
+  );
+});
+
+/**
+ * The "Book a slot" tab. Memoised with stable props, so switching tabs, scrolling past the
+ * header or opening the price bar never re-renders the date strip or the ticket grid.
+ */
+const BookPane = memo(function BookPane({
+  v,
+  days,
+  day,
+  onPickDay,
+  onOpenCalendar,
+  dateScroll,
   grouped,
   selectedIds,
   onPick,
+  state,
+  revealKey,
+  errorMessage,
+  onRetry,
+  noneOpen,
+}: {
+  v?: VenueDetail;
+  days: DayKey[];
+  day: DayKey;
+  onPickDay: (d: DayKey) => void;
+  onOpenCalendar: () => void;
+  dateScroll: RefObject<ScrollViewInstance | null>;
+  grouped: Record<DayPart, Slot[]>;
+  selectedIds: Set<string>;
+  onPick: (s: Slot) => void;
+  state: SlotState;
+  revealKey: string | null;
+  errorMessage?: string;
+  onRetry: () => void;
+  noneOpen: boolean;
+}) {
+  const [rulesOpen, setRulesOpen] = useState(false);
+  return (
+    <>
+      <Card style={styles.bookCard}>
+        {/* Select date */}
+        <View style={styles.cardHead}>
+          <Text variant="title">Select date</Text>
+          <Pressable accessibilityRole="button" onPress={onOpenCalendar} style={styles.monthBtn} hitSlop={6}>
+            <CalendarDays size={18} color={colors.ink} strokeWidth={1.8} />
+            <Text variant="label">{monthYear(day)}</Text>
+            <ChevronDown size={16} color={colors.ink} strokeWidth={2.2} />
+          </Pressable>
+        </View>
+        <ScrollView ref={dateScroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dates}>
+          {days.map((d) => (
+            <DateChip key={d} d={d} active={d === day} onPick={onPickDay} />
+          ))}
+        </ScrollView>
+
+        {/* Choose a time */}
+        <View style={[styles.cardHead, styles.mtLg]}>
+          <Text variant="title">Choose a time</Text>
+          {v ? (
+            <Text variant="label" color={colors.textMuted}>
+              {v.sessionLengthMin} min each
+            </Text>
+          ) : null}
+        </View>
+
+        {state === 'first' ? (
+          <View style={styles.skeletonGrid}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} width="47%" height={72} r={radius.sm} />
+            ))}
+          </View>
+        ) : state === 'error' ? (
+          <ErrorState message={errorMessage ?? 'Could not load times.'} onRetry={onRetry} />
+        ) : (
+          <Timeline grouped={grouped} selectedIds={selectedIds} onPick={onPick} loading={state === 'loading'} revealKey={revealKey} />
+        )}
+        {noneOpen ? (
+          <Text variant="label" color={colors.textMuted} style={styles.mtSm}>
+            No open sessions on this day. Try another date.
+          </Text>
+        ) : null}
+        <Text variant="caption" color={colors.textMuted} style={styles.mtSm}>
+          Times shown in Dhaka time. Slots after 12 AM fall on the next calendar day.
+        </Text>
+      </Card>
+
+      {/* Rules accordion */}
+      <Animated.View layout={LinearTransition.duration(200)}>
+        <Card padded={false}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: rulesOpen }}
+            onPress={() => setRulesOpen((o) => !o)}
+            style={styles.accordionHead}>
+            <FileText size={22} color={colors.ink} strokeWidth={1.6} />
+            <Text variant="body" style={styles.flex}>
+              Venue rules & cancellation
+            </Text>
+            <ChevronDown size={20} color={colors.ink} style={rulesOpen ? styles.flip : undefined} />
+          </Pressable>
+          {rulesOpen && v ? (
+            <Animated.View entering={FadeIn.duration(180)} style={styles.accordionBody}>
+              {v.rules.map((r) => (
+                <View key={r} style={styles.ruleRow}>
+                  <CircleCheck size={16} color={colors.limeText} />
+                  <Text variant="label" color={colors.textMuted} style={styles.flex}>
+                    {r}
+                  </Text>
+                </View>
+              ))}
+              <Divider style={styles.divider} />
+              <Text variant="labelStrong">Cancellation</Text>
+              <Text variant="label" color={colors.textMuted}>
+                {v.cancellationPolicy}
+              </Text>
+            </Animated.View>
+          ) : null}
+        </Card>
+      </Animated.View>
+    </>
+  );
+});
+
+/** Time picker grouped by part of day, with a vertical timeline on the left. */
+const Timeline = memo(function Timeline({
+  grouped,
+  selectedIds,
+  onPick,
+  loading,
+  revealKey,
 }: {
   grouped: Record<DayPart, Slot[]>;
   selectedIds: Set<string>;
   onPick: (s: Slot) => void;
+  loading: boolean;
+  revealKey: string | null;
 }) {
+  // Lazy first paint: the first screenful mounts now, the rest on the next frame.
+  const [limit, setLimit] = useState(FIRST_BATCH);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setLimit(Infinity));
+    return () => cancelAnimationFrame(r);
+  }, []);
+  // Each new day's times "print" onto the tickets with a short stagger (UI thread).
+  const reveal = useSharedValue(0);
+  useEffect(() => {
+    if (!revealKey) return;
+    reveal.set(0);
+    reveal.set(withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }));
+  }, [revealKey, reveal]);
+  // One pulse clock for every placeholder, running only while a day is loading.
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    if (!loading) return void cancelAnimation(pulse);
+    pulse.set(withRepeat(withSequence(withTiming(0, { duration: 650 }), withTiming(1, { duration: 650 })), -1));
+    return () => cancelAnimation(pulse);
+  }, [loading, pulse]);
   const parts = PARTS.filter((p) => grouped[p.key].length);
+  let n = 0;
   return (
     <View>
       {parts.map((p, i) => {
-        const active = grouped[p.key].some((s) => selectedIds.has(s.id));
+        const active = !loading && grouped[p.key].some((s) => selectedIds.has(s.id));
         const first = i === 0;
         const last = i === parts.length - 1;
         return (
@@ -757,11 +902,24 @@ function Timeline({
               </View>
             </View>
             <View style={styles.slotGrid}>
-              {grouped[p.key].map((s) => (
-                <View key={s.id} style={styles.slotCell}>
-                  <SlotTicket slot={s} selected={selectedIds.has(s.id)} onPress={onPick} />
-                </View>
-              ))}
+              {grouped[p.key].map((s) => {
+                const index = n++;
+                if (index >= limit) return <View key={s.start} style={[styles.slotCell, styles.slotSpacer]} />;
+                return (
+                  // Keyed by time of day, not slot id: switching dates updates these tickets in
+                  // place instead of tearing down and re-measuring every SVG.
+                  <View key={s.start} style={styles.slotCell}>
+                    <SlotTicket
+                      slot={s}
+                      selected={selectedIds.has(s.id)}
+                      onPress={onPick}
+                      loading={loading}
+                      reveal={reveal}
+                      index={index}
+                    />
+                  </View>
+                );
+              })}
               {grouped[p.key].length % 2 ? <View style={styles.slotCell} /> : null}
             </View>
           </View>
@@ -769,9 +927,9 @@ function Timeline({
       })}
     </View>
   );
-}
+});
 
-function DetailsTab({ v, onDirections }: { v: VenueDetail; onDirections: () => void }) {
+const DetailsTab = memo(function DetailsTab({ v, onDirections }: { v: VenueDetail; onDirections: () => void }) {
   return (
     <View style={styles.gap}>
       <Card style={styles.gapSm}>
@@ -812,9 +970,9 @@ function DetailsTab({ v, onDirections }: { v: VenueDetail; onDirections: () => v
       </Card>
     </View>
   );
-}
+});
 
-function ReviewsTab({ data, loading }: { data?: Awaited<ReturnType<typeof api.getReviews>>; loading: boolean }) {
+const ReviewsTab = memo(function ReviewsTab({ data, loading }: { data?: Awaited<ReturnType<typeof api.getReviews>>; loading: boolean }) {
   const [now] = useState(() => Date.now());
   if (loading || !data) return <Skeleton height={180} r={radius.lg} />;
   const max = Math.max(...Object.values(data.histogram), 1);
@@ -872,7 +1030,7 @@ function ReviewsTab({ data, loading }: { data?: Awaited<ReturnType<typeof api.ge
       </Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
@@ -931,9 +1089,10 @@ const styles = StyleSheet.create({
   stripDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
 
   tabs: { flexDirection: 'row', gap: space[6], borderBottomWidth: 1, borderBottomColor: colors.border, marginTop: space[1] },
-  tab: { paddingTop: space[2], gap: space[2], alignItems: 'flex-start' },
-  tabLine: { height: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.lime, marginBottom: -1 },
-  tabLineOff: { height: 3, marginBottom: -1 },
+  tab: { paddingTop: space[2], paddingBottom: space[2] + 3, alignItems: 'flex-start' },
+  tabLine: { position: 'absolute', left: 0, bottom: -1, height: 3, borderRadius: 2, backgroundColor: colors.lime },
+  hidden: { display: 'none' },
+  slotSpacer: { height: 88 },
 
   bookCard: { paddingVertical: space[4], paddingHorizontal: space[3] },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space[3] },
