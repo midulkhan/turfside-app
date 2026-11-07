@@ -24,6 +24,25 @@ d('mobile app client ↔ live API', () => {
     ApiError = (await import('../../../src/features/api/types')).ApiError;
   });
 
+  it('sends only ASCII header values (Android rejects the whole request otherwise)', async () => {
+    const http = await import('../../../src/features/api/http');
+    http.setDeviceLabel('Pixel 8 · Android 15 — Café'); // "·", "—", "é" are all non-ASCII
+    const seen: Record<string, string>[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(Object.fromEntries(new Headers(init?.headers).entries()));
+      return real(input, init);
+    }) as typeof fetch;
+    try {
+      await api.getConfig();
+    } finally {
+      globalThis.fetch = real;
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    for (const h of seen) for (const [k, v] of Object.entries(h)) expect(`${k}: ${v}`).toMatch(/^[\x20-\x7E]*$/);
+    expect(decodeURIComponent(seen[0]['x-device'])).toBe('Pixel 8 · Android 15 — Café');
+  });
+
   it('reads public config', async () => {
     const c = await api.getConfig();
     expect(c.paymentsEnabled).toBe(true);

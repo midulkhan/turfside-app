@@ -55,7 +55,16 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
 }
 
 // "x-device" is a short label the app sends ("iPhone 15 · iOS 18.1"), shown under Signed-in devices.
-const deviceLabel = (h: unknown) => (typeof h === 'string' ? h.replace(/[^\w .,·()+-]/g, '').trim().slice(0, 60) || undefined : undefined);
+const deviceLabel = (h: unknown) => {
+  if (typeof h !== 'string') return undefined;
+  let v = h;
+  try {
+    v = decodeURIComponent(h); // the app URL-encodes it (header values must be ASCII)
+  } catch {
+    /* use as sent */
+  }
+  return v.replace(/[^\p{L}\p{N} .,·()+-]/gu, '').trim().slice(0, 60) || undefined;
+};
 const meta = (req: FastifyRequest) => ({ ip: req.ip, ua: req.headers['user-agent'], device: deviceLabel(req.headers['x-device']) });
 const idem = (req: FastifyRequest) => (typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined);
 

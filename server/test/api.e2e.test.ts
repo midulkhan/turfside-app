@@ -361,7 +361,8 @@ d('cart: one order, one turf, many slots', () => {
 
 d('account: settings, devices, password, deletion', () => {
   const login = async (phone: string, password: string, device: string) =>
-    call('POST', '/v1/auth/login', { identifier: phone, password }, undefined, { 'x-device': device });
+    // Sent URL-encoded like the app (header values must be ASCII for Android's HTTP stack).
+    call('POST', '/v1/auth/login', { identifier: phone, password }, undefined, { 'x-device': encodeURIComponent(device) });
 
   it('toggles the notification setting', async () => {
     const a = await newUser('Settings');
@@ -387,7 +388,7 @@ d('account: settings, devices, password, deletion', () => {
     expect(others.json.signedOut).toBe(1);
     expect(((await call('GET', '/v1/me/sessions', undefined, p.accessToken)).json as Json[]).length).toBe(1);
     // Still signed in here after a refresh rotation.
-    const r = (await call('POST', '/v1/auth/refresh', { refreshToken: p.refreshToken }, undefined, { 'x-device': 'iPhone 15 · iOS 18.1' })).json;
+    const r = (await call('POST', '/v1/auth/refresh', { refreshToken: p.refreshToken }, undefined, { 'x-device': encodeURIComponent('iPhone 15 · iOS 18.1') })).json;
     expect((await call('GET', '/v1/me/sessions', undefined, r.accessToken)).json[0].current).toBe(true);
   });
 

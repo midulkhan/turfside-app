@@ -2,9 +2,9 @@ import { tokens } from './tokens';
 import { ApiError, type ApiErrorCode, type AuthResult } from './types';
 
 /** Device label for "Signed-in devices" (set at app start, see lib/device-label). */
-let DEVICE = 'Unknown device';
+let DEVICE = encodeURIComponent('Unknown device');
 export function setDeviceLabel(label: string) {
-  DEVICE = label.slice(0, 60);
+  DEVICE = encodeURIComponent(label.slice(0, 60));
 }
 
 /** Set EXPO_PUBLIC_API_URL in .env to point the app at another server (e.g. a local one). */
@@ -68,7 +68,10 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (o.body !== undefined) headers['Content-Type'] = 'application/json';
   if (o.idempotencyKey) headers['Idempotency-Key'] = o.idempotencyKey;
-  headers['X-Device'] = DEVICE; // shown under Privacy & security → Signed-in devices
+  // Shown under Privacy & security → Signed-in devices. URL-encoded: header values must be plain
+  // ASCII (Android's HTTP stack rejects the whole request otherwise, e.g. for "·" or an
+  // accented device name).
+  headers['X-Device'] = DEVICE;
   if (o.auth && o.auth !== 'none') {
     await tokens.load();
     if (tokens.access) headers.Authorization = `Bearer ${tokens.access}`;
