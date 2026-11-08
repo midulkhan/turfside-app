@@ -1,11 +1,10 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useScrollToTop } from 'expo-router';
 import { Bell, ChevronDown, MapPin, Menu, Radar, Search } from 'lucide-react-native';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 
+import { BannerSlider } from '@/components/explore/banner-slider';
 import { SideMenu } from '@/components/navigation/side-menu';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { SectionTitle } from '@/components/ui/headers';
@@ -98,38 +97,8 @@ export default function Explore() {
 
   const header = (
     <View>
-      <View style={styles.hero}>
-        <Image
-          source={require('@/assets/photos/hero-ball.webp')}
-          style={styles.heroImg}
-          contentFit="cover"
-          contentPosition="right center"
-          priority="high"
-          cachePolicy="memory-disk"
-          accessibilityIgnoresInvertColors
-        />
-        {/* Feather the photo's edges into the page so it never shows a box. */}
-        <LinearGradient
-          pointerEvents="none"
-          // Fully opaque until just past the photo's left edge, then feathers out (in light mode
-          // the photo's own background matches the page; in dark mode its edge must be covered).
-          colors={[colors.bg, colors.bg, colors.bgClear]}
-          locations={[0, 0.4, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.fadeLeft}
-        />
-        <LinearGradient pointerEvents="none" colors={[colors.bgClear, colors.bg]} style={styles.fadeBottom} />
-        <LinearGradient pointerEvents="none" colors={[colors.bg, colors.bgClear]} style={styles.fadeTop} />
-        <View style={styles.heroText}>
-          <View style={styles.accent} />
-          <Text variant="display" style={styles.display}>
-            {'Find your\nnext pitch.'}
-          </Text>
-          <Text variant="caption" color={colors.textMuted} style={styles.tagline} numberOfLines={1}>
-            THE CITY IS YOUR PLAYGROUND
-          </Text>
-        </View>
+      <View style={styles.banners}>
+        <BannerSlider />
       </View>
 
       <View style={styles.searchRow}>
@@ -228,15 +197,7 @@ const styles = createStyles(() => ({
   placeName: { flexShrink: 1 },
   actions: { flexDirection: 'row', gap: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
-  hero: { height: 164, justifyContent: 'flex-end', paddingBottom: space[3], overflow: 'hidden' }, // keep the photo (and its pitch base) inside the fades
-  heroImg: { position: 'absolute', right: -50, top: -10, width: 380, height: 215 },
-  fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '62%' },
-  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 },
-  fadeTop: { position: 'absolute', left: 0, right: 0, top: -10, height: 50 },
-  heroText: { paddingHorizontal: gutter, gap: space[2], maxWidth: 252 },
-  accent: { width: 46, height: 5, borderRadius: 3, backgroundColor: colors.lime },
-  display: { fontSize: 30, lineHeight: 32, letterSpacing: -0.9 },
-  tagline: { fontSize: 10.5, lineHeight: 14, letterSpacing: 1.4 },
+  banners: { paddingTop: space[3], paddingBottom: space[4] },
   searchRow: { flexDirection: 'row', gap: space[2], paddingHorizontal: gutter },
   search: {
     flex: 1,
