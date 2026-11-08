@@ -61,12 +61,8 @@ export default function Explore() {
       data.near.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     if (data.further.length) {
-      out.push({
-        type: 'header',
-        key: 'h-far',
-        title: data.near.length ? 'A bit further' : 'Closest to you',
-        hint: data.near.length ? undefined : `Within ${radiusKm} km`,
-      });
+      // Further turfs simply continue the list; a heading only when nothing is near.
+      if (!data.near.length) out.push({ type: 'header', key: 'h-far', title: 'Closest to you', hint: `Within ${radiusKm} km` });
       data.further.forEach((v) => out.push({ type: 'venue', key: v.id, venue: v }));
     }
     return out;
