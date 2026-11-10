@@ -8,6 +8,8 @@ jobs:
         run: |
           curl -sS -m 20 https://api.turfsides.com/health; echo
           curl -sS -m 20 https://api.turfsides.com/v1/config; echo
+          echo "matches:"; curl -sS -m 20 "https://api.turfsides.com/v1/matches?limit=2"; echo
+          echo "explore page:"; curl -sS -m 20 "https://api.turfsides.com/v1/venues/explore?lat=23.81&lng=90.42&limit=2" | head -c 300; echo
           curl -sS -m 20 -o /dev/null -w "seed photo: HTTP %{http_code} %{content_type} %{size_download} bytes\n" https://api.turfsides.com/static/seed/venue-arena.webp
           echo "images.turfsides.com:"; curl -sS -m 20 -o /dev/null -w "HTTP %{http_code} via %{remote_ip}\n" https://images.turfsides.com/does-not-exist.webp || true
           curl -sSI -m 20 https://images.turfsides.com/does-not-exist.webp | grep -iE "^server|^cf-ray" || true
