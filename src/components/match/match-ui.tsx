@@ -17,7 +17,7 @@ import type { Match, MatchLevel, MatchPosition } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { dhakaToday, formatClock, formatDay, formatRange, type DayKey } from '@/lib/time';
-import { colors, font, radius, space } from '@/theme/tokens';
+import { colors, font, radius, size, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 export const LEVELS: { key: MatchLevel; label: string }[] = [
@@ -104,7 +104,7 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
     ]);
 
   const state = (label: string, inSquad = false) => (
-    <View style={[styles.state, inSquad && styles.stateIn, fill && styles.flex]}>
+    <View style={[styles.state, compact && styles.stateSm, inSquad && styles.stateIn, fill && styles.flex]}>
       {inSquad ? <CircleCheck size={18} color={colors.limeText} strokeWidth={2} /> : null}
       <Text variant={inSquad ? 'labelStrong' : 'label'} color={inSquad ? colors.limeText : colors.textMuted} numberOfLines={1}>
         {label}
@@ -115,12 +115,13 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
 
   switch (m.my) {
     case 'owner':
-      return <Button label="Manage match" variant="outline" icon={Settings2} style={grow} onPress={() => router.push({ pathname: '/match/[id]', params: { id: m.id } })} />;
+      return <Button small={compact} label="Manage match" variant="outline" icon={Settings2} style={grow} onPress={() => router.push({ pathname: '/match/[id]', params: { id: m.id } })} />;
     case 'pending':
-      return <Button label={compact ? 'Withdraw' : 'Request sent · Withdraw'} variant="outline" icon={Clock3} loading={leave.isPending} style={grow} onPress={withdraw} />;
+      return <Button small={compact} label={compact ? 'Withdraw' : 'Request sent · Withdraw'} variant="outline" icon={Clock3} loading={leave.isPending} style={grow} onPress={withdraw} />;
     case 'accepted':
       return (
         <Button
+          small={compact}
           label={compact ? `Pay ${formatTaka(total)}` : `Pay ${formatTaka(total)} to confirm`}
           trailingIcon={ArrowRight}
           style={grow}
@@ -134,7 +135,7 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
       if (m.status !== 'open') return state('Requests are paused');
       // Declined, or the pay window ran out: they can ask again while spots are open.
       const again = m.my === 'declined' || m.my === 'expired';
-      return <Button label={again ? 'Request again' : 'Request to join'} variant="dark" icon={again ? RotateCcw : undefined} style={grow} onPress={() => onJoin(m)} />;
+      return <Button small={compact} label={again ? 'Request again' : 'Request to join'} variant="dark" icon={again ? RotateCcw : undefined} style={grow} onPress={() => onJoin(m)} />;
     }
   }
 }
@@ -207,7 +208,7 @@ export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
         </Text>
       </View>
       <View style={styles.action}>
-        <Button label="View" variant="outline" icon={Eye} onPress={() => openDetails(m.id)} />
+        <Button label="View" variant="outline" icon={Eye} small onPress={() => openDetails(m.id)} />
       </View>
     </Card>
   );
@@ -382,6 +383,7 @@ const styles = createStyles(() => ({
   faceRow: { flexDirection: 'row', alignItems: 'center' },
   action: { padding: space[3], paddingTop: space[3], gap: space[2] },
   state: { minHeight: 48, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: space[2], paddingHorizontal: space[4] },
+  stateSm: { minHeight: size.controlSm },
   stateIn: { backgroundColor: colors.limeSoft },
   bar: { flexDirection: 'row', gap: 4 },
   seg: { flex: 1, height: 8, borderRadius: 4 },
