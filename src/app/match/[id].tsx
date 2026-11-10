@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, CalendarDays, CircleCheck, Info, MapPin, Pause, Pencil, Play, Share2, UsersRound } from 'lucide-react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { CalendarDays, CircleCheck, Info, MapPin, Pause, Pencil, Play, Share2, UsersRound } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,7 @@ import { SquadBar, Tag, clockLabel, levelLabel, positionLabel, whenLabel } from 
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { IconButton } from '@/components/ui/icon-button';
+import { ScreenHeader } from '@/components/ui/headers';
 import { Input } from '@/components/ui/input';
 import { Photo } from '@/components/ui/photo';
 import { Sheet } from '@/components/ui/sheet';
@@ -38,13 +38,7 @@ export default function ManageMatch() {
   return (
     <View style={styles.root}>
       <StickyHeader progress={scrolled.progress}>
-        <View style={[styles.topBar, { paddingTop: insets.top + space[2] }]}>
-          <IconButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
-          <Text variant="title" align="center" style={styles.flex}>
-            Manage match
-          </Text>
-          <View style={styles.side} />
-        </View>
+        <ScreenHeader title="Manage match" />
       </StickyHeader>
 
       {q.isError && !m ? (
@@ -297,8 +291,6 @@ function TitleSheet({ visible, initial, saving, onClose, onSave }: { visible: bo
 const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingBottom: space[2] },
-  side: { width: 48 },
   content: { paddingHorizontal: gutter, paddingTop: space[3], gap: space[3] },
   loading: { gap: space[4] },
   pill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.limeSoft },

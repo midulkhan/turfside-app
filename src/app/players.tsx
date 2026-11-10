@@ -108,7 +108,7 @@ export default function Players() {
   return (
     <View style={styles.root}>
       <StickyHeader progress={scrolled.progress}>
-        <View style={[styles.topBar, { paddingTop: insets.top + space[2] }]}>
+        <View style={styles.topBar}>
           <IconButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
           <View style={styles.flex}>
             <Text variant="pageTitle" numberOfLines={1}>
@@ -197,7 +197,7 @@ export default function Players() {
 const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingBottom: space[2] },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingVertical: space[2] },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   headerBlock: { paddingHorizontal: gutter, paddingTop: space[3], gap: space[4] },
   banner: { height: 152, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#06361A', justifyContent: 'center' },
