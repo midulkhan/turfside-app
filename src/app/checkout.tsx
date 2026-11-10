@@ -34,8 +34,8 @@ import { ErrorState } from '@/components/ui/states';
 import { Stepper } from '@/components/ui/stepper';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { qk, useHold } from '@/features/api/queries';
-import { ApiError } from '@/features/api/types';
+import { qk, useHold, useMatch } from '@/features/api/queries';
+import { ApiError, type QuoteLine } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { newIdempotencyKey } from '@/lib/ids';
@@ -53,18 +53,80 @@ function useCountdown(expiresAt?: number) {
     return () => clearInterval(t);
   }, []);
   const left = expiresAt ? Math.max(0, expiresAt - now) : 0;
-  const m = Math.floor(left / 60000);
+  const h = Math.floor(left / 3_600_000);
+  const m = Math.floor((left % 3_600_000) / 60000);
   const s = Math.floor((left % 60000) / 1000);
-  return { left, label: `${m}:${String(s).padStart(2, '0')}` };
+  const mm = h ? String(m).padStart(2, '0') : String(m);
+  return { left, label: `${h ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}` };
 }
 
+/** What checkout shows, from a cart hold or from your share of a match. */
+type Summary = {
+  photo: string | null;
+  name: string;
+  place: string;
+  format: string;
+  slots: { id: string; day: string; start: number; end: number }[];
+  lines: QuoteLine[];
+  total: number;
+  expiresAt: number;
+  policy: string;
+};
+
+/**
+ * Checkout. Two kinds of payment, one screen:
+ *  - `?holdId=` a cart of held slots (the booking flow)
+ *  - `?match=`  your share of a match you were accepted into (find players)
+ */
 export default function Checkout() {
-  const { holdId } = useLocalSearchParams<{ holdId: string }>();
+  const { holdId, match: matchId } = useLocalSearchParams<{ holdId?: string; match?: string }>();
+  const isShare = !!matchId;
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { user } = useSession();
-  const hold = useHold(holdId);
-  const { left, label } = useCountdown(hold.data?.expiresAt);
+  const hold = useHold(isShare ? undefined : holdId);
+  const match = useMatch(matchId);
+  const mt = match.data;
+  const h: Summary | undefined = isShare
+    ? mt && mt.my === 'accepted' && mt.payBy
+      ? {
+          photo: mt.venue.photo,
+          name: mt.venue.name,
+          place: mt.venue.area,
+          format: mt.format,
+          slots: [{ id: '', day: mt.day, start: mt.start, end: mt.end }],
+          lines: [{ label: 'Your share', detail: `${mt.title} · 1 of ${mt.playersTotal} players`, amount: mt.share }],
+          total: mt.share,
+          expiresAt: mt.payBy,
+          policy:
+            "Your share secures your place in the squad. If the organiser cancels the game, you get a full refund. Can't make it? Let the organiser know — paid shares aren't refunded otherwise.",
+        }
+      : undefined
+    : hold.data
+      ? {
+          photo: hold.data.venue.photo,
+          name: hold.data.venue.name,
+          place: `${hold.data.venue.area}, ${hold.data.venue.city}`,
+          format: hold.data.venue.formats[0],
+          slots: hold.data.slots ?? [{ id: '', day: hold.data.day, start: hold.data.start, end: hold.data.end }],
+          lines: hold.data.lines,
+          total: hold.data.total,
+          expiresAt: hold.data.expiresAt,
+          policy: hold.data.cancellationPolicy,
+        }
+      : undefined;
+  // A share that is no longer payable (paid, expired, withdrawn…) has nothing to check out.
+  const shareGone = isShare && !!mt && !(mt.my === 'accepted' && mt.payBy);
+  const loadError = isShare
+    ? match.isError
+      ? match.error
+      : shareGone
+        ? new Error(mt?.my === 'paid' ? "You've already paid. You're in the squad." : 'This spot is no longer reserved for you.')
+        : null
+    : hold.isError
+      ? hold.error
+      : null;
+  const { left, label } = useCountdown(h?.expiresAt);
   const [paying, setPaying] = useState(false);
   // One idempotency key per hold: a retry after a network drop can never charge twice.
   const payKey = useRef(newIdempotencyKey());
@@ -96,14 +158,16 @@ export default function Checkout() {
     }
   };
 
-  const expired = !!hold.data && left === 0;
+  const expired = !!h && left === 0;
 
   const pay = async () => {
-    if (!hold.data || expired) return;
+    if (!h || expired) return;
     setPaying(true);
     try {
       const returnUrl = Linking.createURL('payment-return');
-      const { paymentId, checkoutUrl } = await api.startPayment(hold.data.holdId, payKey.current, returnUrl);
+      const { paymentId, checkoutUrl } = isShare
+        ? await api.startSharePayment(matchId!, payKey.current, returnUrl)
+        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl);
       let cancelled = false;
       if (checkoutUrl) {
         // bKash hosted checkout. The redirect back is NOT proof of payment —
@@ -113,7 +177,17 @@ export default function Checkout() {
       }
       for (let i = 0; i < (cancelled ? 1 : POLL_ATTEMPTS); i++) {
         const res = await api.getPaymentStatus(paymentId);
-        if (res.status === 'confirmed' && res.bookingId) {
+        if (res.status === 'confirmed' && res.kind === 'share') {
+          paid.current = true;
+          haptic.success();
+          qc.invalidateQueries({ queryKey: ['matches'] });
+          qc.invalidateQueries({ queryKey: qk.match(matchId!) });
+          qc.invalidateQueries({ queryKey: ['notifications'] });
+          router.dismissTo('/players');
+          Alert.alert("You're in the squad", `See you at ${h.name}, ${formatDay(h.slots[0].day, { year: false })}.`);
+          return;
+        }
+        if (res.status === 'confirmed' && res.bookingId && hold.data) {
           paid.current = true;
           haptic.success();
           qc.invalidateQueries({ queryKey: qk.myHolds });
@@ -127,7 +201,7 @@ export default function Checkout() {
         if (res.status === 'failed' || cancelled) {
           // That payment is closed for good, so a retry needs a fresh key.
           payKey.current = newIdempotencyKey();
-          qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
+          if (hold.data) qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
           throw new Error(
             cancelled
               ? 'You cancelled the bKash payment. Nothing was charged.'
@@ -141,13 +215,15 @@ export default function Checkout() {
       haptic.error();
       const title = e instanceof ApiError && e.code === 'not_configured' ? 'Payments are not live yet' : 'Payment not completed';
       Alert.alert(title, e instanceof Error ? e.message : 'Please try again.');
-      if (e instanceof ApiError && e.code === 'hold_expired') qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
+      if (e instanceof ApiError && e.code === 'hold_expired') {
+        if (hold.data) qc.invalidateQueries({ queryKey: ['hold', hold.data.holdId] });
+        if (isShare) qc.invalidateQueries({ queryKey: qk.match(matchId!) });
+      }
     } finally {
       setPaying(false);
     }
   };
 
-  const h = hold.data;
   const scrolled = useScrolled();
   const phoneMasked = user?.phone ? `+880 ${user.phone.slice(0, 4)}••••${user.phone.slice(-2)}` : '';
 
@@ -156,12 +232,15 @@ export default function Checkout() {
       <StickyHeader progress={scrolled.progress}>
         <ScreenHeader title="Checkout" />
         <View style={styles.stepper}>
-          <Stepper steps={['Select slot', 'Review & pay', 'Confirmed']} current={1} />
+          <Stepper
+            steps={isShare ? ['Accepted', 'Pay your share', 'In the squad'] : ['Select slot', 'Review & pay', 'Confirmed']}
+            current={1}
+          />
         </View>
       </StickyHeader>
 
-      {hold.isError ? (
-        <ErrorState message={hold.error.message} onRetry={() => router.back()} />
+      {loadError ? (
+        <ErrorState message={loadError.message} onRetry={() => router.back()} />
       ) : (
         <ScrollView
           onScroll={scrolled.onScroll}
@@ -174,38 +253,42 @@ export default function Checkout() {
               <Timer size={16} color={expired ? colors.danger : colors.limeText} strokeWidth={2} />
               <Text variant="label" color={expired ? colors.danger : colors.limeText}>
                 {expired
-                  ? 'Your hold expired — go back and pick again'
-                  : `${(h.slots?.length ?? 1) > 1 ? `${h.slots!.length} slots held` : 'Slot held'} for you · ${label}`}
+                  ? isShare
+                    ? 'Your reserved spot has expired'
+                    : 'Your hold expired — go back and pick again'
+                  : isShare
+                    ? `Spot reserved for you · ${label}`
+                    : `${h.slots.length > 1 ? `${h.slots.length} slots held` : 'Slot held'} for you · ${label}`}
               </Text>
             </View>
           ) : null}
 
           {/* Booking summary ticket */}
           <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={12} style={styles.ticket}>
-            {h ? <Photo source={h.venue.photo} style={styles.photo} /> : <Skeleton height={150} r={radius.md} />}
+            {h ? <Photo source={h.photo} style={styles.photo} /> : <Skeleton height={150} r={radius.md} />}
             {h ? (
               <View style={styles.formatBadge}>
                 <UsersRound size={14} color={colors.textOnDark} />
                 <Text variant="caption" color={colors.textOnDark}>
-                  {h.venue.formats[0]}
+                  {h.format}
                 </Text>
               </View>
             ) : null}
             <View style={styles.ticketBody}>
               <Text variant="title" style={styles.venueName}>
-                {h?.venue.name ?? ' '}
+                {h?.name ?? ' '}
               </Text>
               <View style={styles.row}>
                 <MapPin size={14} color={colors.textMuted} strokeWidth={1.7} />
                 <Text variant="body" color={colors.textMuted} style={styles.small}>
-                  {h ? `${h.venue.area}, ${h.venue.city}` : ' '}
+                  {h ? h.place : ' '}
                 </Text>
               </View>
             </View>
             <TicketDivider />
             {h ? (
               <View style={styles.slotList}>
-                {(h.slots ?? [{ id: '', day: h.day, start: h.start, end: h.end }]).map((sl, i) => (
+                {h.slots.map((sl, i) => (
                   <View key={sl.id || i} style={[styles.slotRow, i > 0 && styles.slotRowDivider]}>
                     <CalendarDays size={16} color={colors.textMuted} strokeWidth={1.6} />
                     <Text variant="labelStrong" style={[styles.whenMain, styles.flex]} numberOfLines={1}>
@@ -271,7 +354,11 @@ export default function Checkout() {
                 ? h.lines.map((l, i) => (
                     <View key={`${i}:${l.label}`} style={styles.line}>
                       <Text variant="body" color={colors.textMuted} style={styles.lineText}>
-                        {l.label === 'Turf booking' && l.detail ? l.detail : l.label}
+                        {l.label === 'Turf booking' && l.detail
+                          ? l.detail
+                          : l.label === 'Your share' && l.detail
+                            ? `Your share · ${l.detail}`
+                            : l.label}
                       </Text>
                       <Text variant="labelStrong" style={styles.lineText}>
                         {formatTaka(l.amount)}
@@ -281,16 +368,18 @@ export default function Checkout() {
                 : [0, 1].map((i) => <Skeleton key={i} height={18} />)}
             </View>
             <Divider />
-            <Pressable
-              accessibilityRole="button"
-              style={styles.promo}
-              onPress={() => Alert.alert('Promo codes', 'Promo codes are coming soon.')}>
-              <TicketPercent size={18} color={colors.ink} strokeWidth={1.6} />
-              <Text variant="body" style={[styles.flex, styles.lineText]}>
-                Add promo code
-              </Text>
-              <Plus size={18} color={colors.ink} strokeWidth={1.7} />
-            </Pressable>
+            {isShare ? null : (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.promo}
+                onPress={() => Alert.alert('Promo codes', 'Promo codes are coming soon.')}>
+                <TicketPercent size={18} color={colors.ink} strokeWidth={1.6} />
+                <Text variant="body" style={[styles.flex, styles.lineText]}>
+                  Add promo code
+                </Text>
+                <Plus size={18} color={colors.ink} strokeWidth={1.7} />
+              </Pressable>
+            )}
             <View style={styles.total}>
               <Text variant="labelStrong" style={styles.whenMain}>
                 Total payable
@@ -334,10 +423,7 @@ export default function Checkout() {
             </Text>
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => h && Alert.alert('Cancellation policy', h.cancellationPolicy)}
-            style={styles.policy}>
+          <Pressable accessibilityRole="button" onPress={() => h && Alert.alert('Cancellation policy', h.policy)} style={styles.policy}>
             <FileText size={18} color={colors.ink} strokeWidth={1.6} />
             <Text variant="label" style={styles.flex}>
               Cancellation policy

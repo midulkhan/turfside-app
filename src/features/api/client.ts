@@ -15,12 +15,20 @@ import type {
   AppConfig,
   AuthResult,
   Booking,
+  BookingFilter,
+  BookingPage,
   CodeSent,
   DaySlots,
   ExploreParams,
   ExploreResult,
   Hold,
+  Match,
+  MatchFeedParams,
+  MatchLevel,
+  MatchManage,
+  MatchPosition,
   NotificationItem,
+  Page,
   PlayerRequest,
   SavedPlace,
   SavedPlaceInput,
@@ -57,7 +65,8 @@ export const logout = () => request<{ ok: true }>('POST', '/v1/auth/logout', { a
 export const me = (signal?: AbortSignal) => request<User>('GET', '/v1/me', { auth: 'required', signal });
 
 // ---- venues -----------------------------------------------------------------
-export const explore = (p: ExploreParams, signal?: AbortSignal) =>
+/** `page`: 10 at a time from `cursor` (omit for the old single response). */
+export const explore = (p: ExploreParams, signal?: AbortSignal, page?: { cursor: number; limit: number }) =>
   request<ExploreResult>('GET', '/v1/venues/explore', {
     auth: 'optional',
     signal,
@@ -69,6 +78,8 @@ export const explore = (p: ExploreParams, signal?: AbortSignal) =>
       floodlit: p.floodlitOnly ? 'true' : undefined,
       q: p.query?.trim(),
       radius: p.radiusKm,
+      cursor: page?.cursor,
+      limit: page?.limit,
     },
   });
 
@@ -133,13 +144,44 @@ export const startPayment = (holdId: string, idempotencyKey: string, returnUrl?:
 
 /** Ask the server to verify the payment with bKash. Idempotent; safe to poll. */
 export const getPaymentStatus = (paymentId: string) =>
-  request<{ status: 'pending' | 'confirmed' | 'failed'; bookingId?: string }>('GET', `/v1/payments/${enc(paymentId)}`, {
+  request<{ status: 'pending' | 'confirmed' | 'failed'; bookingId?: string; kind?: 'share'; matchId?: string }>('GET', `/v1/payments/${enc(paymentId)}`, {
     auth: 'required',
     timeoutMs: 30_000,
   });
 
 // ---- bookings ---------------------------------------------------------------
 export const getBookings = (signal?: AbortSignal) => request<Booking[]>('GET', '/v1/me/bookings', { auth: 'required', signal });
+export const getBookingPage = (filter: BookingFilter, cursor: number, signal?: AbortSignal) =>
+  request<BookingPage>('GET', '/v1/me/bookings', { auth: 'required', signal, query: { filter, cursor, limit: PAGE } });
+
+// ---- find players -----------------------------------------------------------
+export const PAGE = 10;
+export const getMatches = (p: MatchFeedParams, cursor: number, signal?: AbortSignal) =>
+  request<Page<Match>>('GET', '/v1/matches', {
+    auth: 'optional',
+    signal,
+    query: { lat: p.lat, lng: p.lng, nearby: p.nearby ? 'true' : undefined, day: p.day, cursor, limit: PAGE },
+  });
+export const getMatch = (id: string, signal?: AbortSignal) => request<Match>('GET', `/v1/matches/${enc(id)}`, { auth: 'optional', signal });
+export const createMatch = (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number }) =>
+  request<Match>('POST', '/v1/matches', { auth: 'required', body: b });
+export const getMatchManage = (id: string, signal?: AbortSignal) =>
+  request<MatchManage>('GET', `/v1/matches/${enc(id)}/manage`, { auth: 'required', signal });
+export const updateMatch = (id: string, patch: { title?: string; paused?: boolean }) =>
+  request<MatchManage>('PATCH', `/v1/matches/${enc(id)}`, { auth: 'required', body: patch });
+export const decideRequest = (id: string, userId: string, accept: boolean) =>
+  request<MatchManage>('POST', `/v1/matches/${enc(id)}/requests/${enc(userId)}/${accept ? 'accept' : 'decline'}`, { auth: 'required' });
+export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel }) =>
+  request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: b });
+export const leaveMatch = (id: string) => request<Match>('DELETE', `/v1/matches/${enc(id)}/join`, { auth: 'required' });
+/** Pay your share of a match you were accepted into (bKash, like a booking). */
+export const startSharePayment = (id: string, idempotencyKey: string, returnUrl?: string) =>
+  request<{ paymentId: string; checkoutUrl: string | null }>('POST', `/v1/matches/${enc(id)}/pay`, {
+    auth: 'required',
+    body: { returnUrl },
+    idempotencyKey,
+    timeoutMs: 30_000,
+  });
 
 export const getBooking = (id: string, signal?: AbortSignal) =>
   request<Booking>('GET', `/v1/bookings/${enc(id)}`, { auth: 'required', signal });

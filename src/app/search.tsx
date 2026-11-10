@@ -8,13 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton } from '@/components/ui/icon-button';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Input } from '@/components/ui/input';
+import { END_THRESHOLD, ListLoader } from '@/components/ui/list-loader';
 import { Overline } from '@/components/ui/headers';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { KNOWN_AREAS } from '@/lib/places';
-import { useExplore } from '@/features/api/queries';
+import { useExploreFeed } from '@/features/api/queries';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
@@ -45,22 +46,24 @@ export default function Search() {
   const placeKey = `${place.lat},${place.lng}`;
 
   // Last full answer from the server; any longer query containing its text is a subset of it.
-  const [base, setBase] = useState<{ q: string; place: string; venues: VenueSummary[] } | null>(null);
-  const covers = (s: string) => !!base && base.place === placeKey && s.length >= 2 && s.includes(base.q);
+  // Only a complete answer (every page loaded) can be narrowed on the phone.
+  const [base, setBase] = useState<{ q: string; place: string; venues: VenueSummary[]; complete: boolean } | null>(null);
+  const covers = (s: string) => !!base && base.complete && base.place === placeKey && s.length >= 2 && s.includes(base.q);
 
   const enabled = q.length >= 2 && !covers(q); // no request until there's a query, or when we can narrow locally
   const params = useMemo(
     () => ({ lat: place.lat, lng: place.lng, day: dhakaToday(), format: 'any' as const, query: q }),
     [place.lat, place.lng, q],
   );
-  const { data, isFetching, isPlaceholderData, isError, refetch } = useExplore(params, enabled);
-  if (enabled && data && !isPlaceholderData && !isFetching && (base?.q !== q || base.place !== placeKey)) {
-    setBase({ q, place: placeKey, venues: [...data.near, ...data.further] });
+  const { data, isFetching, isPlaceholderData, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useExploreFeed(params, enabled);
+  const count = data ? data.near.length + data.further.length : 0;
+  if (enabled && data && !isPlaceholderData && !isFetching && (base?.q !== q || base.place !== placeKey || base.venues.length !== count || base.complete !== !hasNextPage)) {
+    setBase({ q, place: placeKey, venues: [...data.near, ...data.further], complete: !hasNextPage });
   }
 
   const local = covers(typed); // instant: filter what we already have, no debounce, no request
   // Typing ahead of the debounce, or a new query in flight: never show the previous query's results.
-  const searching = !local && typed.length >= 2 && ((isFetching && (isPlaceholderData || !data)) || typed !== q);
+  const searching = !local && typed.length >= 2 && ((isFetching && !isFetchingNextPage && (isPlaceholderData || !data)) || typed !== q);
   const scrolled = useScrolled();
   const results = local
     ? base!.venues.filter((v) => `${v.name} ${v.area}`.toLowerCase().includes(typed))
@@ -107,6 +110,9 @@ export default function Search() {
         keyExtractor={(v) => v.id}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onEndReached={() => !local && hasNextPage && !isFetchingNextPage && fetchNextPage()}
+        onEndReachedThreshold={END_THRESHOLD}
+        ListFooterComponent={results.length && !local ? <ListLoader loading={isFetchingNextPage} /> : null}
         renderItem={({ item }) => (
           <View style={styles.item}>
             <VenueCard venue={item} />

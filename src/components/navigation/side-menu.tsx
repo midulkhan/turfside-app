@@ -18,7 +18,7 @@ type Item = { icon: LucideIcon; label: string; href: Href };
 
 // Bookings, saved turfs, notifications and the profile live in the tab bar and header.
 const ITEMS: Item[] = [
-  { icon: UsersRound, label: 'Player calls', href: '/requests' },
+  { icon: UsersRound, label: 'Find players', href: '/players' },
   { icon: CircleHelp, label: 'Help & support', href: '/profile' },
 ];
 

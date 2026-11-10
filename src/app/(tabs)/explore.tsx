@@ -10,13 +10,14 @@ import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { SectionTitle } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { IconButton } from '@/components/ui/icon-button';
+import { END_THRESHOLD, ListLoader } from '@/components/ui/list-loader';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { DEFAULT_DISTANCE, DistanceWheel } from '@/components/ui/distance-wheel';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { VenueCard } from '@/components/venue/venue-card';
 import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
-import { useExplore } from '@/features/api/queries';
+import { useExploreFeed } from '@/features/api/queries';
 import { useLiveExplore } from '@/features/api/realtime';
 import type { VenueSummary } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
@@ -47,7 +48,7 @@ export default function Explore() {
     () => ({ lat: place.lat, lng: place.lng, day, format: 'any' as const, radiusKm }),
     [place.lat, place.lng, day, radiusKm],
   );
-  const { data: fetched, isPending, isPlaceholderData, isError, error, refetch } = useExplore(params);
+  const { data: fetched, isPending, isPlaceholderData, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useExploreFeed(params);
   // New distance / place: show skeletons at once instead of the old list, then the new results.
   const loading = isPending || isPlaceholderData;
   const data = loading ? undefined : fetched;
@@ -155,6 +156,9 @@ export default function Explore() {
         keyExtractor={(r) => r.key}
         renderItem={renderItem}
         ListHeaderComponent={header}
+        ListFooterComponent={rows.length ? <ListLoader loading={isFetchingNextPage} /> : null}
+        onEndReached={() => hasNextPage && !isFetchingNextPage && fetchNextPage()}
+        onEndReachedThreshold={END_THRESHOLD}
         contentContainerStyle={{ paddingBottom: bottom }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}

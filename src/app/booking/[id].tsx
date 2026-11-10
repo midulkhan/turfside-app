@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/brand/logo';
+import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { QRCode } from '@/components/ticket/qr-code';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -34,6 +35,7 @@ export default function BookingTicket() {
   const { data: b, isError, error, refetch } = useBooking(id);
   const justBooked = fresh === '1';
   const cancel = useCancelBooking();
+  const [finding, setFinding] = useState(false);
   const [openedAt] = useState(() => Date.now()); // fixed per visit; the server re-checks the 24 h rule
 
   const close = () => (justBooked ? router.dismissTo('/bookings') : router.back());
@@ -221,26 +223,28 @@ export default function BookingTicket() {
             </Card>
           </PressableScale>
 
-          <PressableScale
-            scaleTo={0.99}
-            onPress={() =>
-              Alert.alert('Split the fee', 'Share this booking with your squad and track who has paid their share. Coming in the next build.')
-            }>
-            <Card tone="lime" style={styles.tip}>
-              <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
-              <View style={styles.flex}>
-                <Text variant="bodyStrong" color={colors.charcoal}>
-                  Need more players?
-                </Text>
-                <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
-                  Invite your squad or split the fee
-                </Text>
-              </View>
-              <View style={styles.darkArrow}>
-                <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
-              </View>
-            </Card>
-          </PressableScale>
+          {/* Find players: open spots on this booking (or manage the ones already open). */}
+          {b.status === 'confirmed' || b.matchId ? (
+            <PressableScale
+              scaleTo={0.99}
+              accessibilityRole="button"
+              onPress={() => (b.matchId ? router.push({ pathname: '/match/[id]', params: { id: b.matchId } }) : setFinding(true))}>
+              <Card tone="lime" style={styles.tip}>
+                <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
+                <View style={styles.flex}>
+                  <Text variant="bodyStrong" color={colors.charcoal}>
+                    {b.matchId ? 'Manage your squad' : 'Need more players?'}
+                  </Text>
+                  <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
+                    {b.matchId ? 'See requests and who has paid' : 'Open spots and let players nearby join'}
+                  </Text>
+                </View>
+                <View style={styles.darkArrow}>
+                  <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
+                </View>
+              </Card>
+            </PressableScale>
+          ) : null}
 
           <Button label="View my bookings" variant="dark" trailingIcon={ArrowRight} spread onPress={() => router.dismissTo('/bookings')} />
           <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
@@ -260,6 +264,10 @@ export default function BookingTicket() {
           <TicketSkeleton />
         )}
       </ScrollView>
+      <CreateMatchSheet
+        booking={finding && b ? { id: b.id, amountPaid: b.amountPaid, format: b.venue.formats[0] ?? '5-a-side', start: b.start } : null}
+        onClose={() => setFinding(false)}
+      />
     </View>
   );
 }

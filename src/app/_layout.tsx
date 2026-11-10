@@ -82,7 +82,8 @@ function RootNavigator() {
             <Stack.Screen name="booking/[id]" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
             <Stack.Screen name="search" options={{ animation: 'fade' }} />
             <Stack.Screen name="notifications" />
-            <Stack.Screen name="requests" />
+            <Stack.Screen name="players" />
+            <Stack.Screen name="match/[id]" />
             <Stack.Screen name="locations" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
             <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="payment-return" options={{ animation: 'none' }} />

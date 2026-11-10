@@ -75,7 +75,11 @@ export type Booking = {
   status: BookingStatus;
   /** Opaque signed token issued by the server; the QR encodes this, never raw ids. */
   passToken: string;
+  /** Open spots posted on this booking (detail only). */
+  matchId?: string | null;
 };
+export type BookingFilter = 'all' | 'open' | 'closed';
+export type BookingPage = { items: Booking[]; next: Booking | null; nextCursor: number | null };
 
 export type ExploreParams = {
   lat: number;
@@ -92,6 +96,9 @@ export type ExploreResult = {
   radiusKm: number;
   near: VenueSummary[]; // within the first radius step
   further: VenueSummary[];
+  /** Paged requests only: where the next page starts (null = no more). */
+  nextCursor?: number | null;
+  total?: number;
 };
 
 export type User = { id: string; name: string; phone: string; email?: string; roles: ('player' | 'owner')[]; avatarUrl?: string | null };
@@ -101,9 +108,50 @@ export type NotificationItem = {
   title: string;
   body: string;
   at: number;
-  kind: 'booking' | 'payment' | 'promo';
+  kind: 'booking' | 'payment' | 'promo' | 'match';
   read: boolean;
+  /** Where tapping it should go (e.g. { type: 'match_accepted', matchId }). */
+  data?: { type?: string; matchId?: string };
 };
+
+// ---- find players -----------------------------------------------------------
+export type MatchLevel = 'casual' | 'regular' | 'competitive';
+export type MatchPosition = 'any' | 'goalkeeper' | 'defender' | 'midfielder' | 'forward';
+/** The viewer's relation to a match. */
+export type MatchMine = 'owner' | 'none' | 'pending' | 'accepted' | 'paid' | 'declined' | 'withdrawn' | 'expired';
+
+/** Open spots on a booking the organiser has already paid for. Prices are set by the server. */
+export type Match = {
+  id: string;
+  title: string;
+  level: MatchLevel;
+  format: string;
+  status: 'open' | 'paused' | 'full' | 'closed' | 'cancelled';
+  venue: { id: string; name: string; area: string; photo: string | null };
+  day: DayKey;
+  start: number;
+  end: number;
+  playersTotal: number;
+  playersIn: number;
+  openSpots: number;
+  /** Spots still free for new requests (open minus paid minus reserved). */
+  spotsLeft: number;
+  /** Price per player (poisha). */
+  share: Poisha;
+  faces: { name: string; avatar: string | null }[];
+  moreCount: number;
+  my: MatchMine;
+  /** Accepted, not yet paid: pay before this (ms). */
+  payBy: number | null;
+};
+export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number };
+export type MatchManage = Match & {
+  booking: { id: string; code: string };
+  requests: MatchPerson[];
+  squad: (MatchPerson & { paid: boolean; payBy: number | null })[];
+};
+export type Page<T> = { items: T[]; nextCursor: number | null };
+export type MatchFeedParams = { lat?: number; lng?: number; nearby: boolean; day?: DayKey };
 
 export type ApiErrorCode =
   | 'slot_taken'

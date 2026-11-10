@@ -21,6 +21,7 @@ import * as account from './services/account';
 import * as auth from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
+import * as matches from './services/matches';
 import * as payments from './services/payments';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
 
@@ -116,7 +117,7 @@ export async function buildApp() {
     contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // images are loaded by the app
   });
-  await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'DELETE'] });
+  await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
   await app.register(rateLimit, { max: config.RATE_LIMIT_PER_MIN, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
   // Per signed-in session rather than per IP: many players can share one carrier IP, and rate
   // limiting runs before auth, so the bearer token is the session key (IP for signed-out users).
@@ -217,6 +218,9 @@ export async function buildApp() {
         q: z.string().trim().max(60).optional(),
         /** Fixed search radius in km (the app's distance slider). Omit for the adaptive 5→30 km search. */
         radius: z.coerce.number().int().min(1).max(50).optional(),
+        /** Paging (10 at a time in the app). Without `limit` the old single response (up to 60). */
+        cursor: z.coerce.number().int().min(0).max(1000).optional(),
+        limit: z.coerce.number().int().min(1).max(30).optional(),
       }),
       req.query,
     );
@@ -239,10 +243,18 @@ export async function buildApp() {
         break;
       }
     }
-    const inRange = rows.filter((x) => x.d <= radiusKm || !!ql).slice(0, 60);
+    const matching = rows.filter((x) => x.d <= radiusKm || !!ql);
+    const from = p.limit ? (p.cursor ?? 0) : 0;
+    const inRange = matching.slice(from, p.limit ? from + p.limit : 60);
+    const nextCursor = p.limit && from + p.limit < matching.length ? from + p.limit : null;
     const avail = await availabilityFor(inRange.map((x) => x.v), day);
     const withAvail = inRange.map(({ v }) => summary(v, { lat, lng, availableToday: avail.get(v.id) ?? false }));
-    const base = { radiusKm, near: withAvail.filter((x) => (x.distanceKm ?? 0) <= RADIUS_STEPS[0]), further: withAvail.filter((x) => (x.distanceKm ?? 0) > RADIUS_STEPS[0]) };
+    const base = {
+      radiusKm,
+      near: withAvail.filter((x) => (x.distanceKm ?? 0) <= RADIUS_STEPS[0]),
+      further: withAvail.filter((x) => (x.distanceKm ?? 0) > RADIUS_STEPS[0]),
+      ...(p.limit ? { nextCursor, total: matching.length } : {}),
+    };
     if (!req.user) return base;
     const saved = new Set((await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1', [req.user.userId])).map((r) => r.venue_id));
     const mark = (v: { id: string }) => ({ ...v, isSaved: saved.has(v.id) });
@@ -425,13 +437,24 @@ export async function buildApp() {
     return { ok: true };
   });
 
-  app.get('/v1/me/bookings', { preHandler: requireUser }, async (req) => bookings.listBookings(req.user!.userId));
+  app.get('/v1/me/bookings', { preHandler: requireUser }, async (req) => {
+    const p = parse(
+      z.object({
+        filter: z.enum(['all', 'open', 'closed']).default('all'),
+        cursor: z.coerce.number().int().min(0).max(5000).optional(),
+        limit: z.coerce.number().int().min(1).max(30).optional(),
+      }),
+      req.query,
+    );
+    // Without `limit`: the old full list (older app builds).
+    return p.limit ? bookings.pageBookings(req.user!.userId, p.filter, p.cursor ?? 0, p.limit) : bookings.listBookings(req.user!.userId);
+  });
   app.get('/v1/me/notifications', { preHandler: requireUser }, async (req) => {
-    const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date }>(
-      'select id, kind, title, body, read_at, created_at from notifications where user_id = $1 order by created_at desc limit 50',
+    const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date; data: Record<string, unknown> | null }>(
+      'select id, kind, title, body, read_at, created_at, data from notifications where user_id = $1 order by created_at desc limit 50',
       [req.user!.userId],
     );
-    return rows.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, read: !!n.read_at, at: new Date(n.created_at).getTime() }));
+    return rows.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, read: !!n.read_at, at: new Date(n.created_at).getTime(), data: n.data ?? undefined }));
   });
   app.get('/v1/me/requests', { preHandler: requireUser }, async (req) => {
     const rows = await q<{ id: string; kind: string; venue_name: string; area: string; day: string; start_min: number; end_min: number; spots_total: number; spots_filled: number; share: number; status: string }>(
@@ -445,6 +468,51 @@ export async function buildApp() {
       [req.user!.userId],
     );
     return rows.map((r) => ({ id: r.id, kind: r.kind, venueName: r.venue_name, area: r.area, day: r.day, start: r.start_min, end: r.end_min, spotsTotal: r.spots_total, spotsFilled: r.spots_filled, sharePerPlayer: r.share, status: r.status }));
+  });
+
+  // ── Find players (matches) ────────────────────────────────────────────────
+  const matchId = (req: FastifyRequest) => parse(z.object({ id: z.string().uuid() }), req.params).id;
+  const level = z.enum(['casual', 'regular', 'competitive']);
+  app.get('/v1/matches', { preHandler: optionalUser }, async (req) => {
+    const p = parse(
+      z.object({
+        lat: z.coerce.number().min(-90).max(90).optional(),
+        lng: z.coerce.number().min(-180).max(180).optional(),
+        nearby: z.enum(['true', 'false']).optional(),
+        day: z.string().refine(isDayKey, 'Invalid date.').optional(),
+        cursor: z.coerce.number().int().min(0).max(10_000).optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      }),
+      req.query,
+    );
+    return matches.feed(req.user?.userId ?? null, { ...p, nearby: p.nearby === 'true' });
+  });
+  app.get('/v1/matches/:id', { preHandler: optionalUser }, async (req) => matches.getMatch(req.user?.userId ?? null, matchId(req)));
+  app.post('/v1/matches', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
+    matches.createMatch(
+      req.user!.userId,
+      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29) }), req.body),
+    ),
+  );
+  app.get('/v1/matches/:id/manage', { preHandler: requireUser }, async (req) => matches.manage(req.user!.userId, matchId(req)));
+  app.patch('/v1/matches/:id', { preHandler: requireUser }, async (req) =>
+    matches.updateMatch(req.user!.userId, matchId(req), parse(z.object({ title: z.string().trim().min(2).max(60).optional(), paused: z.boolean().optional() }), req.body)),
+  );
+  app.post('/v1/matches/:id/requests/:userId/:decision', { preHandler: requireUser }, async (req) => {
+    const { userId, decision } = parse(z.object({ id: z.string().uuid(), userId: z.string().uuid(), decision: z.enum(['accept', 'decline']) }), req.params);
+    return matches.decide(req.user!.userId, matchId(req), userId, decision === 'accept');
+  });
+  app.post('/v1/matches/:id/join', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
+    matches.requestToJoin(
+      req.user!.userId,
+      matchId(req),
+      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual') }), req.body ?? {}),
+    ),
+  );
+  app.delete('/v1/matches/:id/join', { preHandler: requireUser }, async (req) => matches.withdraw(req.user!.userId, matchId(req)));
+  app.post('/v1/matches/:id/pay', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
+    const { returnUrl } = parse(z.object({ returnUrl: z.string().max(300).optional() }), req.body ?? {});
+    return payments.startSharePayment(req.user!.userId, matchId(req), idem(req) ?? '', returnUrl);
   });
 
   // ── Holds & checkout ──────────────────────────────────────────────────────

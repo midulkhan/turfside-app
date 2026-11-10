@@ -8,6 +8,7 @@ import { ApiError } from '../errors';
 import { addDays, dhakaToday, generateSessions, hourlyFor, instant, isDayKey, minutesNowInDhaka, sessionPrice } from '../lib/time';
 import { signPass } from '../lib/tokens';
 
+import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules } from './venues';
 
 type BookingRow = {
@@ -325,6 +326,40 @@ export async function listBookings(userId: string) {
   return Promise.all(rows.map(bookingShape));
 }
 
+/**
+ * One page of bookings. open = a game still ahead (confirmed or checked in, today or later),
+ * soonest first; closed = everything else, latest first; all = open then closed.
+ * The first page of all/open also carries `next`: the very next game, shown on top.
+ */
+export async function pageBookings(userId: string, filter: 'all' | 'open' | 'closed', cursor: number, limit: number) {
+  const today = dhakaToday();
+  const OPEN = "status in ('confirmed','checked_in') and day >= $2::date";
+  const where = filter === 'open' ? OPEN : filter === 'closed' ? `not (${OPEN})` : 'true';
+  const rows = await q<BookingRow>(
+    `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total
+       from bookings where user_id = $1 and status in ('confirmed','checked_in','completed','cancelled') and ${where}
+      order by (${OPEN}) desc,
+               case when ${OPEN} then day end asc, case when ${OPEN} then start_min end asc,
+               day desc, start_min desc, id
+      offset $3 limit $4`,
+    [userId, today, cursor, limit + 1],
+  );
+  const page = rows.slice(0, limit);
+  const next =
+    cursor === 0 && filter !== 'closed'
+      ? await one<BookingRow>(
+          `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total
+             from bookings where user_id = $1 and ${OPEN} order by day, start_min limit 1`,
+          [userId, today],
+        )
+      : null;
+  return {
+    items: await Promise.all(page.map(bookingShape)),
+    next: next ? await bookingShape(next) : null,
+    nextCursor: rows.length > limit ? cursor + limit : null,
+  };
+}
+
 export async function getBooking(userId: string, id: string) {
   if (!isUuid(id)) throw new ApiError('not_found', 'Booking not found.');
   const b = await one<BookingRow>(
@@ -332,7 +367,8 @@ export async function getBooking(userId: string, id: string) {
     [id, userId],
   );
   if (!b || b.status === 'held' || b.status === 'pending' || b.status === 'expired') throw new ApiError('not_found', 'Booking not found.');
-  return bookingShape(b);
+  const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
+  return { ...(await bookingShape(b)), matchId: m?.id ?? null };
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */
@@ -348,5 +384,6 @@ export async function cancelBooking(userId: string, id: string) {
     return b;
   });
   await invalidateDay(res.venue_id, res.day);
+  await onBookingCancelled(id);
   return { ok: true };
 }

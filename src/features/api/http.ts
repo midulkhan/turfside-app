@@ -126,7 +126,7 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
 }
 
 /** JSON request to the TurfSides API with auth, refresh-on-401, timeouts and typed errors. */
-export async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, o: Options = {}): Promise<T> {
+export async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, o: Options = {}): Promise<T> {
   try {
     return await send<T>(method, path, o);
   } catch (e) {

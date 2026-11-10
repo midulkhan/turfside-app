@@ -1,11 +1,12 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { keepPreviousData, type InfiniteData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
+import { useMemo } from 'react';
 
 import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { ExploreParams, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
+import type { BookingFilter, ExploreParams, ExploreResult, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -26,6 +27,12 @@ export const qk = {
   reviews: (id: string) => ['reviews', id] as const,
   places: ['places'] as const,
   myHolds: ['my-holds'] as const,
+  // Under 'explore' so realtime refreshes and the optimistic favourite reach the paged lists too.
+  exploreFeed: (p: ExploreParams) => ['explore', 'feed', p] as const,
+  bookingPages: (f: BookingFilter) => ['bookings', 'pages', f] as const,
+  matches: (p: MatchFeedParams) => ['matches', p] as const,
+  match: (id: string) => ['match', id] as const,
+  matchManage: (id: string) => ['match-manage', id] as const,
 };
 
 export const PERSISTED_ROOTS = new Set(['venue', 'saved', 'bookings', 'booking', 'places']);
@@ -81,8 +88,9 @@ export function useToggleSaved() {
         ...qc.getQueriesData({ queryKey: qk.venue(venueId) }),
       ];
       const flip = (v: VenueSummary) => (v.id === venueId ? { ...v, isSaved: value } : v);
-      qc.setQueriesData<api.ExploreLike>({ queryKey: ['explore'] }, (old) =>
-        old ? { ...old, near: old.near.map(flip), further: old.further.map(flip) } : old,
+      const flipPage = (p: api.ExploreLike) => ({ ...p, near: p.near.map(flip), further: p.further.map(flip) });
+      qc.setQueriesData<api.ExploreLike | InfiniteData<api.ExploreLike>>({ queryKey: ['explore'] }, (old) =>
+        !old ? old : 'pages' in old ? { ...old, pages: old.pages.map(flipPage) } : flipPage(old),
       );
       qc.setQueryData<VenueSummary[]>(qk.saved, (old) => (old && !value ? old.filter((v) => v.id !== venueId) : old));
       qc.setQueryData<VenueDetail>(qk.venue(venueId), (old) => (old ? { ...old, isSaved: value } : old));
@@ -114,8 +122,14 @@ export function useNotifications() {
 }
 
 /** Hold + server-computed quote. Seeded from createHold; refetched from the server if missing. */
-export function useHold(holdId: string) {
-  return useQuery({ queryKey: qk.hold(holdId), queryFn: () => api.getHold(holdId), staleTime: Infinity, gcTime: 15 * 60_000 });
+export function useHold(holdId: string | undefined) {
+  return useQuery({
+    queryKey: qk.hold(holdId ?? ''),
+    queryFn: () => api.getHold(holdId!),
+    enabled: !!holdId,
+    staleTime: Infinity,
+    gcTime: 15 * 60_000,
+  });
 }
 
 export function useRequests() {
@@ -198,5 +212,112 @@ export function useUpdateSettings() {
     },
     onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(['settings'], ctx.prev),
     onSuccess: (s) => qc.setQueryData(['settings'], s),
+  });
+}
+
+// ---- paged lists (10 at a time, next page when the list nears its end) -------
+
+/**
+ * Explore / search, 10 turfs per page. `data` is the pages merged into one result (same shape
+ * as before), so screens keep their sections; `fetchNextPage` loads the next 10.
+ */
+export function useExploreFeed(p: ExploreParams, enabled = true) {
+  const q = useExplorePages(p, enabled);
+  const pages = q.data?.pages;
+  const data = useMemo<ExploreResult | undefined>(
+    () => (pages?.length ? { radiusKm: pages[0].radiusKm, near: pages.flatMap((x) => x.near), further: pages.flatMap((x) => x.further) } : undefined),
+    [pages],
+  );
+  return { ...q, data };
+}
+
+function useExplorePages(p: ExploreParams, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: qk.exploreFeed(p),
+    enabled,
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => api.explore(p, signal, { cursor: pageParam, limit: api.PAGE }),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useBookingPages(filter: BookingFilter) {
+  return useInfiniteQuery({
+    queryKey: qk.bookingPages(filter),
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => api.getBookingPage(filter, pageParam, signal),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    staleTime: 30_000, // (no placeholder: another filter's list must never show under this one)
+  });
+}
+
+// ---- find players -----------------------------------------------------------
+
+export function useMatchFeed(p: MatchFeedParams) {
+  return useInfiniteQuery({
+    queryKey: qk.matches(p),
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => api.getMatches(p, pageParam, signal),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    staleTime: 20_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useMatch(id: string | undefined) {
+  return useQuery({ queryKey: qk.match(id ?? ''), queryFn: ({ signal }) => api.getMatch(id!, signal), enabled: !!id, staleTime: 10_000 });
+}
+
+export function useMatchManage(id: string) {
+  return useQuery({ queryKey: qk.matchManage(id), queryFn: ({ signal }) => api.getMatchManage(id, signal), staleTime: 10_000, refetchInterval: 20_000 });
+}
+
+/** Everything that shows a match: refresh after any change to one. */
+function touchMatches(qc: QueryClient, id: string, manage?: MatchManage) {
+  if (manage) qc.setQueryData(qk.matchManage(id), manage);
+  void qc.invalidateQueries({ queryKey: ['matches'] });
+  void qc.invalidateQueries({ queryKey: qk.match(id) });
+  void qc.invalidateQueries({ queryKey: qk.notifications });
+}
+
+export function useJoinMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, position, level }: { id: string; position: MatchPosition; level: MatchLevel }) => api.joinMatch(id, { position, level }),
+    onSuccess: (m) => touchMatches(qc, m.id),
+  });
+}
+
+export function useLeaveMatch() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: string) => api.leaveMatch(id), onSuccess: (m) => touchMatches(qc, m.id) });
+}
+
+export function useDecideRequest(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, accept }: { userId: string; accept: boolean }) => api.decideRequest(id, userId, accept),
+    onSuccess: (m) => touchMatches(qc, id, m),
+  });
+}
+
+export function useUpdateMatch(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { title?: string; paused?: boolean }) => api.updateMatch(id, patch),
+    onSuccess: (m) => touchMatches(qc, id, m),
+  });
+}
+
+export function useCreateMatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number }) => api.createMatch(b),
+    onSuccess: (m, b) => {
+      touchMatches(qc, m.id);
+      void qc.invalidateQueries({ queryKey: qk.booking(b.bookingId) });
+    },
   });
 }

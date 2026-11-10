@@ -1,13 +1,15 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useScrollToTop } from 'expo-router';
 import { CalendarDays, Clock3, QrCode, RotateCcw } from 'lucide-react-native';
-import { memo, useMemo, useState, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
+import { END_THRESHOLD, ListLoader } from '@/components/ui/list-loader';
 import { Overline } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Photo } from '@/components/ui/photo';
@@ -15,7 +17,8 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
-import { useBookings } from '@/features/api/queries';
+import * as api from '@/features/api/client';
+import { qk, useBookingPages } from '@/features/api/queries';
 import type { Booking } from '@/features/api/types';
 import { formatTaka } from '@/lib/money';
 import { dhakaToday, formatDay, formatRange } from '@/lib/time';
@@ -102,17 +105,24 @@ export default function Bookings() {
   const scrolled = useScrolled();
   const bottom = useTabBarSpace();
   const [filter, setFilter] = useState<Filter>('all');
-  const { data, isPending, isError, error, refetch } = useBookings();
+  // 10 at a time, filtered on the server; the first page also says which game is next.
+  const { data, isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useBookingPages(filter);
   const pull = usePullToRefresh(refetch);
   const today = dhakaToday();
+  const qc = useQueryClient();
+  // Warm the other two filters so switching is instant.
+  useEffect(() => {
+    (['all', 'open', 'closed'] as const).forEach((f) => {
+      if (f !== filter) void qc.prefetchInfiniteQuery({ queryKey: qk.bookingPages(f), initialPageParam: 0, queryFn: ({ signal }) => api.getBookingPage(f, 0, signal), staleTime: 30_000 });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { next, list } = useMemo(() => {
-    const all = data ?? [];
-    const upcoming = all.filter((b) => isOpen(b, today)).sort((a, b) => a.day.localeCompare(b.day) || a.start - b.start);
-    const nextB = upcoming[0];
-    const filtered = all.filter((b) => (filter === 'all' ? true : filter === 'open' ? isOpen(b, today) : !isOpen(b, today)));
-    return { next: nextB, list: filtered.filter((b) => b.id !== nextB?.id || filter === 'closed') };
-  }, [data, filter, today]);
+    const nextB = data?.pages[0]?.next ?? undefined;
+    const items = data?.pages.flatMap((p) => p.items) ?? [];
+    return { next: nextB, list: items.filter((b) => b.id !== nextB?.id || filter === 'closed') };
+  }, [data, filter]);
 
   const header = (
     <View style={[styles.header, { paddingTop: space[4] }]}>
@@ -179,6 +189,9 @@ export default function Bookings() {
           </View>
         )}
         ListHeaderComponent={header}
+        ListFooterComponent={list.length ? <ListLoader loading={isFetchingNextPage} /> : null}
+        onEndReached={() => hasNextPage && !isFetchingNextPage && fetchNextPage()}
+        onEndReachedThreshold={END_THRESHOLD}
         contentContainerStyle={{ paddingBottom: bottom }}
         refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
         ListEmptyComponent={

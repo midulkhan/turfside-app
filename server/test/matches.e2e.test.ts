@@ -1,0 +1,154 @@
+/**
+ * Find players, end to end: post open spots on a paid booking → request → accept → pay share
+ * (simulated bKash) → in the squad. Plus the 10-per-page lists.
+ *   API_URL=… (BKASH_MODE=simulate) npm test
+ */
+import { randomUUID } from 'node:crypto';
+
+import { beforeAll, describe, expect, it } from 'vitest';
+
+const API = process.env.API_URL;
+const d = API ? describe : describe.skip;
+type Json = Record<string, any>;
+
+async function call(method: string, path: string, body?: unknown, token?: string, headers: Record<string, string> = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    redirect: 'manual',
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json: Json = {};
+  try {
+    json = JSON.parse(await res.text());
+  } catch {
+    /* redirect */
+  }
+  return { status: res.status, json };
+}
+const phone = () => `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+async function newUser(name: string) {
+  const p = phone();
+  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, password: 'correct horse 1' });
+  return (await call('POST', '/v1/auth/signup/verify', { phone: p, code: start.json.devCode })).json as { accessToken: string; user: Json };
+}
+const dayIn = (n: number) => new Date(Date.now() + 6 * 3600_000 + n * 86400_000).toISOString().slice(0, 10);
+
+/** Book and pay (simulated) one slot; returns the booking id. */
+async function paidBooking(token: string, venueId: string, offset: number) {
+  const slots = (await call('GET', `/v1/venues/${venueId}/slots?day=${dayIn(offset)}`)).json.slots as Json[];
+  const slot = slots.filter((s) => s.status === 'available').at(-1)!;
+  const hold = await call('POST', '/v1/holds', { slotId: slot.id }, token, { 'Idempotency-Key': randomUUID() });
+  expect(hold.status, JSON.stringify(hold.json)).toBe(200);
+  const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, token, { 'Idempotency-Key': randomUUID() });
+  await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+  const st = await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, token);
+  expect(st.json.status).toBe('confirmed');
+  return st.json.bookingId as string;
+}
+
+d('find players', () => {
+  let org: Awaited<ReturnType<typeof newUser>>;
+  let p1: Awaited<ReturnType<typeof newUser>>;
+  let p2: Awaited<ReturnType<typeof newUser>>;
+  let p3: Awaited<ReturnType<typeof newUser>>;
+  let bookingId = '';
+  let matchId = '';
+  beforeAll(async () => {
+    [org, p1, p2, p3] = await Promise.all([newUser('Organiser One'), newUser('Tanvir Ahmed'), newUser('Rafi Islam'), newUser('Sami Khan')]);
+    bookingId = await paidBooking(org.accessToken, 'v_kickoff_uttara', 6);
+  });
+
+  it('organiser opens spots on a paid booking; price per player is fixed by the server', async () => {
+    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2, title: 'Evening five-a-side' }, org.accessToken);
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    matchId = r.json.id;
+    expect(r.json.my).toBe('owner');
+    expect(r.json.openSpots).toBe(2);
+    expect(r.json.playersIn).toBe(r.json.playersTotal - 2);
+    const booking = (await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json;
+    expect(r.json.share).toBe(Math.ceil(booking.amountPaid / r.json.playersTotal / 100) * 100);
+    expect(booking.matchId).toBe(matchId);
+    // Again: same match, not a second one.
+    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3 }, org.accessToken)).json.id).toBe(matchId);
+    // Someone else's booking can't be used.
+    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2 }, p1.accessToken)).status).toBe(404);
+  });
+
+  it('players find it and ask to join; the organiser sees the requests', async () => {
+    const feed = (await call('GET', '/v1/matches?lat=23.87&lng=90.40', undefined, p1.accessToken)).json;
+    const item = feed.items.find((m: Json) => m.id === matchId);
+    expect(item.my).toBe('none');
+    expect(item.spotsLeft).toBe(2);
+    expect(item.faces[0].name).toBe('Organiser One');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual' }, p1.accessToken)).json.my).toBe('pending');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular' }, p2.accessToken)).json.my).toBe('pending');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, org.accessToken)).status).toBe(403); // own match
+    const m = (await call('GET', `/v1/matches/${matchId}/manage`, undefined, org.accessToken)).json;
+    expect(m.requests.map((x: Json) => x.name).sort()).toEqual(['Rafi Islam', 'Tanvir Ahmed']);
+    expect((await call('GET', `/v1/matches/${matchId}/manage`, undefined, p1.accessToken)).status).toBe(404); // not theirs
+    const n = (await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[];
+    expect(n.some((x) => x.data?.type === 'match_request' && x.data.matchId === matchId)).toBe(true);
+  });
+
+  it('accept → notification with pay → pay share via bKash → in the squad', async () => {
+    const acc = await call('POST', `/v1/matches/${matchId}/requests/${p1.user.id}/accept`, undefined, org.accessToken);
+    expect(acc.status, JSON.stringify(acc.json)).toBe(200);
+    expect(acc.json.squad[0]).toMatchObject({ name: 'Tanvir Ahmed', paid: false });
+    const note = ((await call('GET', '/v1/me/notifications', undefined, p1.accessToken)).json as Json[]).find((x) => x.data?.type === 'match_accepted');
+    expect(note?.data.matchId).toBe(matchId);
+    const mine = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
+    expect(mine.my).toBe('accepted');
+    expect(mine.payBy).toBeGreaterThan(Date.now());
+    // Only the accepted player can pay, only their share.
+    expect((await call('POST', `/v1/matches/${matchId}/pay`, {}, p2.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(410);
+    const pay = await call('POST', `/v1/matches/${matchId}/pay`, {}, p1.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(pay.status, JSON.stringify(pay.json)).toBe(200);
+    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    const st = (await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, p1.accessToken)).json;
+    expect(st).toMatchObject({ status: 'confirmed', kind: 'share', matchId });
+    const after = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
+    expect(after.my).toBe('paid');
+    expect(after.playersIn).toBe(after.playersTotal - 1);
+    // The organiser's booking is untouched by a share payment.
+    expect((await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json.status).toBe('confirmed');
+    expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
+  });
+
+  it('decline, pause and the last spot', async () => {
+    expect((await call('POST', `/v1/matches/${matchId}/requests/${p2.user.id}/decline`, undefined, org.accessToken)).status).toBe(200);
+    expect((await call('GET', `/v1/matches/${matchId}`, undefined, p2.accessToken)).json.my).toBe('declined');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p2.accessToken)).status).toBe(403); // can't spam after a no
+    const paused = await call('PATCH', `/v1/matches/${matchId}`, { paused: true }, org.accessToken);
+    expect(paused.json.status).toBe('paused');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).status).toBe(403);
+    expect((await call('PATCH', `/v1/matches/${matchId}`, { paused: false }, org.accessToken)).json.status).toBe('open');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).json.my).toBe('pending');
+    expect((await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken)).json.my).toBe('withdrawn');
+  });
+
+  it('pages: matches, turfs and bookings come 10 at a time with a cursor', async () => {
+    const page = (await call('GET', '/v1/matches?limit=1', undefined, p1.accessToken)).json;
+    expect(page.items).toHaveLength(1);
+    const ex1 = (await call('GET', '/v1/venues/explore?lat=23.79&lng=90.40&radius=50&limit=2')).json;
+    expect(ex1.near.length + ex1.further.length).toBe(2);
+    expect(ex1.nextCursor).toBe(2);
+    const ex2 = (await call('GET', `/v1/venues/explore?lat=23.79&lng=90.40&radius=50&limit=2&cursor=2`)).json;
+    const ids1 = [...ex1.near, ...ex1.further].map((v: Json) => v.id);
+    const ids2 = [...ex2.near, ...ex2.further].map((v: Json) => v.id);
+    expect(ids2.some((id) => ids1.includes(id))).toBe(false);
+    // Old clients (no limit) still get the single response.
+    expect((await call('GET', '/v1/venues/explore?lat=23.79&lng=90.40')).json.nextCursor).toBeUndefined();
+    const bk = (await call('GET', '/v1/me/bookings?limit=10&filter=open', undefined, org.accessToken)).json;
+    expect(bk.items[0].id).toBe(bookingId);
+    expect(bk.next.id).toBe(bookingId);
+    expect(Array.isArray((await call('GET', '/v1/me/bookings', undefined, org.accessToken)).json)).toBe(true);
+  });
+
+  it('cancelling the booking cancels the match and flags the paid share for refund', async () => {
+    const c = await call('POST', `/v1/bookings/${bookingId}/cancel`, undefined, org.accessToken);
+    expect(c.status, JSON.stringify(c.json)).toBe(200);
+    expect((await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).status).toBe(404);
+    expect(((await call('GET', '/v1/me/notifications', undefined, p1.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_cancelled')).toBe(true);
+  });
+});
