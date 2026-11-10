@@ -138,8 +138,32 @@ export default function Checkout() {
   const payKey = useRef(newIdempotencyKey());
   const paid = useRef(false);
 
-  // Leaving checkout keeps the cart: it stays held until it runs out (5 min) or the
-  // player removes its slots, and the turf page shows it in its bottom bar meanwhile.
+  // No cart: leaving checkout without paying gives the slots straight back, so they're free
+  // for everyone again (the turf page keeps them selected for you). A payment that's under
+  // way keeps its hold on the server.
+  const heldId = useRef<string | null>(null);
+  const heldVenue = useRef<string | null>(null);
+  useEffect(() => {
+    heldId.current = hold.data?.holdId ?? null;
+    heldVenue.current = hold.data?.venue.id ?? null;
+  }, [hold.data?.holdId, hold.data?.venue.id]);
+  useEffect(
+    () => () => {
+      const id = heldId.current;
+      if (isShare || !id || paid.current) return;
+      const venue = heldVenue.current;
+      qc.removeQueries({ queryKey: qk.hold(id) });
+      api
+        .releaseHold(id)
+        .catch(() => {})
+        .finally(() => {
+          qc.invalidateQueries({ queryKey: qk.myHolds });
+          qc.invalidateQueries({ queryKey: venue ? ['slots', venue] : ['slots'] });
+        });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   const [removing, setRemoving] = useState<string | null>(null);
   const removeSlot = async (slotId: string) => {
     if (!hold.data || removing || paying) return;

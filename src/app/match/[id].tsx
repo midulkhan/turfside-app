@@ -67,13 +67,13 @@ export default function ManageMatch() {
   );
 }
 
-/** "+2" when one request covers the player and friends. */
-function SpotsTag({ n = 1 }: { n?: number }) {
-  if (n <= 1) return null;
+/** "2 spots" when one request covers the player and friends (always shown in the squad). */
+function SpotsTag({ n = 1, always }: { n?: number; always?: boolean }) {
+  if (n <= 1 && !always) return null;
   return (
     <View style={styles.spotsTag}>
       <Text variant="caption" color={colors.limeText} style={styles.spotsTagText}>
-        {n} spots
+        {n === 1 ? '1 spot' : `${n} spots`}
       </Text>
     </View>
   );
@@ -249,7 +249,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
                   <Text variant="bodyStrong" numberOfLines={1} style={styles.shrink}>
                     {p.name}
                   </Text>
-                  <SpotsTag n={p.spots} />
+                  <SpotsTag n={p.spots} always />
                 </View>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
                   {positionLabel(p.position)} · {levelLabel(p.level)}

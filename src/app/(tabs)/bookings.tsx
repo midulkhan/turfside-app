@@ -1,7 +1,7 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useScrollToTop } from 'expo-router';
-import { CalendarDays, Clock3, QrCode, RotateCcw } from 'lucide-react-native';
+import { CalendarDays, Clock3, QrCode, RotateCcw, UsersRound } from 'lucide-react-native';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
@@ -18,8 +18,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { qk, useBookingPages } from '@/features/api/queries';
-import type { Booking } from '@/features/api/types';
+import { qk, useBookingPages, useJoinedMatches } from '@/features/api/queries';
+import type { Booking, Match } from '@/features/api/types';
 import { formatTaka } from '@/lib/money';
 import { dhakaToday, formatDay, formatRange } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
@@ -99,6 +99,47 @@ const BookingRow = memo(function BookingRow({ b, today }: { b: Booking; today: s
   );
 });
 
+/** A squad you paid to join (someone else's booking). Opens the match. */
+function SquadRow({ m, today }: { m: Match; today: string }) {
+  const live = m.status !== 'cancelled' && m.day >= today;
+  const spots = m.mySpots ?? 1;
+  return (
+    <PressableScale
+      scaleTo={0.985}
+      onPress={() => router.push({ pathname: '/game/[id]', params: { id: m.id } })}
+      accessibilityRole="button"
+      accessibilityLabel={`Squad ${m.title} at ${m.venue.name}, ${formatDay(m.day)}`}>
+      <Card style={styles.row}>
+        <Photo source={m.venue.photo} style={styles.thumb} recyclingKey={`sq:${m.id}`} />
+        <View style={styles.flex}>
+          <View style={styles.rowTop}>
+            <Text variant="title" numberOfLines={1} style={styles.flex}>
+              {m.venue.name}
+            </Text>
+            <View style={[styles.pill, { backgroundColor: live ? colors.limeSoft : colors.surfaceMuted }]}>
+              <Text variant="caption" color={live ? colors.limeText : colors.textMuted}>
+                {m.status === 'cancelled' ? 'Cancelled' : live ? 'Squad' : 'Played'}
+              </Text>
+            </View>
+          </View>
+          <Text variant="label" color={colors.textMuted} numberOfLines={1}>
+            {formatDay(m.day, { year: false })} · {formatRange(m.start, m.end)}
+          </Text>
+          <View style={styles.rowBottom}>
+            <Text variant="labelStrong">{formatTaka(m.share * spots)}</Text>
+            <View style={styles.link}>
+              <UsersRound size={15} color={colors.ink} />
+              <Text variant="labelStrong" numberOfLines={1}>
+                {m.title} · {spots === 1 ? '1 spot' : `${spots} spots`}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Card>
+    </PressableScale>
+  );
+}
+
 export default function Bookings() {
   const listRef = useRef<FlashListRef<Booking>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
@@ -107,8 +148,16 @@ export default function Bookings() {
   const [filter, setFilter] = useState<Filter>('all');
   // 10 at a time, filtered on the server; the first page also says which game is next.
   const { data, isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useBookingPages(filter);
-  const pull = usePullToRefresh(refetch);
+  const joined = useJoinedMatches();
+  const pull = usePullToRefresh(() => Promise.all([refetch(), joined.refetch()]));
   const today = dhakaToday();
+  // Squads you paid into, split like bookings: still ahead (All/Open) or done (All/Closed).
+  const squads = useMemo(() => {
+    const all = joined.data ?? [];
+    const ahead = all.filter((m) => m.status !== 'cancelled' && m.day >= today).sort((a, b) => a.day.localeCompare(b.day) || a.start - b.start);
+    const done = all.filter((m) => !(m.status !== 'cancelled' && m.day >= today));
+    return filter === 'open' ? ahead : filter === 'closed' ? done : [...ahead, ...done];
+  }, [joined.data, filter, today]);
   const qc = useQueryClient();
   // Warm the other two filters so switching is instant.
   useEffect(() => {
@@ -160,6 +209,14 @@ export default function Bookings() {
           </Card>
         </PressableScale>
       ) : null}
+      {squads.length ? (
+        <View style={styles.squads}>
+          <Overline>Squads you joined</Overline>
+          {squads.map((m) => (
+            <SquadRow key={m.id} m={m} today={today} />
+          ))}
+        </View>
+      ) : null}
       {list.length ? <Overline>{filter === 'all' ? 'All bookings' : FILTERS.find((f) => f.key === filter)!.label}</Overline> : null}
     </View>
   );
@@ -203,7 +260,7 @@ export default function Bookings() {
             </View>
           ) : isError ? (
             <ErrorState message={error.message} onRetry={refetch} />
-          ) : next && (filter === 'all' || filter === 'open') ? null : (
+          ) : (next && (filter === 'all' || filter === 'open')) || squads.length ? null : (
             <EmptyState
               icon={CalendarDays}
               title="Nothing here yet"
@@ -231,6 +288,7 @@ const styles = createStyles(() => ({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   nextBtn: { alignSelf: 'flex-start', marginTop: space[2] },
   item: { paddingHorizontal: gutter, paddingBottom: space[3] },
+  squads: { gap: space[3] },
   row: { flexDirection: 'row', gap: space[3], padding: space[2] },
   thumb: { width: 88, height: 88 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: space[2], marginTop: space[1] },

@@ -267,6 +267,11 @@ export function useMatchFeed(p: MatchFeedParams) {
 }
 
 /** Find players: your matches and bookings that can take players. Under ['matches'] so every match change refreshes it. */
+/** Squads you've paid into: shown with your bookings. Under ['matches'] so it stays live. */
+export function useJoinedMatches() {
+  return useQuery({ queryKey: ['matches', 'joined'], queryFn: ({ signal }) => api.getJoinedMatches(signal), staleTime: 30_000 });
+}
+
 export function useMyMatches() {
   return useQuery({ queryKey: ['matches', 'mine'], queryFn: ({ signal }) => api.getMyMatches(signal), staleTime: 15_000 });
 }

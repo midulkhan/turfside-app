@@ -172,6 +172,7 @@ export const updateMatch = (id: string, patch: { title?: string; paused?: boolea
   request<MatchManage>('PATCH', `/v1/matches/${enc(id)}`, { auth: 'required', body: patch });
 export const decideRequest = (id: string, userId: string, accept: boolean) =>
   request<MatchManage>('POST', `/v1/matches/${enc(id)}/requests/${enc(userId)}/${accept ? 'accept' : 'decline'}`, { auth: 'required' });
+export const getJoinedMatches = (signal?: AbortSignal) => request<Match[]>('GET', '/v1/matches/joined', { auth: 'required', signal });
 export const getMyMatches = (signal?: AbortSignal) => request<MyMatches>('GET', '/v1/matches/mine', { auth: 'required', signal });
 export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number }) =>
   request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: b });

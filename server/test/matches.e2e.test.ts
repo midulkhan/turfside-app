@@ -126,6 +126,10 @@ d('find players', () => {
     expect(after.my).toBe('paid');
     expect(after.playersIn).toBe(after.playersTotal - 1);
     expect(after.spotsLeft).toBe(1);
+    // It's listed with their bookings, with the spots they paid for; not for others.
+    const mineJoined = (await call('GET', '/v1/matches/joined', undefined, p1.accessToken)).json as Json[];
+    expect(mineJoined.find((x) => x.id === matchId)).toMatchObject({ my: 'paid', mySpots: 2 });
+    expect((await call('GET', '/v1/matches/joined', undefined, p2.accessToken)).json).toEqual([]);
     // The organiser's booking is untouched by a share payment.
     expect((await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json.status).toBe('confirmed');
     expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);

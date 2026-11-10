@@ -42,7 +42,6 @@ const TONES = () => ({
     dash: colors.warningLine,
   },
   // Your own hold (back from checkout): pick it again to continue to checkout.
-  mine: { fill: colors.limeSoft, stroke: colors.limeText, sw: 1.5, fg: colors.ink, sub: colors.limeText, dash: colors.lime },
   blocked: {
     fill: colors.surfaceMuted,
     stroke: colors.border,
@@ -87,9 +86,8 @@ export const SlotTicket = memo(function SlotTicket({
   });
   const barPulse = useAnimatedStyle(() => ({ opacity: pulse ? 0.55 + pulse.get() * 0.45 : 1 }));
   const disabled = loading || slot.status === 'booked' || slot.status === 'blocked' || slot.status === 'held';
-  // Your cart's slots read "In your cart" while selected; deselected, they look free again
-  // (they're released when you continue with the new selection).
-  const kind = loading ? 'available' : slot.status === 'mine' ? (selected ? 'mine' : 'available') : selected ? 'selected' : slot.status;
+  // A slot held for you (e.g. while you're at checkout) is just yours: selected, or free-looking.
+  const kind = loading ? 'available' : slot.status === 'mine' ? (selected ? 'selected' : 'available') : selected ? 'selected' : slot.status;
   const tone = TONES()[kind];
   const range = formatRangeSpaced(slot.start, slot.end);
   // Size by length so long ranges ("11:00 PM – 12:00 AM") fit identically on iOS, Android and web.
@@ -101,7 +99,6 @@ export const SlotTicket = memo(function SlotTicket({
       booked: 'Booked',
       blocked: 'Unavailable',
       held: 'Being booked',
-      mine: 'In your cart',
       available: `${minutes} min`,
     } as const
   )[kind];
@@ -141,9 +138,9 @@ export const SlotTicket = memo(function SlotTicket({
         <TicketDivider inset={space[3] + 2} gap={7} dashColor={tone.dash} />
         {loading ? <Animated.View style={[styles.bar, styles.barSub, barPulse]} /> : null}
         <Animated.View style={[styles.row, textIn]}>
-          {kind === 'selected' || kind === 'mine' ? (
-            <View style={[styles.check, kind === 'selected' && styles.checkOnLime]}>
-              <Check size={11} color={kind === 'selected' ? colors.lime : colors.charcoal} strokeWidth={3.5} />
+          {kind === 'selected' ? (
+            <View style={[styles.check, styles.checkOnLime]}>
+              <Check size={11} color={colors.lime} strokeWidth={3.5} />
             </View>
           ) : null}
           <Text variant="label" color={tone.sub} numberOfLines={1}>

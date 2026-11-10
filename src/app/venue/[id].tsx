@@ -75,11 +75,10 @@ import * as api from '@/features/api/client';
 import { haversineKm } from '@/lib/places';
 import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
-import { useCart } from '@/features/api/use-cart';
 import { pageStatusBar } from '@/theme/theme-provider';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useTransitionSettled } from '@/lib/use-transition-settled';
-import { ApiError, type Hold, type Slot, type VenueDetail } from '@/features/api/types';
+import { ApiError, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
 import { useSession } from '@/features/session/session';
 import { formatDistance } from '@/lib/geo';
@@ -139,25 +138,6 @@ export default function VenueScreen() {
   const days = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i)), [today]);
   // Picked slots, kept across day changes (one order can span days at this turf).
   const [picked, setPicked] = useState<Picked[]>([]);
-  // The cart. When it's at this turf, its slots *are* the selection (shown "In your cart");
-  // whenever the cart changes (checkout removal, expiry, a new hold) the selection follows.
-  const cart = useCart();
-  const cartHere = cart.hold?.venue.id === id ? cart.hold : undefined;
-  const cartSig = cartHere?.slots?.map((sl) => sl.id).join(',') ?? '';
-  const [syncedCart, setSyncedCart] = useState('');
-  if (cartSig !== syncedCart) {
-    setSyncedCart(cartSig);
-    setPicked(
-      cartHere?.slots?.map((sl) => ({
-        id: sl.id,
-        day: sl.day,
-        start: sl.start,
-        end: sl.end,
-        price: sl.price ?? 0,
-        status: 'mine' as const,
-      })) ?? [],
-    );
-  }
   const [photoIndex, setPhotoIndex] = useState(0);
   const [tab, setTabRaw] = useState<Tab>('book');
   // Panes are mounted on first visit and then kept alive (hidden), so switching back never rebuilds them.
@@ -572,25 +552,10 @@ export default function VenueScreen() {
       {/* ── Price bar: slides up only once a slot is picked ───── */}
       <PriceBar
         picks={chosen}
-        cart={cart.hold}
         bottomInset={insets.bottom}
         loading={hold.isPending}
         onContinue={() => {
-          if (!chosen.length) return void cart.open();
-          // Unchanged cart: straight to checkout, no request. Anything else re-holds (one cart, one turf).
-          if (
-            cartHere &&
-            chosen
-              .map((p) => p.id)
-              .sort()
-              .join(',') ===
-              cartHere.slots
-                ?.map((sl) => sl.id)
-                .sort()
-                .join(',')
-          )
-            return void cart.open();
-          hold.mutate(chosen);
+          if (chosen.length) hold.mutate(chosen);
         }}
       />
 
@@ -615,19 +580,16 @@ export default function VenueScreen() {
 type BarContent = { key: string; summary: string; total: number; extra: string; cta: string };
 
 /**
- * Compact dark bar. Shows your picks; with nothing picked it shows the cart (even one at
- * another turf), so it's on screen whenever the cart has anything and hides only when empty.
+ * Compact dark bar with your picks; hidden when nothing is picked.
  * Keeps the last content while sliding away, so it never blanks mid-animation.
  */
 function PriceBar({
   picks,
-  cart,
   bottomInset,
   loading,
   onContinue,
 }: {
   picks: Picked[];
-  cart?: Hold;
   bottomInset: number;
   loading: boolean;
   onContinue: () => void;
@@ -644,15 +606,6 @@ function PriceBar({
       total: picks.reduce((n, p) => n + p.price, 0),
       extra: formatDuration(picks.reduce((n, p) => n + (p.end - p.start), 0)),
       cta: 'Continue',
-    };
-  } else if (cart) {
-    const n = cart.slots?.length ?? 1;
-    content = {
-      key: 'cart',
-      summary: `In your cart  ·  ${cart.venue.name}`,
-      total: cart.total,
-      extra: n > 1 ? `${n} slots` : '1 slot',
-      cta: 'Checkout',
     };
   }
   const open = !!content;

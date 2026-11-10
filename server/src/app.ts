@@ -505,6 +505,7 @@ export async function buildApp() {
       parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29) }), req.body),
     ),
   );
+  app.get('/v1/matches/joined', { preHandler: requireUser }, async (req) => matches.joined(req.user!.userId));
   app.get('/v1/matches/mine', { preHandler: requireUser }, async (req) => matches.mine(req.user!.userId));
   app.get('/v1/matches/:id/manage', { preHandler: requireUser }, async (req) => matches.manage(req.user!.userId, matchId(req)));
   app.patch('/v1/matches/:id', { preHandler: requireUser }, async (req) =>

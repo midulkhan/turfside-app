@@ -228,6 +228,12 @@ export async function mine(userId: string) {
   return { matches: await Promise.all(rows.map((r) => shape(r, userId))), bookings };
 }
 
+/** Squads you've paid into (newest first): they sit with your bookings in the app. */
+export async function joined(userId: string) {
+  const rows = await q<Row>(`${SELECT} where me.status = 'paid' order by b.day desc, b.start_min desc limit 50`, [userId]);
+  return Promise.all(rows.map((r) => shape(r, userId)));
+}
+
 // ── Organiser ──────────────────────────────────────────────────────────────
 
 /** Open spots on one of your confirmed bookings. Idempotent: a booking has one live match. */
