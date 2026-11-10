@@ -1,9 +1,11 @@
+import { X } from 'lucide-react-native';
 import { useMemo } from 'react';
-import { View } from 'react-native';
+import { Modal, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 // Pure encoder (no canvas/DOM) — keeps the bundle small.
 import QRCodeCore from 'qrcode/lib/core/qrcode';
 
+import { Text } from '@/components/ui/text';
 import { radius } from '@/theme/tokens';
 
 const QR_BG = '#FFFFFF';
@@ -41,3 +43,69 @@ export function QRCode({ value, size = 120 }: { value: string; size?: number }) 
     </View>
   );
 }
+
+/**
+ * The entry pass, large: tap the small QR on a ticket to open it here so reception can scan
+ * it from a distance. Tap anywhere or the close button to dismiss.
+ */
+export function QRPopup({
+  visible,
+  value,
+  code,
+  title,
+  subtitle,
+  onClose,
+}: {
+  visible: boolean;
+  value: string;
+  code: string;
+  title: string;
+  subtitle: string;
+  onClose: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const size = Math.min(width - 112, 300);
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <View style={popup.scrim}>
+        {/* Tap outside the card to close (a layer behind it, so no button sits inside a button). */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close QR code" />
+        <View style={popup.card}>
+          <View style={popup.head}>
+            <View style={popup.flex}>
+              <Text variant="title" color={QR_FG} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text variant="label" color="#5C6468" numberOfLines={1}>
+                {subtitle}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close" style={popup.close}>
+              <X size={20} color={QR_FG} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+          <QRCode value={value} size={size} />
+          <View style={popup.foot}>
+            <Text variant="h2" color={QR_FG} style={popup.code} adjustsFontSizeToFit numberOfLines={1}>
+              {code}
+            </Text>
+            <Text variant="label" color="#5C6468" align="center">
+              Show this at reception. Turn your screen brightness up if it won’t scan.
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Always light, like the QR itself: scanners read dark-on-white best, in both themes.
+const popup = StyleSheet.create({
+  scrim: { flex: 1, backgroundColor: 'rgba(10,12,13,0.82)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card: { backgroundColor: QR_BG, borderRadius: radius.xl, padding: 20, gap: 16, alignItems: 'center', width: '100%', maxWidth: 380 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 12, alignSelf: 'stretch' },
+  flex: { flex: 1, minWidth: 0 },
+  close: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#ECEEE8', alignItems: 'center', justifyContent: 'center' },
+  foot: { gap: 6, alignItems: 'center', alignSelf: 'stretch' },
+  code: { letterSpacing: 1 },
+});

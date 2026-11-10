@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, MapPin, Navigation, Share2, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Wordmark } from '@/components/brand/logo';
 import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
-import { QRCode } from '@/components/ticket/qr-code';
+import { QRCode, QRPopup } from '@/components/ticket/qr-code';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -36,6 +36,7 @@ export default function BookingTicket() {
   const justBooked = fresh === '1';
   const cancel = useCancelBooking();
   const [finding, setFinding] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [openedAt] = useState(() => Date.now()); // fixed per visit; the server re-checks the 24 h rule
 
   const close = () => (justBooked ? router.dismissTo('/bookings') : router.back());
@@ -175,7 +176,20 @@ export default function BookingTicket() {
                 </View>
                 <View style={styles.passRule} />
                 {b.passToken ? (
-                  <QRCode value={b.passToken} size={84} />
+                  <Pressable
+                    onPress={() => {
+                      haptic.select();
+                      setQrOpen(true);
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Enlarge entry pass QR code"
+                    style={({ pressed }) => [styles.qrTap, pressed && styles.qrPressed]}>
+                    <QRCode value={b.passToken} size={84} />
+                    <View style={styles.qrExpand}>
+                      <Maximize2 size={12} color={colors.charcoal} strokeWidth={2.6} />
+                    </View>
+                  </Pressable>
                 ) : (
                   // Cancelled or played: the pass is no longer valid, so no QR is shown.
                   <View style={styles.noPass}>
@@ -199,8 +213,8 @@ export default function BookingTicket() {
           ) : null}
 
           <View style={styles.actions}>
-            <Button label="Get directions" icon={Navigation} variant="light" onPress={directions} style={styles.flex} />
-            <Button label="Download ticket" icon={Download} variant="light" onPress={share} style={styles.flex} />
+            <Button label="Directions" icon={Navigation} variant="light" onPress={directions} style={styles.flex} />
+            <Button label="Download" icon={Download} variant="light" onPress={share} style={styles.flex} />
           </View>
 
           <PressableScale
@@ -268,6 +282,16 @@ export default function BookingTicket() {
         booking={finding && b ? { id: b.id, amountPaid: b.amountPaid, format: b.venue.formats[0] ?? '5-a-side', start: b.start } : null}
         onClose={() => setFinding(false)}
       />
+      {b?.passToken ? (
+        <QRPopup
+          visible={qrOpen}
+          value={b.passToken}
+          code={b.code}
+          title={b.venue.name}
+          subtitle={`${weekday(b.day)} ${dayOfMonth(b.day)} · ${formatRange(b.start, b.end)}`}
+          onClose={() => setQrOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -359,6 +383,19 @@ const styles = createStyles(() => ({
   onLimeMuted: { opacity: 0.7 },
   code: { fontFamily: 'Geist_700Bold', fontSize: 18, lineHeight: 24, letterSpacing: -0.2 },
   passRule: { width: 1, alignSelf: 'stretch', backgroundColor: colors.borderOnDark },
+  qrTap: { position: 'relative' },
+  qrPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
+  qrExpand: {
+    position: 'absolute',
+    right: -6,
+    bottom: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.lime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   paid: {
     flexDirection: 'row',
     alignItems: 'center',
