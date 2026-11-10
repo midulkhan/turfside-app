@@ -27,6 +27,14 @@ function getClient(cfg: NonNullable<AppConfig['realtime']>) {
   return client;
 }
 
+/**
+ * A fresh topic per subscription. The realtime client hands back an existing channel for a
+ * topic it already has, and a channel that is already subscribed can't take new listeners,
+ * so two screens (or a quick remount) watching the same match would crash.
+ */
+let seq = 0;
+const topic = (name: string) => `${name}:${++seq}`;
+
 export function useAppConfig() {
   // v2: skips settings persisted before realtime was configured on the server.
   return useQuery({ queryKey: ['config', 2], queryFn: ({ signal }) => api.getConfig(signal), staleTime: 2 * 60_000 });
@@ -61,7 +69,7 @@ export function useLiveSlots(venueId: string, day: DayKey) {
   useEffect(() => {
     if (!rt || !venueId) return;
     const channel = getClient(rt)
-      .channel(`slots:${venueId}`)
+      .channel(topic(`slots:${venueId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: rt.table, filter: `venue_id=eq.${venueId}` }, (payload) => {
         const row = (payload.new ?? null) as { day?: string; xid?: string | number } | null;
         const changedDay = row?.day ?? (payload.old as { day?: string } | null)?.day;
@@ -78,7 +86,7 @@ export function useLiveSlots(venueId: string, day: DayKey) {
       });
     return () => {
       setLive(false);
-      channel.unsubscribe();
+      void getClient(rt).removeChannel(channel);
     };
   }, [rt, venueId, qc]);
 
@@ -97,7 +105,7 @@ export function useLiveExplore(today: DayKey) {
     if (!rt) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const channel = getClient(rt)
-      .channel(`explore:${today}`)
+      .channel(topic(`explore:${today}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: rt.table, filter: `day=eq.${today}` }, () => {
         if (t) return;
         t = setTimeout(() => {
@@ -108,7 +116,7 @@ export function useLiveExplore(today: DayKey) {
       .subscribe();
     return () => {
       if (t) clearTimeout(t);
-      channel.unsubscribe();
+      void getClient(rt).removeChannel(channel);
     };
   }, [rt, today, qc]);
   useForegroundReconnect(!!rt);
@@ -135,7 +143,7 @@ export function useLiveMatch(id: string | undefined) {
       void qc.invalidateQueries({ queryKey: qk.matchManage(id) });
     };
     const channel = getClient(rt)
-      .channel(`match:${id}`)
+      .channel(topic(`match:${id}`))
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `match_id=eq.${id}` }, () => {
         refresh();
         void qc.invalidateQueries({ queryKey: ['matches'] });
@@ -147,7 +155,7 @@ export function useLiveMatch(id: string | undefined) {
       });
     return () => {
       setLive(false);
-      channel.unsubscribe();
+      void getClient(rt).removeChannel(channel);
     };
   }, [rt, table, id, qc]);
 
@@ -169,7 +177,7 @@ export function useLiveMatchFeed() {
     if (!rt || !table) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const channel = getClient(rt)
-      .channel('matches:feed')
+      .channel(topic(`matches:feed`))
       .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         if (t) return;
         t = setTimeout(() => {
@@ -181,7 +189,7 @@ export function useLiveMatchFeed() {
     return () => {
       if (t) clearTimeout(t);
       setLive(false);
-      channel.unsubscribe();
+      void getClient(rt).removeChannel(channel);
     };
   }, [rt, table, qc]);
   usePollWhileDown(!live, 15_000, () => void qc.invalidateQueries({ queryKey: ['matches'] }));
