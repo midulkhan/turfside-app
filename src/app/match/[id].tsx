@@ -178,7 +178,8 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
           <Button label="Share invite" variant="outline" icon={Share2} small onPress={share} style={styles.flex} />
           {canPause ? (
             <Button
-              label={m.status === 'paused' ? 'Resume' : 'Pause recruitment'}
+              label={m.status === 'paused' ? 'Resume' : 'Pause'}
+              accessibilityHint={m.status === 'paused' ? 'Lets players ask to join again' : 'Stops new join requests for now'}
               variant="outline"
               icon={m.status === 'paused' ? Play : Pause}
               small

@@ -74,7 +74,7 @@ export function Button({
           {spread ? <View style={styles.spacer} /> : null}
           <View style={styles.row}>
             {Icon ? <Icon size={small ? size.iconSm : size.icon} color={p.fg} strokeWidth={2} /> : null}
-            <Text variant={small ? 'labelStrong' : 'bodyStrong'} color={p.fg} style={!small && styles.label}>
+            <Text variant={small ? 'labelStrong' : 'bodyStrong'} color={p.fg} style={[!small && styles.label, styles.shrink]} numberOfLines={1}>
               {label}
             </Text>
             {Trailing && !spread ? <Trailing size={size.icon} color={p.accent} strokeWidth={2.2} /> : null}
@@ -100,7 +100,9 @@ const styles = createStyles(() => ({
   },
   small: { height: size.controlSm, paddingHorizontal: space[4] },
   spread: { justifyContent: 'space-between' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[2], maxWidth: '100%', minWidth: 0 },
+  // A long label is cut with … inside the button rather than spilling past its edge.
+  shrink: { flexShrink: 1 },
   label: { fontSize: 16.5 },
   spacer: { width: 28, alignItems: 'flex-end' },
   inactive: { opacity: 0.5 },
