@@ -155,7 +155,9 @@ export function statusPill(m: Match) {
   return m.spotsLeft === 0 ? 'Full' : spotsLabel(m.spotsLeft);
 }
 
-const openDetails = (id: string) => router.push({ pathname: '/game/[id]', params: { id } });
+/** Players see the match details; the organiser goes straight to managing their match. */
+const openDetails = (id: string, owner = false) =>
+  owner ? router.push({ pathname: '/match/[id]', params: { id } }) : router.push({ pathname: '/game/[id]', params: { id } });
 
 /** A game in the feed: tap it (or View) for the full details. */
 export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
@@ -165,7 +167,7 @@ export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
 
   return (
     <Card style={styles.card} padded={false}>
-      <Pressable style={styles.top} onPress={() => openDetails(m.id)} accessibilityRole="button" accessibilityLabel={`View ${m.title}`}>
+      <Pressable style={styles.top} onPress={() => openDetails(m.id, m.my === 'owner')} accessibilityRole="button" accessibilityLabel={`View ${m.title}`}>
         <Photo source={m.venue.photo} style={styles.photo} recyclingKey={m.id} />
         <View style={styles.info}>
           <View style={styles.titleRow}>
@@ -208,7 +210,11 @@ export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
         </Text>
       </View>
       <View style={styles.action}>
-        <Button label="View" variant="outline" icon={Eye} small onPress={() => openDetails(m.id)} />
+        {m.my === 'owner' ? (
+          <Button label="Manage match" variant="outline" icon={Settings2} small onPress={() => openDetails(m.id, true)} />
+        ) : (
+          <Button label="View" variant="outline" icon={Eye} small onPress={() => openDetails(m.id)} />
+        )}
       </View>
     </Card>
   );

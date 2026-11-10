@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Navigation, Plus, ShieldCheck, Share2, Timer, Undo2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
@@ -34,6 +34,11 @@ export default function GameDetails() {
   const [want, setWant] = useState(1);
   const m = q.data;
 
+  // This page is for players. The organiser (e.g. arriving from a shared link) manages instead.
+  useEffect(() => {
+    if (m?.my === 'owner') router.replace({ pathname: '/match/[id]', params: { id: m.id } });
+  }, [m?.my, m?.id]);
+
   // Live: the organiser's answer, other players' requests and payments arrive as they happen.
   useLiveMatch(id);
   // A held spot (yours or someone else's) is released when its 5-minute window ends.
@@ -66,9 +71,9 @@ export default function GameDetails() {
             refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
             contentContainerStyle={[styles.content, { paddingBottom: space[6] }]}
             showsVerticalScrollIndicator={false}>
-            {m ? <Body m={m} canAsk={canAsk} spots={spots} onSpots={setWant} /> : <Loading />}
+            {m && m.my !== 'owner' ? <Body m={m} canAsk={canAsk} spots={spots} onSpots={setWant} /> : <Loading />}
           </ScrollView>
-          {m ? <PriceBar m={m} spots={spots} bottom={insets.bottom} onJoin={setJoining} /> : null}
+          {m && m.my !== 'owner' ? <PriceBar m={m} spots={spots} bottom={insets.bottom} onJoin={setJoining} /> : null}
         </>
       )}
 
