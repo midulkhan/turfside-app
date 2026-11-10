@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  Keyboard,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   useWindowDimensions,
@@ -49,6 +51,8 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
   const progress = useSharedValue(0); // 0 = hidden, 1 = open
   const drag = useSharedValue(0); // px dragged towards closing
   const extent = useSharedValue(0); // measured panel height (bottom) or width (left)
+  const lift = useSharedValue(0); // px the keyboard overlaps the bottom of the sheet
+  const rootH = useRef(0);
   const measured = useRef(false);
   const closedCb = useRef(onClosed);
   useEffect(() => {
@@ -72,6 +76,7 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
     if (visible) {
       if (measured.current) open();
     } else {
+      if (side === 'bottom') Keyboard.dismiss();
       progress.set(
         withTiming(0, CLOSE, (finished) => {
           if (finished) scheduleOnRN(finishClose);
@@ -90,6 +95,28 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
     }
   };
 
+  // Raise a bottom sheet above the keyboard. Overlap is measured against the
+  // modal's own height, so it is correct whether or not Android already
+  // resized the window (adjustResize vs edge-to-edge).
+  useEffect(() => {
+    if (!mounted || side !== 'bottom') return;
+    const ios = Platform.OS === 'ios';
+    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+      const h = rootH.current || screenH;
+      const overlap = Math.max(0, h - e.endCoordinates.screenY);
+      lift.set(withTiming(overlap, { duration: ios ? e.duration || 250 : 200, easing: Easing.out(Easing.cubic) }));
+    });
+    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', (e) => {
+      lift.set(withTiming(0, { duration: ios ? e?.duration || 250 : 200, easing: Easing.out(Easing.cubic) }));
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+      lift.set(0);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, side, screenH]);
+
   const vertical = side === 'bottom';
   const pan = usePanGesture({
     activeOffsetY: vertical ? 10 : undefined,
@@ -103,7 +130,10 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
     onDeactivate: (e) => {
       'worklet';
       const v = side === 'bottom' ? e.velocityY : -e.velocityX;
-      if (drag.get() > extent.get() * 0.3 || v > 900) scheduleOnRN(onClose);
+      if (drag.get() > extent.get() * 0.3 || v > 900) {
+        scheduleOnRN(Keyboard.dismiss);
+        scheduleOnRN(onClose);
+      }
       else drag.set(withSpring(0, { damping: 24, stiffness: 300 }));
     },
   });
@@ -113,7 +143,7 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
     const offset = Math.max(drag.get(), (1 - progress.get()) * size);
     return {
       opacity: size > 0 ? 1 : 0,
-      transform: side === 'bottom' ? [{ translateY: offset }] : [{ translateX: -offset }],
+      transform: side === 'bottom' ? [{ translateY: offset - lift.get() }] : [{ translateX: -offset }],
     };
   });
 
@@ -126,7 +156,11 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
 
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
-      <GestureHandlerRootView style={styles.root}>
+      <GestureHandlerRootView
+        style={styles.root}
+        onLayout={(e) => {
+          rootH.current = e.nativeEvent.layout.height;
+        }}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrim]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         </Animated.View>

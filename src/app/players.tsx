@@ -211,7 +211,7 @@ const styles = createStyles(() => ({
   filters: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   clear: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
   sectionTitle: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.2 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginTop: space[1], marginBottom: space[1] },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginTop: space[1], marginBottom: space[4] },
   item: { paddingHorizontal: gutter, paddingBottom: space[3] },
   skeletons: { paddingHorizontal: gutter, gap: space[3] },
   empty: { paddingHorizontal: gutter, paddingTop: space[6] },
