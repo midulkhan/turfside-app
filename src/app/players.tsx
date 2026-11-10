@@ -21,7 +21,7 @@ import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { addDays, dhakaToday, type DayKey } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, font, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 const NO_ANCHOR = { disabled: true };
@@ -63,10 +63,10 @@ export default function Players() {
       <View style={styles.banner}>
         <Image source={require('@/assets/banners/players-bg.webp')} style={styles.bannerImg} contentFit="cover" contentPosition="right center" transition={0} />
         <View style={styles.bannerText}>
-          <Text variant="h1" color="#FFFFFF" style={styles.bannerTitle}>
+          <Text variant="h1" color="#FFFFFF" style={styles.bannerTitle} maxFontSizeMultiplier={1.1}>
             {fewest === null ? 'Find your next game.' : `Your squad is ${fewest} player${fewest === 1 ? '' : 's'} away.`}
           </Text>
-          <Text variant="label" color="rgba(255,255,255,0.78)">
+          <Text variant="label" color="rgba(255,255,255,0.8)" style={styles.bannerSub}>
             Join a game near you. Pay only when you&apos;re accepted.
           </Text>
         </View>
@@ -92,7 +92,7 @@ export default function Players() {
       </View>
 
       <View style={styles.sectionRow}>
-        <Text variant="h2" style={styles.flex}>
+        <Text variant="title" style={styles.sectionTitle}>
           {nearby ? 'Games near you' : 'Open games'}
         </Text>
         {!loading ? (
@@ -110,13 +110,14 @@ export default function Players() {
       <StickyHeader progress={scrolled.progress}>
         <View style={styles.topBar}>
           <IconButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
-          <View style={styles.flex}>
-            <Text variant="pageTitle" numberOfLines={1}>
+          {/* Same header as the rest of the app: centred title, place underneath. */}
+          <View style={styles.titleBlock}>
+            <Text variant="title" numberOfLines={1}>
               Find players
             </Text>
             <View style={styles.placeRow}>
-              <MapPin size={14} color={colors.textMuted} strokeWidth={1.8} />
-              <Text variant="label" color={colors.textMuted} numberOfLines={1}>
+              <MapPin size={12} color={colors.textMuted} strokeWidth={1.8} />
+              <Text variant="caption" color={colors.textMuted} numberOfLines={1}>
                 {[place.name, place.city].filter(Boolean).join(', ')}
               </Text>
             </View>
@@ -198,14 +199,18 @@ const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingVertical: space[2] },
-  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  titleBlock: { flex: 1, alignItems: 'center', gap: 1 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: '100%' },
   headerBlock: { paddingHorizontal: gutter, paddingTop: space[3], gap: space[4] },
   banner: { height: 152, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: '#06361A', justifyContent: 'center' },
   bannerImg: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
   bannerText: { paddingHorizontal: space[5], gap: space[2], maxWidth: '78%' },
-  bannerTitle: { fontSize: 26, lineHeight: 30, letterSpacing: -0.6 },
+  // Light like the Explore banners, not a bold headline.
+  bannerSub: { fontFamily: font.regular },
+  bannerTitle: { fontFamily: font.medium, fontSize: 26, lineHeight: 31, letterSpacing: -0.5 },
   filters: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   clear: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
+  sectionTitle: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.2 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginTop: space[1], marginBottom: space[1] },
   item: { paddingHorizontal: gutter, paddingBottom: space[3] },
   skeletons: { paddingHorizontal: gutter, gap: space[3] },
