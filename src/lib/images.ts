@@ -1,4 +1,6 @@
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { Platform } from 'react-native';
 
 /**
  * Photo compression before upload.
@@ -21,16 +23,25 @@ export const PRESETS = {
 
 const QUALITY_STEPS = [0.82, 0.74, 0.66, 0.58];
 
-export type Compressed = { uri: string; width: number; height: number; bytes: number; blob: Blob };
+export type Compressed = { uri: string; width: number; height: number; bytes: number };
+
+/**
+ * Exact size of the encoded file. On phones it's read from the file itself (reading it back
+ * through fetch() as a Blob is unreliable there); the browser has only blob: URLs.
+ */
+async function byteSize(uri: string) {
+  if (Platform.OS === 'web') return (await (await fetch(uri)).blob()).size;
+  return new File(uri).size ?? 0;
+}
 
 export async function compressImage(uri: string, { maxEdge, targetBytes }: CompressPreset = PRESETS.photo): Promise<Compressed> {
   const image = await ImageManipulator.manipulate(uri, { maxWidth: maxEdge, maxHeight: maxEdge }).renderAsync();
   let best: Compressed | null = null;
   for (const quality of QUALITY_STEPS) {
     const out = await image.saveAsync({ compress: quality, format: SaveFormat.WEBP });
-    const blob = await (await fetch(out.uri)).blob();
-    best = { uri: out.uri, width: out.width, height: out.height, bytes: blob.size, blob };
-    if (blob.size <= targetBytes) break; // good enough: keep the highest quality that fits
+    const bytes = await byteSize(out.uri);
+    best = { uri: out.uri, width: out.width, height: out.height, bytes };
+    if (bytes > 0 && bytes <= targetBytes) break; // good enough: keep the highest quality that fits
   }
   return best!;
 }
