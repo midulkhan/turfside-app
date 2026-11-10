@@ -48,3 +48,4 @@ server/dist/
 server/deploy/
 .env
 server/.env
+dump.rdb
