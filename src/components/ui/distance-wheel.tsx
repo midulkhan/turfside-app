@@ -274,7 +274,7 @@ export function DistanceWheel({
         <View pointerEvents="none" style={[styles.pointerLine, { left: pointerX, top: cy - 1.5 }]} />
 
         {/* the readout, left of the pointer */}
-        <View pointerEvents="none" style={[styles.readout, { top: cy - 48, width: pointerX - gutter - space[3] }]}>
+        <View pointerEvents="none" style={[styles.readout, { top: cy - 48, width: pointerX - gutter - space[8] }]}>
           <Text variant="display" style={styles.readoutValue}>
             {pick}
             <Text variant="h3"> km</Text>
@@ -386,7 +386,7 @@ const styles = createStyles(() => ({
     borderLeftWidth: 10,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderLeftColor: colors.lime,
+    borderLeftColor: colors.text, // dark in light mode, white in dark mode
   },
   pointerLine: { position: 'absolute', width: 30, height: 3, borderRadius: 2, backgroundColor: colors.lime },
   readout: { position: 'absolute', left: gutter, alignItems: 'flex-end' },
