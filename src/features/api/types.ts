@@ -127,7 +127,7 @@ export type Match = {
   level: MatchLevel;
   format: string;
   status: 'open' | 'paused' | 'full' | 'closed' | 'cancelled';
-  venue: { id: string; name: string; area: string; photo: string | null };
+  venue: { id: string; name: string; area: string; photo: string | null; city?: string; latitude?: number | null; longitude?: number | null };
   day: DayKey;
   start: number;
   end: number;

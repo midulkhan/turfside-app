@@ -84,6 +84,7 @@ function RootNavigator() {
             <Stack.Screen name="notifications" />
             <Stack.Screen name="players" />
             <Stack.Screen name="match/[id]" />
+            <Stack.Screen name="game/[id]" />
             <Stack.Screen name="locations" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
             <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="payment-return" options={{ animation: 'none' }} />

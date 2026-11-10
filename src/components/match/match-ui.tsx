@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, MapPin, Minus, Plus, Settings2 } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, Settings2 } from 'lucide-react-native';
 import { memo, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -88,11 +88,13 @@ function Faces({ m }: { m: Match }) {
   );
 }
 
-/** A game in the feed. The button follows the viewer's status. */
-export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJoin: (m: Match) => void }) {
+/**
+ * The viewer's next step on a game: join, withdraw, pay, or where they stand.
+ * `compact` is the feed card (sits next to View); the details page gets the full labels.
+ */
+export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m: Match) => void; compact?: boolean; fill?: boolean }) {
   const leave = useLeaveMatch();
   const full = m.spotsLeft === 0;
-  const pill = m.my === 'paid' ? "You're in" : full ? 'Full' : spotsLabel(m.spotsLeft);
 
   const withdraw = () =>
     Alert.alert('Withdraw your request?', 'Your spot goes back to the game.', [
@@ -100,64 +102,53 @@ export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJo
       { text: 'Withdraw', style: 'destructive', onPress: () => leave.mutate(m.id, { onError: (e) => Alert.alert('Could not withdraw', e.message) }) },
     ]);
 
-  let action: React.ReactNode;
+  const state = (label: string, inSquad = false) => (
+    <View style={[styles.state, inSquad && styles.stateIn, fill && styles.flex]}>
+      {inSquad ? <CircleCheck size={18} color={colors.limeText} strokeWidth={2} /> : null}
+      <Text variant={inSquad ? 'labelStrong' : 'label'} color={inSquad ? colors.limeText : colors.textMuted} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+  const grow = fill ? styles.flex : undefined;
+
   switch (m.my) {
     case 'owner':
-      action = <Button label="Manage match" variant="outline" icon={Settings2} onPress={() => router.push({ pathname: '/match/[id]', params: { id: m.id } })} />;
-      break;
+      return <Button label="Manage match" variant="outline" icon={Settings2} style={grow} onPress={() => router.push({ pathname: '/match/[id]', params: { id: m.id } })} />;
     case 'pending':
-      action = <Button label="Request sent · Withdraw" variant="outline" icon={Clock3} loading={leave.isPending} onPress={withdraw} />;
-      break;
+      return <Button label={compact ? 'Withdraw' : 'Request sent · Withdraw'} variant="outline" icon={Clock3} loading={leave.isPending} style={grow} onPress={withdraw} />;
     case 'accepted':
-      action = (
-        <View style={styles.payWrap}>
-          <Button
-            label={`Pay ${formatTaka(m.share)} to confirm`}
-            trailingIcon={ArrowRight}
-            onPress={() => router.push({ pathname: '/checkout', params: { match: m.id } })}
-          />
-          {m.payBy ? (
-            <Text variant="caption" color={colors.textMuted} align="center">
-              Accepted. Your spot is held until {clockLabel(m.payBy)}
-            </Text>
-          ) : null}
-        </View>
+      return (
+        <Button
+          label={compact ? `Pay ${formatTaka(m.share)}` : `Pay ${formatTaka(m.share)} to confirm`}
+          trailingIcon={ArrowRight}
+          style={grow}
+          onPress={() => router.push({ pathname: '/checkout', params: { match: m.id } })}
+        />
       );
-      break;
     case 'paid':
-      action = (
-        <View style={[styles.state, styles.stateIn]}>
-          <CircleCheck size={18} color={colors.limeText} strokeWidth={2} />
-          <Text variant="labelStrong" color={colors.limeText}>
-            You&apos;re in the squad
-          </Text>
-        </View>
-      );
-      break;
+      return state("You're in the squad", true);
     case 'declined':
-      action = (
-        <View style={styles.state}>
-          <Text variant="label" color={colors.textMuted}>
-            The organiser couldn&apos;t fit you in this time
-          </Text>
-        </View>
-      );
-      break;
+      return state(compact ? 'Not this time' : "The organiser couldn't fit you in this time");
     default:
-      action = full ? (
-        <View style={styles.state}>
-          <Text variant="label" color={colors.textMuted}>
-            This game is full
-          </Text>
-        </View>
+      return full ? (
+        state('This game is full')
       ) : (
-        <Button label="Request to join" variant="dark" trailingIcon={ArrowRight} onPress={() => onJoin(m)} />
+        <Button label={compact ? 'Request to join' : 'Send join request'} variant="dark" trailingIcon={compact ? undefined : ArrowRight} style={grow} onPress={() => onJoin(m)} />
       );
   }
+}
+
+const openDetails = (id: string) => router.push({ pathname: '/game/[id]', params: { id } });
+
+/** A game in the feed: tap it (or View) for the full details. */
+export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJoin: (m: Match) => void }) {
+  const full = m.spotsLeft === 0;
+  const pill = m.my === 'paid' ? "You're in" : full ? 'Full' : spotsLabel(m.spotsLeft);
 
   return (
     <Card style={styles.card} padded={false}>
-      <View style={styles.top}>
+      <Pressable style={styles.top} onPress={() => openDetails(m.id)} accessibilityRole="button" accessibilityLabel={`View ${m.title}`}>
         <Photo source={m.venue.photo} style={styles.photo} recyclingKey={m.id} />
         <View style={styles.info}>
           <View style={styles.titleRow}>
@@ -187,7 +178,7 @@ export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJo
             <Tag label={levelLabel(m.level)} />
           </View>
         </View>
-      </View>
+      </Pressable>
       <Divider style={styles.divider} />
       <View style={styles.bottom}>
         <Faces m={m} />
@@ -199,7 +190,17 @@ export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJo
           </Text>
         </Text>
       </View>
-      <View style={styles.action}>{action}</View>
+      <View style={styles.action}>
+        <View style={styles.actionRow}>
+          <Button label="View" variant="outline" icon={Eye} style={styles.viewBtn} onPress={() => openDetails(m.id)} />
+          <MatchAction m={m} onJoin={onJoin} compact fill />
+        </View>
+        {m.my === 'accepted' && m.payBy ? (
+          <Text variant="caption" color={colors.textMuted} align="center">
+            Accepted. Your spot is held until {clockLabel(m.payBy)}
+          </Text>
+        ) : null}
+      </View>
     </Card>
   );
 });
@@ -367,8 +368,9 @@ const styles = createStyles(() => ({
   bottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[3], paddingTop: space[3] },
   faces: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   faceRow: { flexDirection: 'row', alignItems: 'center' },
-  action: { padding: space[3], paddingTop: space[3] },
-  payWrap: { gap: space[2] },
+  action: { padding: space[3], paddingTop: space[3], gap: space[2] },
+  actionRow: { flexDirection: 'row', gap: space[2] },
+  viewBtn: { paddingHorizontal: space[5] },
   state: { minHeight: 48, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: space[2], paddingHorizontal: space[4] },
   stateIn: { backgroundColor: colors.limeSoft },
   bar: { flexDirection: 'row', gap: 4 },

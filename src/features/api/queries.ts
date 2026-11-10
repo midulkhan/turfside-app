@@ -6,7 +6,7 @@ import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { BookingFilter, ExploreParams, ExploreResult, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
+import type { BookingFilter, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -267,7 +267,21 @@ export function useMatchFeed(p: MatchFeedParams) {
 }
 
 export function useMatch(id: string | undefined) {
-  return useQuery({ queryKey: qk.match(id ?? ''), queryFn: ({ signal }) => api.getMatch(id!, signal), enabled: !!id, staleTime: 10_000 });
+  const qc = useQueryClient();
+  return useQuery<Match>({
+    queryKey: qk.match(id ?? ''),
+    queryFn: ({ signal }) => api.getMatch(id!, signal),
+    enabled: !!id,
+    staleTime: 10_000,
+    // Opened from the feed: show the card's copy at once, then refresh it.
+    placeholderData: (): Match | undefined => {
+      for (const [, data] of qc.getQueriesData<InfiniteData<Page<Match>>>({ queryKey: ['matches'] })) {
+        const hit = data?.pages.flatMap((pg) => pg.items).find((m) => m.id === id);
+        if (hit) return hit;
+      }
+      return undefined;
+    },
+  });
 }
 
 export function useMatchManage(id: string) {
