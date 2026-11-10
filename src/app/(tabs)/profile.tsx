@@ -10,8 +10,10 @@ import {
   LogOut,
   MapPin,
   Moon,
+  Pencil,
   ShieldCheck,
   Sun,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
 import { ActivityIndicator, Alert, Pressable, ScrollView, View, type ScrollViewInstance } from 'react-native';
@@ -163,16 +165,29 @@ export default function Profile() {
             </View>
             {photoBusy ? <View style={styles.dim} /> : null}
           </Pressable>
-          <View style={styles.flex}>
-            <Text variant="h3">{user?.name}</Text>
-            <Text variant="label" color={colors.textMuted}>
-              +880 {user?.phone}
-            </Text>
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Edit profile"
+            onPress={() => router.push('/edit-profile')}
+            style={({ pressed }) => [styles.meText, pressed && styles.meTextPressed]}>
+            <View style={styles.flex}>
+              <Text variant="h3" numberOfLines={1}>
+                {user?.name}
+              </Text>
+              <Text variant="label" color={colors.textMuted}>
+                +880 {user?.phone}
+              </Text>
+            </View>
+            <View style={styles.editBtn}>
+              <Pencil size={16} color={colors.ink} strokeWidth={2} />
+            </View>
+          </Pressable>
         </Card>
 
         <Overline>Account</Overline>
         <Card padded={false}>
+          <Row icon={UserRound} label="Edit profile" detail="Name, phone" onPress={() => router.push('/edit-profile')} />
+          <Divider />
           <Row icon={MapPin} label="Set address" detail={place.name} onPress={() => router.push('/locations')} />
           <Divider />
           <Row
@@ -252,6 +267,9 @@ const styles = createStyles(() => ({
   },
   dim: { position: 'absolute', left: 0, top: 0, width: 64, height: 64, borderRadius: 32, backgroundColor: withAlpha(colors.surface, 0.45) },
   me: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  meText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[3], borderRadius: radius.md },
+  meTextPressed: { opacity: 0.7 },
+  editBtn: { width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[4], minHeight: 60 },
   pressed: { backgroundColor: colors.bg },
   rowIcon: {

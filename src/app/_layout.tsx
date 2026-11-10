@@ -89,6 +89,7 @@ function RootNavigator() {
             <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="payment-return" options={{ animation: 'none' }} />
             <Stack.Screen name="privacy" />
+            <Stack.Screen name="edit-profile" />
           </Stack.Protected>
         </Stack>
       ) : null}

@@ -327,6 +327,17 @@ export async function buildApp() {
     const b = parse(z.object({ current: z.string().min(1).max(200), next: password }), req.body);
     return account.changePassword(req.user!.userId, req.user!.sessionId, b.current, b.next);
   });
+  app.patch('/v1/me', { preHandler: requireLiveUser }, async (req) =>
+    auth.updateProfile(req.user!.userId, parse(z.object({ name: z.string().trim().min(2, 'Enter your name.').max(80) }), req.body)),
+  );
+  app.post('/v1/me/phone/start', sensitive, async (req) => {
+    const b = parse(z.object({ phone: phone10, password: z.string().min(1).max(200) }), req.body);
+    return auth.phoneChangeStart(req.user!.userId, b.phone, b.password, req.ip);
+  });
+  app.post('/v1/me/phone/verify', sensitive, async (req) => {
+    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
+    return auth.phoneChangeVerify(req.user!.userId, b.phone, b.code);
+  });
   app.post('/v1/me/delete', sensitive, async (req) => account.deleteAccount(req.user!.userId, parse(z.object({ password: z.string().min(1).max(200) }), req.body).password));
   app.get('/v1/me/saved', { preHandler: requireUser }, async (req) => {
     const ids = await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1 order by created_at desc', [req.user!.userId]);

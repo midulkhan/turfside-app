@@ -218,4 +218,9 @@ export const revokeSession = (id: string) => request<{ ok: true }>('DELETE', `/v
 export const revokeOtherSessions = () => request<{ signedOut: number }>('POST', '/v1/me/sessions/revoke-others', { auth: 'required', body: {} });
 export const changePassword = (current: string, next: string) =>
   request<{ ok: true; signedOut: number }>('POST', '/v1/me/password', { auth: 'required', body: { current, next } });
+// Edit profile. The phone is the sign-in, so it changes only after a code sent to the new number.
+export const updateProfile = (b: { name: string }) => request<User>('PATCH', '/v1/me', { auth: 'required', body: b });
+export const startPhoneChange = (phone: string, password: string) =>
+  request<{ sent: true; devCode?: string }>('POST', '/v1/me/phone/start', { auth: 'required', body: { phone, password } });
+export const verifyPhoneChange = (phone: string, code: string) => request<User>('POST', '/v1/me/phone/verify', { auth: 'required', body: { phone, code } });
 export const deleteAccount = (password: string) => request<{ deleted: true }>('POST', '/v1/me/delete', { auth: 'required', body: { password } });

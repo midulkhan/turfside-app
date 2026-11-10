@@ -12,7 +12,7 @@ const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_SECONDS = 30;
 const REFRESH_DAYS = 30;
 
-type Purpose = 'signup' | 'reset';
+type Purpose = 'signup' | 'reset' | 'phone_change';
 type UserRow = { id: string; name: string; phone: string; email: string | null; roles: string[]; password_hash: string; avatar_key?: string | null };
 
 const otpSecret = () => {
@@ -163,4 +163,45 @@ export async function me(userId: string) {
   const u = await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1 and deleted_at is null', [userId]);
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   return publicUser(u);
+}
+
+// ── Edit profile ────────────────────────────────────────────────────────────
+const COLS = 'id, name, phone, email, roles, password_hash, avatar_key';
+
+export async function updateProfile(userId: string, input: { name: string }) {
+  const u = await one<UserRow>(`update users set name = $2, updated_at = now() where id = $1 and deleted_at is null returning ${COLS}`, [userId, input.name]);
+  if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
+  return publicUser(u);
+}
+
+/**
+ * Change phone, step 1: confirm it's really you (password), then text a code to the new number.
+ * The number is your sign-in, so it only changes once the new one is proven to be yours.
+ */
+export async function phoneChangeStart(userId: string, phone: string, password: string, ip: string) {
+  const u = await one<UserRow>(`select ${COLS} from users where id = $1 and deleted_at is null`, [userId]);
+  if (!u || !(await verifyPassword(password, u.password_hash))) throw new ApiError('invalid', 'Your password is incorrect.');
+  if (u.phone === phone) throw new ApiError('invalid', 'That is already your number.');
+  if (await one('select 1 from users where phone = $1', [phone])) throw new ApiError('conflict', 'This number is already used by another account.');
+  return issueOtp(phone, 'phone_change', { userId }, ip);
+}
+
+/** Change phone, step 2: the code from the new number. Tells the old number it was changed. */
+export async function phoneChangeVerify(userId: string, phone: string, code: string) {
+  const p = (await consumeOtp(phone, 'phone_change', code)) as { userId?: string } | null;
+  if (!p || p.userId !== userId) throw new ApiError('invalid', 'That code is not right. Try again.');
+  const old = await one<{ phone: string }>('select phone from users where id = $1', [userId]);
+  try {
+    const u = await one<UserRow>(`update users set phone = $2, phone_verified_at = now(), updated_at = now() where id = $1 and deleted_at is null returning ${COLS}`, [
+      userId,
+      phone,
+    ]);
+    if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
+    await q("insert into audit_log(action, entity, entity_id, data) values ('user.phone_changed', 'user', $1, '{}')", [userId]);
+    if (old?.phone) await sendSms(old.phone, 'Your TurfSides number was changed. If this wasn\'t you, contact support right away.').catch(() => {});
+    return publicUser(u);
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505') throw new ApiError('conflict', 'This number is already used by another account.');
+    throw e;
+  }
 }
