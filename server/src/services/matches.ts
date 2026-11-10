@@ -193,6 +193,41 @@ async function spotsTaken(c: PoolClient, id: string) {
   return res.rows[0].n;
 }
 
+/**
+ * The organiser's page: your upcoming matches, and your upcoming paid bookings that could
+ * still take players (no match yet, more than an hour to kick-off).
+ */
+export async function mine(userId: string) {
+  const rows = await q<Row>(
+    `${SELECT} where r.user_id = $1 and r.status <> 'cancelled' and b.status in ('confirmed', 'checked_in') and upper(b.during) > now()
+     order by b.day, b.start_min`,
+    [userId],
+  );
+  const open = await q<{ id: string; venue_id: string; day: string; start_min: number; end_min: number; total: number }>(
+    `select b.id, b.venue_id, b.day::text, b.start_min, b.end_min, b.total
+       from bookings b
+      where b.user_id = $1 and b.status = 'confirmed' and lower(b.during) > now() + interval '60 minutes'
+        and not exists (select 1 from player_requests r where r.booking_id = b.id and r.status <> 'cancelled')
+      order by b.day, b.start_min limit 20`,
+    [userId],
+  );
+  const bookings = await Promise.all(
+    open.map(async (b) => {
+      const v = await getVenueRow(b.venue_id).catch(() => null);
+      return {
+        id: b.id,
+        venue: { id: b.venue_id, name: v?.name ?? 'Turf', area: v?.area ?? '', photo: v?.photos?.[0] ? photoUrl(v.photos[0]) : null },
+        format: v?.formats?.[0] ?? '5-a-side',
+        day: b.day,
+        start: b.start_min,
+        end: b.end_min,
+        amountPaid: b.total,
+      };
+    }),
+  );
+  return { matches: await Promise.all(rows.map((r) => shape(r, userId))), bookings };
+}
+
 // ── Organiser ──────────────────────────────────────────────────────────────
 
 /** Open spots on one of your confirmed bookings. Idempotent: a booking has one live match. */

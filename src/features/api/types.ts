@@ -154,6 +154,11 @@ export type MatchManage = Match & {
   requests: MatchPerson[];
   squad: (MatchPerson & { paid: boolean; payBy: number | null })[];
 };
+/** Find players (organiser): your matches, and paid bookings that could still take players. */
+export type MyMatches = {
+  matches: Match[];
+  bookings: { id: string; venue: { id: string; name: string; area: string; photo: string | null }; format: string; day: DayKey; start: number; end: number; amountPaid: Poisha }[];
+};
 export type Page<T> = { items: T[]; nextCursor: number | null };
 export type MatchFeedParams = { lat?: number; lng?: number; nearby: boolean; day?: DayKey };
 

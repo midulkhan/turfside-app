@@ -266,6 +266,11 @@ export function useMatchFeed(p: MatchFeedParams) {
   });
 }
 
+/** Find players: your matches and bookings that can take players. Under ['matches'] so every match change refreshes it. */
+export function useMyMatches() {
+  return useQuery({ queryKey: ['matches', 'mine'], queryFn: ({ signal }) => api.getMyMatches(signal), staleTime: 15_000 });
+}
+
 export function useMatch(id: string | undefined) {
   const qc = useQueryClient();
   return useQuery<Match>({
@@ -276,7 +281,7 @@ export function useMatch(id: string | undefined) {
     // Opened from the feed: show the card's copy at once, then refresh it.
     placeholderData: (): Match | undefined => {
       for (const [, data] of qc.getQueriesData<InfiniteData<Page<Match>>>({ queryKey: ['matches'] })) {
-        const hit = data?.pages.flatMap((pg) => pg.items).find((m) => m.id === id);
+        const hit = data?.pages?.flatMap((pg) => pg.items).find((m) => m.id === id);
         if (hit) return hit;
       }
       return undefined;

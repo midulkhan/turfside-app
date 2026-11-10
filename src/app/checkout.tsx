@@ -189,7 +189,7 @@ export default function Checkout() {
           qc.invalidateQueries({ queryKey: ['matches'] });
           qc.invalidateQueries({ queryKey: qk.match(matchId!) });
           qc.invalidateQueries({ queryKey: ['notifications'] });
-          router.dismissTo('/players');
+          router.dismissTo('/join');
           Alert.alert("You're in the squad", `See you at ${h.name}, ${formatDay(h.slots[0].day, { year: false })}.`);
           return;
         }

@@ -29,7 +29,7 @@ function target(n: NotificationItem): (() => void) | null {
     case 'match_member_paid':
       return () => router.push({ pathname: '/match/[id]', params: { id } });
     default:
-      return () => router.push('/players');
+      return () => router.push('/join');
   }
 }
 

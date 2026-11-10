@@ -60,6 +60,9 @@ d('find players', () => {
   });
 
   it('organiser opens spots on a paid booking; price per player is fixed by the server', async () => {
+    // Before: the paid booking is offered as one that can take players.
+    const before = (await call('GET', '/v1/matches/mine', undefined, org.accessToken)).json;
+    expect(before.bookings.map((b: Json) => b.id)).toContain(bookingId);
     const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side' }, org.accessToken);
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     matchId = r.json.id;
@@ -69,6 +72,10 @@ d('find players', () => {
     const booking = (await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json;
     expect(r.json.share).toBe(Math.ceil(booking.amountPaid / r.json.playersTotal / 100) * 100);
     expect(booking.matchId).toBe(matchId);
+    const after = (await call('GET', '/v1/matches/mine', undefined, org.accessToken)).json;
+    expect(after.matches.map((m: Json) => m.id)).toContain(matchId);
+    expect(after.bookings.map((b: Json) => b.id)).not.toContain(bookingId);
+    expect((await call('GET', '/v1/matches/mine', undefined, p1.accessToken)).json.matches).toEqual([]);
     // Again: same match, not a second one.
     expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3 }, org.accessToken)).json.id).toBe(matchId);
     // Someone else's booking can't be used.

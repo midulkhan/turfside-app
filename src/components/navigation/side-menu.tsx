@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { ChevronRight, CircleHelp, LogOut, UsersRound, X, type LucideIcon } from 'lucide-react-native';
+import { ChevronRight, CircleHelp, LogOut, UserPlus, UsersRound, X, type LucideIcon } from 'lucide-react-native';
 import { useRef } from 'react';
 import { Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +18,7 @@ type Item = { icon: LucideIcon; label: string; href: Href };
 
 // Bookings, saved turfs, notifications and the profile live in the tab bar and header.
 const ITEMS: Item[] = [
+  { icon: UserPlus, label: 'Join a squad', href: '/join' },
   { icon: UsersRound, label: 'Find players', href: '/players' },
   { icon: CircleHelp, label: 'Help & support', href: '/profile' },
 ];
