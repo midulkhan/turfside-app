@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { JoinSheet, MatchCard, dayLabel } from '@/components/match/match-ui';
+import { MatchCard, dayLabel } from '@/components/match/match-ui';
 import { CalendarModal } from '@/components/ui/calendar';
 import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
@@ -16,7 +16,7 @@ import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useMatchFeed } from '@/features/api/queries';
-import type { Match } from '@/features/api/types';
+import { useLiveMatchFeed, useRefreshAt } from '@/features/api/realtime';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { addDays, dhakaToday, type DayKey } from '@/lib/time';
@@ -37,7 +37,6 @@ export default function Players() {
   const [nearby, setNearby] = useState(false);
   const [day, setDay] = useState<DayKey | undefined>(undefined);
   const [picking, setPicking] = useState(false);
-  const [joining, setJoining] = useState<Match | null>(null);
   const scrolled = useScrolled();
 
   const params = useMemo(() => ({ lat: place.lat, lng: place.lng, nearby, day }), [place.lat, place.lng, nearby, day]);
@@ -45,6 +44,15 @@ export default function Players() {
   const pull = usePullToRefresh(feed.refetch);
   const items = useMemo(() => feed.data?.pages.flatMap((p) => p.items) ?? [], [feed.data]);
   const loading = feed.isPending || (feed.isPlaceholderData && feed.isFetching);
+
+  // Live: requests, acceptances and payments show up as they happen; a held spot whose
+  // 5-minute pay window runs out comes back on its own.
+  useLiveMatchFeed();
+  const nextRelease = useMemo(() => {
+    const t = items.map((m) => m.reservedUntil ?? 0).filter((x) => x > 0); // the server sends only future ones
+    return t.length ? Math.min(...t) : null;
+  }, [items]);
+  useRefreshAt(nextRelease, feed.refetch);
 
   // "Your squad is 1 player away." — the game closest to full among the open ones.
   const fewest = useMemo(() => {
@@ -135,7 +143,7 @@ export default function Players() {
           maintainVisibleContentPosition={NO_ANCHOR}
           renderItem={({ item }) => (
             <View style={styles.item}>
-              <MatchCard m={item} onJoin={setJoining} />
+              <MatchCard m={item} />
             </View>
           )}
           ListHeaderComponent={header}
@@ -178,7 +186,6 @@ export default function Players() {
         />
       )}
 
-      <JoinSheet match={joining} onClose={() => setJoining(null)} />
       <CalendarModal
         visible={picking}
         title="Pick a day"

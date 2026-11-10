@@ -60,12 +60,12 @@ d('find players', () => {
   });
 
   it('organiser opens spots on a paid booking; price per player is fixed by the server', async () => {
-    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2, title: 'Evening five-a-side' }, org.accessToken);
+    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side' }, org.accessToken);
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     matchId = r.json.id;
     expect(r.json.my).toBe('owner');
-    expect(r.json.openSpots).toBe(2);
-    expect(r.json.playersIn).toBe(r.json.playersTotal - 2);
+    expect(r.json.openSpots).toBe(3);
+    expect(r.json.playersIn).toBe(r.json.playersTotal - 3);
     const booking = (await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json;
     expect(r.json.share).toBe(Math.ceil(booking.amountPaid / r.json.playersTotal / 100) * 100);
     expect(booking.matchId).toBe(matchId);
@@ -79,9 +79,12 @@ d('find players', () => {
     const feed = (await call('GET', '/v1/matches?lat=23.87&lng=90.40', undefined, p1.accessToken)).json;
     const item = feed.items.find((m: Json) => m.id === matchId);
     expect(item.my).toBe('none');
-    expect(item.spotsLeft).toBe(2);
+    expect(item.spotsLeft).toBe(3);
     expect(item.faces[0].name).toBe('Organiser One');
-    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual' }, p1.accessToken)).json.my).toBe('pending');
+    // More spots than are open: refused, nothing recorded.
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 4 }, p1.accessToken)).status).toBe(409);
+    const asked = (await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual', spots: 2 }, p1.accessToken)).json;
+    expect(asked).toMatchObject({ my: 'pending', mySpots: 2 });
     expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular' }, p2.accessToken)).json.my).toBe('pending');
     expect((await call('POST', `/v1/matches/${matchId}/join`, {}, org.accessToken)).status).toBe(403); // own match
     const m = (await call('GET', `/v1/matches/${matchId}/manage`, undefined, org.accessToken)).json;
@@ -94,12 +97,17 @@ d('find players', () => {
   it('accept → notification with pay → pay share via bKash → in the squad', async () => {
     const acc = await call('POST', `/v1/matches/${matchId}/requests/${p1.user.id}/accept`, undefined, org.accessToken);
     expect(acc.status, JSON.stringify(acc.json)).toBe(200);
-    expect(acc.json.squad[0]).toMatchObject({ name: 'Tanvir Ahmed', paid: false });
+    expect(acc.json.squad[0]).toMatchObject({ name: 'Tanvir Ahmed', paid: false, spots: 2 });
     const note = ((await call('GET', '/v1/me/notifications', undefined, p1.accessToken)).json as Json[]).find((x) => x.data?.type === 'match_accepted');
     expect(note?.data.matchId).toBe(matchId);
     const mine = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
     expect(mine.my).toBe('accepted');
     expect(mine.payBy).toBeGreaterThan(Date.now());
+    expect(mine.payBy).toBeLessThanOrEqual(Date.now() + 5 * 60_000 + 5_000); // 5-minute pay window
+    // Held spots are off the market for everyone else, and the release time is public.
+    const other = (await call('GET', `/v1/matches/${matchId}`, undefined, p3.accessToken)).json;
+    expect(other.spotsLeft).toBe(1);
+    expect(other.reservedUntil).toBe(mine.payBy);
     // Only the accepted player can pay, only their share.
     expect((await call('POST', `/v1/matches/${matchId}/pay`, {}, p2.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(410);
     const pay = await call('POST', `/v1/matches/${matchId}/pay`, {}, p1.accessToken, { 'Idempotency-Key': randomUUID() });
@@ -110,6 +118,7 @@ d('find players', () => {
     const after = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
     expect(after.my).toBe('paid');
     expect(after.playersIn).toBe(after.playersTotal - 1);
+    expect(after.spotsLeft).toBe(1);
     // The organiser's booking is untouched by a share payment.
     expect((await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json.status).toBe('confirmed');
     expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
@@ -118,7 +127,9 @@ d('find players', () => {
   it('decline, pause and the last spot', async () => {
     expect((await call('POST', `/v1/matches/${matchId}/requests/${p2.user.id}/decline`, undefined, org.accessToken)).status).toBe(200);
     expect((await call('GET', `/v1/matches/${matchId}`, undefined, p2.accessToken)).json.my).toBe('declined');
-    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p2.accessToken)).status).toBe(403); // can't spam after a no
+    // A no isn't final: they can ask again (only for what's left).
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 2 }, p2.accessToken)).status).toBe(409);
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 1 }, p2.accessToken)).json).toMatchObject({ my: 'pending', mySpots: 1 });
     const paused = await call('PATCH', `/v1/matches/${matchId}`, { paused: true }, org.accessToken);
     expect(paused.json.status).toBe('paused');
     expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).status).toBe(403);

@@ -506,7 +506,7 @@ export async function buildApp() {
     matches.requestToJoin(
       req.user!.userId,
       matchId(req),
-      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual') }), req.body ?? {}),
+      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1) }), req.body ?? {}),
     ),
   );
   app.delete('/v1/matches/:id/join', { preHandler: requireUser }, async (req) => matches.withdraw(req.user!.userId, matchId(req)));
@@ -630,7 +630,7 @@ export async function buildApp() {
     horizonDays: config.BOOKING_HORIZON_DAYS,
     horizonEnd: addDays(dhakaToday(), config.BOOKING_HORIZON_DAYS),
     // Public realtime settings: the anon key can only read slot_updates (see migration 003).
-    realtime: config.SUPABASE_URL && config.SUPABASE_ANON_KEY ? { url: config.SUPABASE_URL, anonKey: config.SUPABASE_ANON_KEY, table: 'slot_updates' } : null,
+    realtime: config.SUPABASE_URL && config.SUPABASE_ANON_KEY ? { url: config.SUPABASE_URL, anonKey: config.SUPABASE_ANON_KEY, table: 'slot_updates', matchTable: 'match_updates' } : null,
   }));
 
   return app;

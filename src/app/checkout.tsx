@@ -95,8 +95,14 @@ export default function Checkout() {
           place: mt.venue.area,
           format: mt.format,
           slots: [{ id: '', day: mt.day, start: mt.start, end: mt.end }],
-          lines: [{ label: 'Your share', detail: `${mt.title} · 1 of ${mt.playersTotal} players`, amount: mt.share }],
-          total: mt.share,
+          lines: [
+            {
+              label: 'Your share',
+              detail: (mt.mySpots ?? 1) === 1 ? `${mt.title} · 1 of ${mt.playersTotal} players` : `${mt.title} · ${mt.mySpots} spots × ${formatTaka(mt.share)}`,
+              amount: mt.share * (mt.mySpots ?? 1),
+            },
+          ],
+          total: mt.share * (mt.mySpots ?? 1),
           expiresAt: mt.payBy,
           policy:
             "Your share secures your place in the squad. If the organiser cancels the game, you get a full refund. Can't make it? Let the organiser know — paid shares aren't refunded otherwise.",

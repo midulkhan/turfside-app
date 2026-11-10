@@ -141,10 +141,14 @@ export type Match = {
   faces: { name: string; avatar: string | null }[];
   moreCount: number;
   my: MatchMine;
+  /** Spots the viewer asked for / holds / paid for (1 = just them). */
+  mySpots?: number;
   /** Accepted, not yet paid: pay before this (ms). */
   payBy: number | null;
+  /** When the next held (unpaid) spot is released back to everyone (ms). */
+  reservedUntil?: number | null;
 };
-export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number };
+export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number; spots?: number };
 export type MatchManage = Match & {
   booking: { id: string; code: string };
   requests: MatchPerson[];
@@ -201,7 +205,7 @@ export type AppConfig = {
   paymentsEnabled: boolean;
   horizonDays: number;
   horizonEnd: DayKey;
-  realtime: { url: string; anonKey: string; table: string } | null;
+  realtime: { url: string; anonKey: string; table: string; matchTable?: string } | null;
 };
 
 /** A location the player saved ("Home", "Work", …). Coordinates are rounded to ~100 m. */

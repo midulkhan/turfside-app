@@ -171,7 +171,7 @@ export const updateMatch = (id: string, patch: { title?: string; paused?: boolea
   request<MatchManage>('PATCH', `/v1/matches/${enc(id)}`, { auth: 'required', body: patch });
 export const decideRequest = (id: string, userId: string, accept: boolean) =>
   request<MatchManage>('POST', `/v1/matches/${enc(id)}/requests/${enc(userId)}/${accept ? 'accept' : 'decline'}`, { auth: 'required' });
-export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel }) =>
+export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number }) =>
   request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: b });
 export const leaveMatch = (id: string) => request<Match>('DELETE', `/v1/matches/${enc(id)}/join`, { auth: 'required' });
 /** Pay your share of a match you were accepted into (bKash, like a booking). */

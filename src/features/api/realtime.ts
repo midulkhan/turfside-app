@@ -114,6 +114,113 @@ export function useLiveExplore(today: DayKey) {
   useForegroundReconnect(!!rt);
 }
 
+// ── Find players ─────────────────────────────────────────────────────────
+
+/**
+ * Live match: the server touches `match_updates(match_id)` whenever the match or anyone's
+ * request on it changes (asked, accepted, declined, paid, withdrawn, released). We refetch
+ * this match (and the organiser's view of it) the moment that happens. Without realtime,
+ * poll every 5 s instead. Returns whether the socket is live.
+ */
+export function useLiveMatch(id: string | undefined) {
+  const qc = useQueryClient();
+  const rt = useAppConfig().data?.realtime;
+  const table = rt?.matchTable;
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    if (!rt || !table || !id) return;
+    const refresh = () => {
+      void qc.invalidateQueries({ queryKey: qk.match(id) });
+      void qc.invalidateQueries({ queryKey: qk.matchManage(id) });
+    };
+    const channel = getClient(rt)
+      .channel(`match:${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `match_id=eq.${id}` }, () => {
+        refresh();
+        void qc.invalidateQueries({ queryKey: ['matches'] });
+      })
+      .subscribe((status) => {
+        const ok = status === 'SUBSCRIBED';
+        setLive(ok);
+        if (ok) refresh(); // catch up on anything missed while connecting
+      });
+    return () => {
+      setLive(false);
+      channel.unsubscribe();
+    };
+  }, [rt, table, id, qc]);
+
+  usePollWhileDown(!live && !!id, 5_000, () => {
+    void qc.invalidateQueries({ queryKey: qk.match(id!) });
+    void qc.invalidateQueries({ queryKey: qk.matchManage(id!) });
+  });
+  useForegroundReconnect(!!rt);
+  return live;
+}
+
+/** Live feed: any match changing refreshes the list (debounced). Polls every 15 s without realtime. */
+export function useLiveMatchFeed() {
+  const qc = useQueryClient();
+  const rt = useAppConfig().data?.realtime;
+  const table = rt?.matchTable;
+  const [live, setLive] = useState(false);
+  useEffect(() => {
+    if (!rt || !table) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const channel = getClient(rt)
+      .channel('matches:feed')
+      .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        if (t) return;
+        t = setTimeout(() => {
+          t = null;
+          void qc.invalidateQueries({ queryKey: ['matches'] });
+        }, 600);
+      })
+      .subscribe((status) => setLive(status === 'SUBSCRIBED'));
+    return () => {
+      if (t) clearTimeout(t);
+      setLive(false);
+      channel.unsubscribe();
+    };
+  }, [rt, table, qc]);
+  usePollWhileDown(!live, 15_000, () => void qc.invalidateQueries({ queryKey: ['matches'] }));
+  useForegroundReconnect(!!rt);
+  return live;
+}
+
+/**
+ * Refetch at a known moment, e.g. when a held spot's 5-minute pay window ends: nothing is
+ * written to the database at that instant, so there is no realtime event to wait for.
+ */
+export function useRefreshAt(at: number | null | undefined, refresh: () => void) {
+  const cb = useRef(refresh);
+  useEffect(() => {
+    cb.current = refresh;
+  }, [refresh]);
+  useEffect(() => {
+    if (!at) return;
+    const ms = at - Date.now() + 800;
+    if (ms > 24 * 3600_000) return;
+    const t = setTimeout(() => cb.current(), Math.max(0, ms));
+    return () => clearTimeout(t);
+  }, [at]);
+}
+
+function usePollWhileDown(enabled: boolean, every: number, tick: () => void) {
+  const cb = useRef(tick);
+  useEffect(() => {
+    cb.current = tick;
+  }, [tick]);
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => {
+      if (AppState.currentState === 'active') cb.current();
+    }, every);
+    return () => clearInterval(t);
+  }, [enabled, every]);
+}
+
 /** Sockets die in the background; reconnect when the app returns to the foreground. */
 function useForegroundReconnect(enabled: boolean) {
   useEffect(() => {

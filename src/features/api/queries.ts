@@ -285,7 +285,7 @@ export function useMatch(id: string | undefined) {
 }
 
 export function useMatchManage(id: string) {
-  return useQuery({ queryKey: qk.matchManage(id), queryFn: ({ signal }) => api.getMatchManage(id, signal), staleTime: 10_000, refetchInterval: 20_000 });
+  return useQuery({ queryKey: qk.matchManage(id), queryFn: ({ signal }) => api.getMatchManage(id, signal), staleTime: 10_000 });
 }
 
 /** Everything that shows a match: refresh after any change to one. */
@@ -299,14 +299,23 @@ function touchMatches(qc: QueryClient, id: string, manage?: MatchManage) {
 export function useJoinMatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, position, level }: { id: string; position: MatchPosition; level: MatchLevel }) => api.joinMatch(id, { position, level }),
-    onSuccess: (m) => touchMatches(qc, m.id),
+    mutationFn: ({ id, position, level, spots }: { id: string; position: MatchPosition; level: MatchLevel; spots: number }) => api.joinMatch(id, { position, level, spots }),
+    onSuccess: (m) => {
+      qc.setQueryData(qk.match(m.id), m);
+      touchMatches(qc, m.id);
+    },
   });
 }
 
 export function useLeaveMatch() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: string) => api.leaveMatch(id), onSuccess: (m) => touchMatches(qc, m.id) });
+  return useMutation({
+    mutationFn: (id: string) => api.leaveMatch(id),
+    onSuccess: (m) => {
+      qc.setQueryData(qk.match(m.id), m);
+      touchMatches(qc, m.id);
+    },
+  });
 }
 
 export function useDecideRequest(id: string) {

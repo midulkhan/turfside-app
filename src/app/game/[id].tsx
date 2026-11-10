@@ -1,10 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { CalendarDays, CircleCheck, Clock3, MapPin, Navigation, ShieldCheck, Share2, Undo2 } from 'lucide-react-native';
-import { useState } from 'react';
+import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Navigation, Plus, ShieldCheck, Share2, Timer, Undo2 } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { JoinSheet, MatchAction, SquadBar, Tag, clockLabel, levelLabel, spotsLabel, whenLabel } from '@/components/match/match-ui';
+import { JoinSheet, MatchAction, SquadBar, Tag, levelLabel, spotsLabel, statusPill, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
@@ -15,7 +15,9 @@ import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useMatch } from '@/features/api/queries';
+import { useLiveMatch, useRefreshAt } from '@/features/api/realtime';
 import type { Match } from '@/features/api/types';
+import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
@@ -29,7 +31,18 @@ export default function GameDetails() {
   const q = useMatch(id);
   const pull = usePullToRefresh(q.refetch);
   const [joining, setJoining] = useState<Match | null>(null);
+  const [want, setWant] = useState(1);
   const m = q.data;
+
+  // Live: the organiser's answer, other players' requests and payments arrive as they happen.
+  useLiveMatch(id);
+  // A held spot (yours or someone else's) is released when its 5-minute window ends.
+  useRefreshAt(m?.payBy, q.refetch);
+  useRefreshAt(m?.reservedUntil, q.refetch);
+
+  // Never ask for more than is open (others may have just taken some).
+  const canAsk = !!m && m.status === 'open' && m.spotsLeft > 0 && !['owner', 'pending', 'accepted', 'paid'].includes(m.my);
+  const spots = canAsk ? Math.min(Math.max(1, want), m.spotsLeft) : (m?.mySpots ?? 1);
 
   const share = () =>
     m &&
@@ -53,20 +66,20 @@ export default function GameDetails() {
             refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
             contentContainerStyle={[styles.content, { paddingBottom: space[6] }]}
             showsVerticalScrollIndicator={false}>
-            {m ? <Body m={m} /> : <Loading />}
+            {m ? <Body m={m} canAsk={canAsk} spots={spots} onSpots={setWant} /> : <Loading />}
           </ScrollView>
-          {m ? <PriceBar m={m} bottom={insets.bottom} onJoin={setJoining} /> : null}
+          {m ? <PriceBar m={m} spots={spots} bottom={insets.bottom} onJoin={setJoining} /> : null}
         </>
       )}
 
-      <JoinSheet match={joining} onClose={() => setJoining(null)} />
+      <JoinSheet match={joining} spots={spots} onClose={() => setJoining(null)} />
     </View>
   );
 }
 
-function Body({ m }: { m: Match }) {
+function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots: number; onSpots: (n: number) => void }) {
   const full = m.spotsLeft === 0;
-  const pill = m.my === 'paid' ? "You're in" : full ? 'Full' : spotsLabel(m.spotsLeft);
+  const pill = statusPill(m);
   const host = m.faces[0];
   const shown = m.faces.slice(0, 3);
   const extra = m.playersIn - shown.length;
@@ -83,7 +96,7 @@ function Body({ m }: { m: Match }) {
       {/* Hero */}
       <View>
         <Photo source={m.venue.photo} style={styles.hero} rounded={radius.xl} recyclingKey={m.id} />
-        <View style={[styles.heroPill, (full || m.my === 'paid') && styles.heroPillMuted]}>
+        <View style={[styles.heroPill, ((full && m.my !== 'paid' && m.my !== 'accepted') || m.my === 'declined') && styles.heroPillMuted]}>
           <Text variant="labelStrong" color={colors.charcoal}>
             {pill}
           </Text>
@@ -124,6 +137,41 @@ function Body({ m }: { m: Match }) {
         </View>
       </Card>
 
+      {/* How many spots: you, or you and friends. The price follows. */}
+      {canAsk ? (
+        <Card style={styles.counter}>
+          <View style={styles.flex}>
+            <Text variant="title">Spots</Text>
+            <Text variant="label" color={colors.textMuted}>
+              {spots === 1 ? 'Just you' : `You + ${spots - 1} friend${spots === 2 ? '' : 's'}`} · {m.spotsLeft} open
+            </Text>
+          </View>
+          <IconButton
+            icon={Minus}
+            label="Fewer spots"
+            size={44}
+            disabled={spots <= 1}
+            onPress={() => {
+              haptic.select();
+              onSpots(spots - 1);
+            }}
+          />
+          <Text variant="number" style={styles.count} accessibilityLiveRegion="polite">
+            {spots}
+          </Text>
+          <IconButton
+            icon={Plus}
+            label="More spots"
+            size={44}
+            disabled={spots >= m.spotsLeft}
+            onPress={() => {
+              haptic.select();
+              onSpots(spots + 1);
+            }}
+          />
+        </Card>
+      ) : null}
+
       {/* Squad */}
       <View style={styles.section}>
         <View style={styles.sectionRow}>
@@ -152,7 +200,7 @@ function Body({ m }: { m: Match }) {
         <Text variant="h3">Good to know</Text>
         <View style={styles.points}>
           <Point icon={ShieldCheck} text="The turf is already booked and paid for by the organiser." />
-          <Point icon={Clock3} text="Once you're accepted, you have up to 2 hours to pay your share." />
+          <Point icon={Clock3} text="Once you're accepted, you have 5 minutes to pay. After that the spots go back to the game." />
           <Point icon={Undo2} text="If the organiser cancels, your share is refunded in full." />
         </View>
       </View>
@@ -197,23 +245,38 @@ function Point({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   );
 }
 
-/** Price and the viewer's next step, pinned to the bottom. */
-function PriceBar({ m, bottom, onJoin }: { m: Match; bottom: number; onJoin: (m: Match) => void }) {
+/** Price (for the chosen spots) and the viewer's next step, pinned to the bottom. */
+function PriceBar({ m, spots, bottom, onJoin }: { m: Match; spots: number; bottom: number; onJoin: (m: Match) => void }) {
+  const left = useCountdown(m.my === 'accepted' ? m.payBy : null);
   const hint =
-    m.my === 'accepted' && m.payBy
-      ? `Accepted. Your spot is held until ${clockLabel(m.payBy)}`
-      : m.my === 'none' || m.my === 'withdrawn' || m.my === 'expired'
-        ? 'Pay only after the organiser accepts you.'
-        : null;
+    m.my === 'accepted' && left !== null
+      ? null
+      : m.my === 'pending'
+        ? `Request sent for ${spots === 1 ? '1 spot' : `${spots} spots`}. You'll be notified when the organiser answers.`
+        : m.my === 'declined'
+          ? "The organiser couldn't fit you in. You can ask again."
+          : m.my === 'expired'
+            ? 'The 5 minutes to pay ran out. Ask again if spots are open.'
+            : m.my === 'none' || m.my === 'withdrawn'
+              ? 'Pay only after the organiser accepts you.'
+              : null;
   return (
     <View style={[styles.bar, { paddingBottom: bottom + space[3] }]}>
+      {m.my === 'accepted' && left !== null ? (
+        <View style={[styles.timer, left < 60_000 && styles.timerUrgent]}>
+          <Timer size={16} color={left < 60_000 ? colors.danger : colors.limeText} strokeWidth={2.2} />
+          <Text variant="labelStrong" color={left < 60_000 ? colors.danger : colors.limeText} style={styles.flex}>
+            Accepted! Pay within {mmss(left)} to keep your {spots === 1 ? 'spot' : `${spots} spots`}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.barRow}>
         <View style={styles.price}>
           <Text variant="h3" style={styles.priceText}>
-            {formatTaka(m.share)}
+            {formatTaka(m.share * spots)}
           </Text>
           <Text variant="caption" color={colors.textMuted}>
-            per player
+            {spots === 1 ? 'per player' : `${spots} spots · ${formatTaka(m.share)} each`}
           </Text>
         </View>
         <View style={styles.barLine} />
@@ -229,6 +292,21 @@ function PriceBar({ m, bottom, onJoin }: { m: Match; bottom: number; onJoin: (m:
     </View>
   );
 }
+
+/** Milliseconds until `to`, ticking every second (null when there's nothing to count down to). */
+function useCountdown(to: number | null) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!to) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [to]);
+  return to ? Math.max(0, to - now) : null;
+}
+const mmss = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 function Loading() {
   return (
@@ -287,4 +365,8 @@ const styles = createStyles(() => ({
   price: { gap: 0 },
   priceText: { fontFamily: font.bold },
   barLine: { width: 1, height: 36, backgroundColor: colors.border },
+  counter: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  count: { minWidth: 32, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  timer: { flexDirection: 'row', alignItems: 'center', gap: space[2], backgroundColor: colors.limeSoft, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2] },
+  timerUrgent: { backgroundColor: colors.dangerSoft },
 }));

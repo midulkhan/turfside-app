@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, Settings2 } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2 } from 'lucide-react-native';
 import { memo, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
@@ -95,9 +95,10 @@ function Faces({ m }: { m: Match }) {
 export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m: Match) => void; compact?: boolean; fill?: boolean }) {
   const leave = useLeaveMatch();
   const full = m.spotsLeft === 0;
+  const total = m.share * (m.mySpots ?? 1);
 
   const withdraw = () =>
-    Alert.alert('Withdraw your request?', 'Your spot goes back to the game.', [
+    Alert.alert('Withdraw your request?', 'You can ask again later if spots are still open.', [
       { text: 'Keep it', style: 'cancel' },
       { text: 'Withdraw', style: 'destructive', onPress: () => leave.mutate(m.id, { onError: (e) => Alert.alert('Could not withdraw', e.message) }) },
     ]);
@@ -120,7 +121,7 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
     case 'accepted':
       return (
         <Button
-          label={compact ? `Pay ${formatTaka(m.share)}` : `Pay ${formatTaka(m.share)} to confirm`}
+          label={compact ? `Pay ${formatTaka(total)}` : `Pay ${formatTaka(total)} to confirm`}
           trailingIcon={ArrowRight}
           style={grow}
           onPress={() => router.push({ pathname: '/checkout', params: { match: m.id } })}
@@ -128,23 +129,38 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
       );
     case 'paid':
       return state("You're in the squad", true);
-    case 'declined':
-      return state(compact ? 'Not this time' : "The organiser couldn't fit you in this time");
-    default:
-      return full ? (
-        state('This game is full')
-      ) : (
-        <Button label={compact ? 'Request to join' : 'Send join request'} variant="dark" trailingIcon={compact ? undefined : ArrowRight} style={grow} onPress={() => onJoin(m)} />
-      );
+    default: {
+      if (full) return state('This game is full');
+      if (m.status !== 'open') return state('Requests are paused');
+      // Declined, or the pay window ran out: they can ask again while spots are open.
+      const again = m.my === 'declined' || m.my === 'expired';
+      return <Button label={again ? 'Request again' : 'Request to join'} variant="dark" icon={again ? RotateCcw : undefined} style={grow} onPress={() => onJoin(m)} />;
+    }
   }
+}
+
+/** The card's pill: spots left, or where the viewer stands. */
+export function statusPill(m: Match) {
+  switch (m.my) {
+    case 'paid':
+      return "You're in";
+    case 'accepted':
+      return 'Pay now';
+    case 'pending':
+      return 'Requested';
+    case 'declined':
+      return 'Not this time';
+  }
+  return m.spotsLeft === 0 ? 'Full' : spotsLabel(m.spotsLeft);
 }
 
 const openDetails = (id: string) => router.push({ pathname: '/game/[id]', params: { id } });
 
 /** A game in the feed: tap it (or View) for the full details. */
-export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJoin: (m: Match) => void }) {
+export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
   const full = m.spotsLeft === 0;
-  const pill = m.my === 'paid' ? "You're in" : full ? 'Full' : spotsLabel(m.spotsLeft);
+  const pill = statusPill(m);
+  const muted = (full && m.my !== 'paid' && m.my !== 'accepted') || m.my === 'declined';
 
   return (
     <Card style={styles.card} padded={false}>
@@ -155,8 +171,8 @@ export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJo
             <Text variant="title" numberOfLines={1} style={styles.titleText}>
               {m.title}
             </Text>
-            <View style={[styles.spots, (full || m.my === 'paid') && styles.spotsMuted]}>
-              <Text variant="caption" style={styles.spotsText} color={full && m.my !== 'paid' ? colors.textMuted : colors.limeText}>
+            <View style={[styles.spots, muted && styles.spotsMuted]}>
+              <Text variant="caption" style={styles.spotsText} color={muted ? colors.textMuted : colors.limeText}>
                 {pill}
               </Text>
             </View>
@@ -191,29 +207,22 @@ export const MatchCard = memo(function MatchCard({ m, onJoin }: { m: Match; onJo
         </Text>
       </View>
       <View style={styles.action}>
-        <View style={styles.actionRow}>
-          <Button label="View" variant="outline" icon={Eye} style={styles.viewBtn} onPress={() => openDetails(m.id)} />
-          <MatchAction m={m} onJoin={onJoin} compact fill />
-        </View>
-        {m.my === 'accepted' && m.payBy ? (
-          <Text variant="caption" color={colors.textMuted} align="center">
-            Accepted. Your spot is held until {clockLabel(m.payBy)}
-          </Text>
-        ) : null}
+        <Button label="View" variant="outline" icon={Eye} onPress={() => openDetails(m.id)} />
       </View>
     </Card>
   );
 });
 
 /** Ask to join: position and level (the organiser sees both). You only pay once accepted. */
-export function JoinSheet({ match, onClose }: { match: Match | null; onClose: () => void }) {
+/** `spots`: how many places the player asks for (themselves + friends). */
+export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; spots?: number; onClose: () => void }) {
   const [position, setPosition] = useState<MatchPosition>('any');
   const [level, setLevel] = useState<MatchLevel>('casual');
   const join = useJoinMatch();
   const send = () => {
     if (!match) return;
     join.mutate(
-      { id: match.id, position, level },
+      { id: match.id, position, level, spots },
       {
         onSuccess: () => {
           haptic.success();
@@ -231,7 +240,7 @@ export function JoinSheet({ match, onClose }: { match: Match | null; onClose: ()
       {match ? (
         <View style={styles.sheet}>
           <View style={styles.sheetHead}>
-            <Text variant="h2">Join {match.title}</Text>
+            <Text variant="h2">{match.my === 'declined' || match.my === 'expired' ? 'Ask again' : `Join ${match.title}`}</Text>
             <Text variant="label" color={colors.textMuted}>
               {match.venue.name} · {whenLabel(match)}
             </Text>
@@ -251,10 +260,13 @@ export function JoinSheet({ match, onClose }: { match: Match | null; onClose: ()
           <View style={styles.note}>
             <Check size={16} color={colors.limeText} strokeWidth={2.4} />
             <Text variant="label" color={colors.textMuted} style={styles.flex}>
-              You pay your {formatTaka(match.share)} share only if the organiser accepts you.
+              {spots === 1
+                ? `You pay ${formatTaka(match.share)} only if the organiser accepts you.`
+                : `You pay ${formatTaka(match.share * spots)} for ${spots} spots only if the organiser accepts you.`}{' '}
+              You then have 5 minutes to pay.
             </Text>
           </View>
-          <Button label="Send request" onPress={send} loading={join.isPending} />
+          <Button label={spots === 1 ? 'Send request' : `Send request · ${spots} spots`} onPress={send} loading={join.isPending} />
         </View>
       ) : null}
     </Sheet>
@@ -369,8 +381,6 @@ const styles = createStyles(() => ({
   faces: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   faceRow: { flexDirection: 'row', alignItems: 'center' },
   action: { padding: space[3], paddingTop: space[3], gap: space[2] },
-  actionRow: { flexDirection: 'row', gap: space[2] },
-  viewBtn: { paddingHorizontal: space[5] },
   state: { minHeight: 48, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: space[2], paddingHorizontal: space[4] },
   stateIn: { backgroundColor: colors.limeSoft },
   bar: { flexDirection: 'row', gap: 4 },

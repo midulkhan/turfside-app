@@ -4,7 +4,7 @@ import { ApiError } from '../errors';
 import * as bkash from '../lib/bkash';
 import { randomToken } from '../lib/crypto';
 
-import { expireUnpaid } from './matches';
+import { HOLDING, expireUnpaid } from './matches';
 import { refreshDays } from './venues';
 
 /** Which turf-days an order (or a single booking) covers, for refreshing the slot cache after a change. */
@@ -142,8 +142,8 @@ export async function startSharePayment(userId: string, matchId: string, idemKey
   }
   const payment = await tx(async (c) => {
     const m = (
-      await c.query<{ status: string; pay_by: Date | null; share: number; booking_id: string; r_status: string }>(
-        `select m.status, m.pay_by, r.share, r.booking_id, r.status r_status
+      await c.query<{ status: string; pay_by: Date | null; share: number; spots: number; booking_id: string; r_status: string }>(
+        `select m.status, m.pay_by, r.share, m.spots, r.booking_id, r.status r_status
            from player_request_members m join player_requests r on r.id = m.request_id
           where m.request_id = $1 and m.user_id = $2 for update of m`,
         [matchId, userId],
@@ -157,7 +157,7 @@ export async function startSharePayment(userId: string, matchId: string, idemKey
       await c.query<PaymentRow>(
         `insert into payments (kind, match_id, booking_id, user_id, amount, status, idempotency_key, invoice) values ('share',$1,$2,$3,$4,'initiated',$5,$6)
          returning ${P_COLS}`,
-        [matchId, m.booking_id, userId, m.share, idemKey, newInvoice()],
+        [matchId, m.booking_id, userId, m.share * m.spots, idemKey, newInvoice()],
       )
     ).rows[0];
   });
@@ -181,12 +181,24 @@ async function settleShare(p: PaymentRow, result: bkash.ExecRes) {
         [p.match_id],
       )
     ).rows[0];
-    const m = (await c.query<{ status: string }>('select status from player_request_members where request_id = $1 and user_id = $2 for update', [p.match_id, p.user_id])).rows[0];
-    const paidOthers = (
-      await c.query<{ n: number }>("select count(*)::int n from player_request_members where request_id = $1 and status = 'paid' and user_id <> $2", [p.match_id, p.user_id])
+    const m = (
+      await c.query<{ status: string; spots: number }>('select status, spots from player_request_members where request_id = $1 and user_id = $2 for update', [p.match_id, p.user_id])
+    ).rows[0];
+    // Everyone else's paid or still-held spots (their holds are protected while they pay too).
+    const othersTaken = (
+      await c.query<{ n: number }>(`select coalesce(sum(m.spots), 0)::int n from player_request_members m where m.request_id = $1 and m.user_id <> $2 and (m.status = 'paid' or ${HOLDING})`, [
+        p.match_id,
+        p.user_id,
+      ])
     ).rows[0].n;
-    // Still theirs if they were accepted (a payment that started inside the window counts even if it lands a little late) and a spot is free.
-    const ok = !!r && r.status !== 'cancelled' && (m?.status === 'accepted' || m?.status === 'expired') && paidOthers < r.spots_total;
+    const paidOthers = (
+      await c.query<{ n: number }>("select coalesce(sum(spots), 0)::int n from player_request_members where request_id = $1 and status = 'paid' and user_id <> $2", [p.match_id, p.user_id])
+    ).rows[0].n;
+    const mine = m?.spots ?? 1;
+    // Still theirs if they were accepted (a checkout started inside the window keeps the spots
+    // held, so a late landing is fine), the amount matches, and the spots are still free.
+    const ok =
+      !!r && r.status !== 'cancelled' && (m?.status === 'accepted' || m?.status === 'expired') && othersTaken + mine <= r.spots_total;
     if (!ok) {
       await c.query("update payments set status = 'refund_required' where id = $1", [p.id]);
       await c.query("insert into audit_log(action, entity, entity_id, data) values ('payment.share_refund', 'payment', $1, $2)", [p.id, JSON.stringify({ matchId: p.match_id })]);
@@ -199,7 +211,7 @@ async function settleShare(p: PaymentRow, result: bkash.ExecRes) {
     await c.query("update player_request_members set status = 'paid', paid_at = now(), payment_id = $3 where request_id = $1 and user_id = $2", [p.match_id, p.user_id, p.id]);
     await c.query("update player_requests set spots_filled = $2, status = case when $2 >= spots_total and status = 'open' then 'full' else status end, updated_at = now() where id = $1", [
       p.match_id,
-      paidOthers + 1,
+      paidOthers + mine,
     ]);
     const who = (await c.query<{ name: string }>('select name from users where id = $1', [p.user_id])).rows[0]?.name ?? 'A player';
     const amount = `৳${Math.round(p.amount / 100).toLocaleString('en-IN')}`;

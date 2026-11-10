@@ -17,11 +17,12 @@ import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useDecideRequest, useMatchManage, useUpdateMatch } from '@/features/api/queries';
+import { useLiveMatch, useRefreshAt } from '@/features/api/realtime';
 import type { MatchManage, MatchPerson } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
-import { colors, gutter, radius, space } from '@/theme/tokens';
+import { colors, font, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 /** Organiser: who asked, who's in, and the controls for an open match. */
@@ -30,6 +31,8 @@ export default function ManageMatch() {
   const insets = useSafeAreaInsets();
   const scrolled = useScrolled();
   const q = useMatchManage(id);
+  useLiveMatch(id); // requests, payments and released spots appear as they happen
+  useRefreshAt(q.data?.reservedUntil, q.refetch);
   const pull = usePullToRefresh(q.refetch);
   const update = useUpdateMatch(id);
   const [editing, setEditing] = useState(false);
@@ -60,6 +63,18 @@ export default function ManageMatch() {
         onClose={() => setEditing(false)}
         onSave={(title) => update.mutate({ title }, { onSuccess: () => setEditing(false), onError: (e) => Alert.alert('Could not rename', e.message) })}
       />
+    </View>
+  );
+}
+
+/** "+2" when one request covers the player and friends. */
+function SpotsTag({ n = 1 }: { n?: number }) {
+  if (n <= 1) return null;
+  return (
+    <View style={styles.spotsTag}>
+      <Text variant="caption" color={colors.limeText} style={styles.spotsTagText}>
+        {n} spots
+      </Text>
     </View>
   );
 }
@@ -185,9 +200,12 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             <View style={styles.person}>
               <Avatar name={p.name} uri={p.avatar} size={52} />
               <View style={styles.flex}>
-                <Text variant="bodyStrong" numberOfLines={1}>
-                  {p.name}
-                </Text>
+                <View style={styles.nameRow}>
+                  <Text variant="bodyStrong" numberOfLines={1} style={styles.shrink}>
+                    {p.name}
+                  </Text>
+                  <SpotsTag n={p.spots} />
+                </View>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
                   {positionLabel(p.position)} · {levelLabel(p.level)}
                 </Text>
@@ -198,7 +216,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             </View>
             <View style={styles.decide}>
               <Button label="Decline" variant="outline" small onPress={() => answer(p, false)} disabled={decide.isPending} style={styles.flex} />
-              <Button label="Accept" small onPress={() => answer(p, true)} disabled={decide.isPending || m.spotsLeft === 0} style={styles.flex} />
+              <Button label="Accept" small onPress={() => answer(p, true)} disabled={decide.isPending || m.spotsLeft < (p.spots ?? 1)} style={styles.flex} />
             </View>
           </Card>
         ))
@@ -213,7 +231,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
       <View style={styles.note}>
         <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
         <Text variant="label" color={colors.textMuted} style={styles.flex}>
-          Accepted players confirm their spot after payment.
+          Accepted players have 5 minutes to pay. If they don&apos;t, the spots open up again.
         </Text>
       </View>
 
@@ -227,16 +245,19 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             <Card key={p.userId} style={styles.person}>
               <Avatar name={p.name} uri={p.avatar} size={44} />
               <View style={styles.flex}>
-                <Text variant="bodyStrong" numberOfLines={1}>
-                  {p.name}
-                </Text>
+                <View style={styles.nameRow}>
+                  <Text variant="bodyStrong" numberOfLines={1} style={styles.shrink}>
+                    {p.name}
+                  </Text>
+                  <SpotsTag n={p.spots} />
+                </View>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
                   {positionLabel(p.position)} · {levelLabel(p.level)}
                 </Text>
               </View>
               <View style={[styles.state, p.paid ? styles.statePaid : styles.stateWaiting]}>
                 <Text variant="caption" color={p.paid ? colors.limeText : colors.warningText}>
-                  {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying'}
+                  {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying now'}
                 </Text>
               </View>
             </Card>
@@ -291,6 +312,10 @@ function TitleSheet({ visible, initial, saving, onClose, onSave }: { visible: bo
 const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
+  shrink: { flexShrink: 1, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  spotsTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.limeSoft },
+  spotsTagText: { fontFamily: font.semibold },
   content: { paddingHorizontal: gutter, paddingTop: space[3], gap: space[3] },
   loading: { gap: space[4] },
   pill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.limeSoft },
