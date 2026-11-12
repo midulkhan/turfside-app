@@ -5,7 +5,7 @@ import { ApiError } from '@/features/api/types';
  * "Resend code" works without passing the password through route params.
  * Never persisted; gone when the app restarts.
  */
-export type PendingSignup = { name: string; phone: string; email?: string; password: string };
+export type PendingSignup = { name: string; phone: string; email: string; password: string };
 
 let pending: PendingSignup | null = null;
 export const pendingSignup = {

@@ -29,7 +29,7 @@ async function call(method: string, path: string, body?: unknown, token?: string
 const phone = () => `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
 async function newUser(name: string) {
   const p = phone();
-  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, password: 'correct horse 1' });
+  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1' });
   return (await call('POST', '/v1/auth/signup/verify', { phone: p, code: start.json.devCode })).json as { accessToken: string; user: Json };
 }
 const dayIn = (n: number) => new Date(Date.now() + 6 * 3600_000 + n * 86400_000).toISOString().slice(0, 10);

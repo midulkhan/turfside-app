@@ -25,7 +25,7 @@ async function call(method: string, path: string, body?: unknown, token?: string
 const phone = () => `18${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
 async function newUser(name: string) {
   const p = phone();
-  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, password: 'correct horse 1' });
+  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1' });
   return { ...((await call('POST', '/v1/auth/signup/verify', { phone: p, code: start.json.devCode })).json as { accessToken: string; user: Json }), phone: p };
 }
 

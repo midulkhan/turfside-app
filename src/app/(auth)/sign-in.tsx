@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LogIn } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
@@ -18,7 +18,9 @@ import { createStyles } from '@/theme/styles';
 
 export default function SignIn() {
   const { signIn } = useSession();
-  const [id, setId] = useState('');
+  // Arriving from sign-up's "already has an account": the number or email is filled in.
+  const { identifier } = useLocalSearchParams<{ identifier?: string }>();
+  const [id, setId] = useState(identifier ?? '');
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);

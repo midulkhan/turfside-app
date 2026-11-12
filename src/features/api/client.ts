@@ -47,7 +47,7 @@ export const getConfig = (signal?: AbortSignal) => request<AppConfig>('GET', '/v
 
 // ---- auth -------------------------------------------------------------------
 /** The player app only creates player accounts; owners sign up in the owner app. */
-export const signupStart = (b: { name: string; phone: string; email?: string; password: string }) =>
+export const signupStart = (b: { name: string; phone: string; email: string; password: string }) =>
   request<CodeSent>('POST', '/v1/auth/signup/start', { body: { ...b, role: 'player' } });
 
 export const signupVerify = (phone: string, code: string) =>

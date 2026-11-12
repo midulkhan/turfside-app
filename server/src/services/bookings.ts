@@ -6,12 +6,24 @@ import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import { addDays, dhakaToday, generateSessions, hourlyFor, instant, isDayKey, minutesNowInDhaka, sessionPrice } from '../lib/time';
-import { signPass } from '../lib/tokens';
+import { signPass, signPass2 } from '../lib/tokens';
 
 import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules } from './venues';
 
+const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total,
+  (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
+
+/** Who booked: printed on the entry pass. */
+type Holder = { name: string; phone: string };
+async function holderOf(userId: string): Promise<Holder> {
+  return (await one<Holder>('select name, phone from users where id = $1', [userId])) ?? { name: '', phone: '' };
+}
+const maskPhone = (p: string) => (p.length >= 7 ? `${p.slice(0, 3)}${'*'.repeat(p.length - 6)}${p.slice(-3)}` : p);
+const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
 type BookingRow = {
+  pitch_name?: string | null;
   id: string;
   code: string;
   user_id: string | null;
@@ -295,7 +307,7 @@ export async function getHold(userId: string, holdId: string) {
 
 const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s);
 
-export async function bookingShape(b: BookingRow) {
+export async function bookingShape(b: BookingRow, holder?: Holder) {
   const v = await getVenueRow(b.venue_id).catch(() => null);
   const endAt = instant(b.day, b.end_min).getTime();
   const status = b.status === 'confirmed' && endAt < Date.now() ? 'completed' : b.status;
@@ -311,19 +323,40 @@ export async function bookingShape(b: BookingRow) {
     amountPaid: b.total,
     method: 'bKash' as const,
     status,
-    // Signed entry pass, valid until 6 hours after the session ends.
-    passToken: status === 'confirmed' || status === 'checked_in' ? signPass(b.id, Math.floor(endAt / 1000) + 6 * 3600) : '',
+    // Signed entry pass carrying the ticket itself (docs/pass-qr.md), valid until 6 hours after
+    // the session ends. Without the holder (not expected) it falls back to the id-only v1 pass.
+    passToken:
+      status === 'confirmed' || status === 'checked_in'
+        ? holder
+          ? signPass2({
+              code: b.code,
+              venue: v?.name ?? 'Turf',
+              area: v?.area ?? '',
+              pitch: b.pitch_name ?? 'Main pitch',
+              format: v?.formats?.[0] ?? '',
+              date: b.day,
+              from: hhmm(b.start_min),
+              to: hhmm(b.end_min),
+              name: holder.name,
+              phone: maskPhone(holder.phone),
+              paid: Math.round(b.total / 100),
+              via: 'bKash',
+              exp: Math.floor(endAt / 1000) + 6 * 3600,
+            })
+          : signPass(b.id, Math.floor(endAt / 1000) + 6 * 3600)
+        : '',
   };
 }
 
 export async function listBookings(userId: string) {
   const rows = await q<BookingRow>(
-    `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total
+    `select ${BOOKING_COLS}
        from bookings where user_id = $1 and status in ('confirmed','checked_in','completed','cancelled')
       order by day desc, start_min desc limit 200`,
     [userId],
   );
-  return Promise.all(rows.map(bookingShape));
+  const holder = await holderOf(userId);
+  return Promise.all(rows.map((r) => bookingShape(r, holder)));
 }
 
 /**
@@ -333,10 +366,11 @@ export async function listBookings(userId: string) {
  */
 export async function pageBookings(userId: string, filter: 'all' | 'open' | 'closed', cursor: number, limit: number) {
   const today = dhakaToday();
+  const holder = await holderOf(userId);
   const OPEN = "status in ('confirmed','checked_in') and day >= $2::date";
   const where = filter === 'open' ? OPEN : filter === 'closed' ? `not (${OPEN})` : 'true';
   const rows = await q<BookingRow>(
-    `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total
+    `select ${BOOKING_COLS}
        from bookings where user_id = $1 and status in ('confirmed','checked_in','completed','cancelled') and ${where}
       order by (${OPEN}) desc,
                case when ${OPEN} then day end asc, case when ${OPEN} then start_min end asc,
@@ -348,14 +382,14 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
   const next =
     cursor === 0 && filter !== 'closed'
       ? await one<BookingRow>(
-          `select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total
+          `select ${BOOKING_COLS}
              from bookings where user_id = $1 and ${OPEN} order by day, start_min limit 1`,
           [userId, today],
         )
       : null;
   return {
-    items: await Promise.all(page.map(bookingShape)),
-    next: next ? await bookingShape(next) : null,
+    items: await Promise.all(page.map((r) => bookingShape(r, holder))),
+    next: next ? await bookingShape(next, holder) : null,
     nextCursor: rows.length > limit ? cursor + limit : null,
   };
 }
@@ -363,12 +397,12 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
 export async function getBooking(userId: string, id: string) {
   if (!isUuid(id)) throw new ApiError('not_found', 'Booking not found.');
   const b = await one<BookingRow>(
-    'select id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total from bookings where id = $1 and user_id = $2',
+    `select ${BOOKING_COLS} from bookings where id = $1 and user_id = $2`,
     [id, userId],
   );
   if (!b || b.status === 'held' || b.status === 'pending' || b.status === 'expired') throw new ApiError('not_found', 'Booking not found.');
   const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
-  return { ...(await bookingShape(b)), matchId: m?.id ?? null };
+  return { ...(await bookingShape(b, await holderOf(userId))), matchId: m?.id ?? null };
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */

@@ -27,11 +27,12 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return { status: res.status, json, headers: res.headers };
 }
 
+const day0 = (slotId: string) => slotId.split(':')[1];
 const phone = () => `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
 
 async function newUser(name = 'Test Player') {
   const p = phone();
-  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, password: 'correct horse 1' });
+  const start = await call('POST', '/v1/auth/signup/start', { name, phone: p, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1' });
   expect(start.status).toBe(200);
   const verify = await call('POST', '/v1/auth/signup/verify', { phone: p, code: start.json.devCode });
   expect(verify.status).toBe(200);
@@ -74,7 +75,7 @@ d('TurfSides API', () => {
 
   it('auth: wrong OTP is counted and rejected; protected routes need a token', async () => {
     const p = phone();
-    await call('POST', '/v1/auth/signup/start', { name: 'Otp Test', phone: p, password: 'password123' });
+    await call('POST', '/v1/auth/signup/start', { name: 'Otp Test', phone: p, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'password123' });
     const wrong = await call('POST', '/v1/auth/signup/verify', { phone: p, code: '000000' });
     expect(wrong.status).toBe(400);
     expect((await call('GET', '/v1/me')).status).toBe(401);
@@ -153,7 +154,13 @@ d('TurfSides API', () => {
     expect(st.json.status).toBe('confirmed');
     const booking = await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, b.accessToken);
     expect(booking.json.status).toBe('confirmed');
-    expect(booking.json.passToken).toMatch(/^tsp1\./);
+    // The QR carries the ticket itself: "TSP2.<signature>.<ticket JSON>".
+    expect(booking.json.passToken).toMatch(/^TSP2\.[\w-]{22}\.\{/);
+    const ticket = JSON.parse(booking.json.passToken.slice(booking.json.passToken.indexOf('{')));
+    expect(ticket).toMatchObject({ v: 2, code: booking.json.code, venue: expect.any(String), date: day0(slot.id), paid: slot.price / 100, via: 'bKash' });
+    expect(ticket.from).toMatch(/^\d\d:\d\d$/);
+    expect(ticket.phone).toMatch(/^\d{3}\*+\d{3}$/); // masked
+    expect(ticket.exp * 1000).toBeGreaterThan(Date.now());
     expect(booking.json.amountPaid).toBe(slot.price);
 
     // Other users can't read it.
@@ -415,9 +422,26 @@ d('account: settings, devices, password, deletion', () => {
     expect((await login(a.phone, 'correct horse 1', 'x')).status).toBe(401);
     // The number is free to sign up again (a taken number answers "already registered" outside prod;
     // 429 here is only the per-number SMS cooldown from this test's own sign-up).
-    const again = await call('POST', '/v1/auth/signup/start', { name: 'Comeback', phone: a.phone, password: 'correct horse 1' });
+    const again = await call('POST', '/v1/auth/signup/start', { name: 'Comeback', phone: a.phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1' });
     expect([200, 429]).toContain(again.status);
     expect(again.json.note).toBeUndefined();
+  });
+
+  it('sign-up needs both phone and email, and says clearly when either already has an account', async () => {
+    const u = await newUser('Already Here');
+    const me = (await call('GET', '/v1/me', undefined, u.accessToken)).json;
+    const fresh = () => `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`;
+    // Email is required now.
+    expect((await call('POST', '/v1/auth/signup/start', { name: 'No Email', phone: phone(), password: 'correct horse 1' })).status).toBe(400);
+    // Same number, new email: told it's the number, no code sent.
+    const byPhone = await call('POST', '/v1/auth/signup/start', { name: 'Dupe', phone: me.phone, email: fresh(), password: 'correct horse 1' });
+    expect(byPhone.status).toBe(409);
+    expect(byPhone.json.error).toMatchObject({ code: 'conflict', field: 'phone' });
+    expect(byPhone.json.devCode).toBeUndefined();
+    // New number, same email (any case): told it's the email.
+    const byEmail = await call('POST', '/v1/auth/signup/start', { name: 'Dupe', phone: phone(), email: me.email.toUpperCase(), password: 'correct horse 1' });
+    expect(byEmail.status).toBe(409);
+    expect(byEmail.json.error).toMatchObject({ code: 'conflict', field: 'email' });
   });
 
   it('refuses deletion while a game is still ahead', async () => {

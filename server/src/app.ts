@@ -16,7 +16,7 @@ import { bkashEnabled, isSimulated } from './lib/bkash';
 import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
 import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
-import { verifyAccess, verifyPass } from './lib/tokens';
+import { verifyAccess, verifyAnyPass } from './lib/tokens';
 import * as account from './services/account';
 import * as auth from './services/auth';
 import * as bookings from './services/bookings';
@@ -124,7 +124,7 @@ export async function buildApp() {
   const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;
 
   app.setErrorHandler((err, req, reply) => {
-    if (err instanceof ApiError) return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
+    if (err instanceof ApiError) return reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.field ? { field: err.field } : {}) } });
     const status = (err as { statusCode?: number }).statusCode;
     if (status === 429) return reply.status(429).send({ error: { code: 'rate_limited', message: 'Too many requests. Slow down a little.' } });
     if (status && status < 500) return reply.status(status).send({ error: { code: 'invalid', message: 'Invalid request.' } });
@@ -183,7 +183,8 @@ export async function buildApp() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const authLimit = { config: { rateLimit: { max: config.AUTH_RATE_LIMIT, timeWindow: '1 minute' } } };
   app.post('/v1/auth/signup/start', authLimit, async (req) => {
-    const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email: email.optional().or(z.literal('').transform(() => undefined)), password, role: z.enum(['player', 'owner']).default('player') }), req.body);
+    // Both a mobile number (sign-in, SMS codes, bKash) and an email (receipts, recovery) are required.
+    const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email, password, role: z.enum(['player', 'owner']).default('player') }), req.body);
     return auth.signupStart(b, req.ip);
   });
   app.post('/v1/auth/signup/verify', authLimit, async (req) => {
@@ -616,19 +617,51 @@ export async function buildApp() {
   app.get('/v1/bookings/:id', { preHandler: requireUser }, async (req) => bookings.getBooking(req.user!.userId, (req.params as { id: string }).id));
   app.post('/v1/bookings/:id/cancel', { preHandler: requireUser }, async (req) => bookings.cancelBooking(req.user!.userId, (req.params as { id: string }).id));
 
-  /** Owner scanner: verify a QR pass and check the player in (only for the owner's own venues). */
-  app.post('/v1/passes/check-in', { preHandler: requireUser }, async (req) => {
-    if (!req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'Only venue owners can scan passes.');
-    const { token } = parse(z.object({ token: z.string().max(300) }), req.body);
-    const pass = verifyPass(token);
-    if (!pass) throw new ApiError('invalid', 'This pass is not valid.');
-    const b = await one<{ id: string; status: string; code: string }>(
-      `update bookings b set status = 'checked_in' from venues v
-        where b.id = $1 and v.id = b.venue_id and v.owner_id = $2 and b.status = 'confirmed' returning b.id, b.status, b.code`,
-      [pass.bookingId, req.user!.userId],
+  /**
+   * Owner scanner (admin app). A pass is checked against the database every time: the QR's
+   * signature proves it's ours, the booking row says whether it's still good (cancelled,
+   * already used, another venue's). verify = show the ticket; check-in = admit the player.
+   */
+  const passLookup = async (token: string, ownerId: string) => {
+    const pass = verifyAnyPass(token);
+    if (!pass) throw new ApiError('invalid', 'This pass is not valid or has expired.');
+    const where = 'bookingId' in pass ? 'b.id = $1' : 'b.code = $1';
+    const b = await one<{ id: string; code: string; status: string; day: string; start_min: number; end_min: number; total: number; venue_id: string; owner_id: string; name: string; phone: string }>(
+      `select b.id, b.code, b.status, b.day::text, b.start_min, b.end_min, b.total, b.venue_id, v.owner_id, u.name, u.phone
+         from bookings b join venues v on v.id = b.venue_id left join users u on u.id = b.user_id where ${where}`,
+      ['bookingId' in pass ? pass.bookingId : pass.code],
     );
-    if (!b) throw new ApiError('conflict', 'Pass already used, cancelled, or for another venue.');
-    return { ok: true, code: b.code };
+    if (!b || b.owner_id !== ownerId) throw new ApiError('forbidden', 'This pass is for another venue.');
+    return { b, ticket: 'ticket' in pass ? pass.ticket : null };
+  };
+  const passView = (b: { id: string; code: string; status: string; day: string; start_min: number; end_min: number; total: number; venue_id: string; name: string; phone: string }) => ({
+    bookingId: b.id,
+    code: b.code,
+    status: b.status, // confirmed = can check in; checked_in = already used; cancelled/expired = refuse
+    venueId: b.venue_id,
+    day: b.day,
+    start: b.start_min,
+    end: b.end_min,
+    paid: b.total,
+    holder: { name: b.name, phone: b.phone },
+  });
+  const ownerOnly = (roles: string[]) => {
+    if (!roles.includes('owner')) throw new ApiError('forbidden', 'Only venue owners can scan passes.');
+  };
+  const tokenBody = z.object({ token: z.string().max(1200) });
+
+  app.post('/v1/passes/verify', { preHandler: requireUser }, async (req) => {
+    ownerOnly(req.user!.roles);
+    const { b, ticket } = await passLookup(parse(tokenBody, req.body).token, req.user!.userId);
+    return { ok: b.status === 'confirmed', booking: passView(b), ticket };
+  });
+
+  app.post('/v1/passes/check-in', { preHandler: requireUser }, async (req) => {
+    ownerOnly(req.user!.roles);
+    const { b, ticket } = await passLookup(parse(tokenBody, req.body).token, req.user!.userId);
+    const done = await one<{ status: string }>("update bookings set status = 'checked_in' where id = $1 and status = 'confirmed' returning status", [b.id]);
+    if (!done) throw new ApiError('conflict', b.status === 'checked_in' ? 'This pass was already used.' : 'This booking is cancelled or no longer valid.');
+    return { ok: true, code: b.code, booking: passView({ ...b, status: 'checked_in' }), ticket };
   });
 
   // ── Internal jobs (called by Supabase pg_cron + pg_net every minute) ───────

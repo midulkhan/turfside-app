@@ -1,130 +1,128 @@
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { ArrowRight, CircleCheck, Clock3, MapPin, QrCode } from 'lucide-react-native';
+import { ArrowRight } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { FlatList, Pressable, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
+  Extrapolation,
+  FadeIn,
+  FadeInDown,
   interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  Extrapolation,
   type SharedValue,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/brand/logo';
-import { AvatarStack } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Photo } from '@/components/ui/photo';
 import { Text } from '@/components/ui/text';
-import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
-import { photos } from '@/lib/brand-photos';
 import { useSession } from '@/features/session/session';
-import { colors, gutter, radius, shadow, space } from '@/theme/tokens';
-import { createStyles } from '@/theme/styles';
+import { colors, font, gutter, radius, space } from '@/theme/tokens';
 
-type Slide = {
-  key: string;
-  step: string;
-  title: string;
-  body: string;
-  photo: ImageSourcePropType;
-  overlay: 'place' | 'ticket' | 'players';
-};
+type Slide = { key: string; step: string; title: string; body: string; image: number };
 
 const SLIDES: Slide[] = [
   {
-    key: 'discover',
-    step: '01 / Discover',
-    title: 'Your next game.\nCloser than ever.',
-    body: 'Discover great turfs nearby.\nFind your place to play.',
-    photo: photos.evening,
-    overlay: 'place',
+    key: 'find',
+    step: 'Find',
+    title: 'Your turf\nis waiting.',
+    body: 'Floodlit pitches near you, with open slots shown live, so you never call around again.',
+    image: require('../../assets/onboarding/1-arrive.webp'),
   },
   {
     key: 'book',
-    step: '02 / Book',
-    title: 'Pick a slot.\nMake it yours.',
-    body: 'Choose your time, pay securely,\nand keep your ticket handy.',
-    photo: photos.dusk,
-    overlay: 'ticket',
+    step: 'Book',
+    title: 'Book in\nseconds.',
+    body: 'Pick a time, pay with bKash, and walk in with a QR ticket. No cash, no confusion.',
+    image: require('../../assets/onboarding/2-play.webp'),
+  },
+  {
+    key: 'squad',
+    step: 'Squad up',
+    title: 'Short on\nplayers?',
+    body: 'Open spots on your booking or join a squad nearby. Everyone pays the same fair share.',
+    image: require('../../assets/onboarding/3-squad.webp'),
   },
   {
     key: 'play',
-    step: '03 / Play',
-    title: 'More players.\nBetter games.',
-    body: 'Find teammates nearby\nor bring your own squad.',
-    photo: photos.players,
-    overlay: 'players',
+    step: 'Play',
+    title: 'Game on.',
+    body: 'Your next match starts here. Sign in and grab a slot tonight.',
+    image: require('../../assets/onboarding/4-kickoff.webp'),
   },
 ];
 
-function Overlay({ kind }: { kind: Slide['overlay'] }) {
-  if (kind === 'place')
-    return (
-      <View style={[styles.placeChip, shadow.card]}>
-        <MapPin size={18} color={colors.ink} strokeWidth={2.2} />
-        <Text variant="labelStrong">Bashundhara Arena</Text>
-        <View style={styles.vr} />
-        <Text variant="label" color={colors.textMuted}>
-          1.2 km away
-        </Text>
-      </View>
-    );
-  if (kind === 'players')
-    return (
-      <View style={[styles.playersCard, shadow.card]}>
-        <View style={styles.rowCenter}>
-          <View style={styles.liveDot} />
-          <Text variant="labelStrong">2 players needed</Text>
-        </View>
-        <AvatarStack names={['Rafi Ahmed', 'Sami Khan']} size={32} />
-      </View>
-    );
-  return null;
+/** One full-screen photo: fades in as its page arrives, with a slow Ken Burns settle. */
+function Backdrop({ index, image, x, width }: { index: number; image: number; x: SharedValue<number>; width: number }) {
+  const style = useAnimatedStyle(() => {
+    const p = x.get() / width;
+    return {
+      opacity: interpolate(p, [index - 1, index, index + 1], [0, 1, 0], Extrapolation.CLAMP),
+      transform: [
+        { scale: interpolate(p, [index - 1, index, index + 1], [1.14, 1.04, 1.1], Extrapolation.CLAMP) },
+        { translateX: interpolate(p, [index - 1, index, index + 1], [24, 0, -24], Extrapolation.CLAMP) },
+      ],
+    };
+  });
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, style]} pointerEvents="none">
+      <Image source={image} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition="top" transition={0} priority={index === 0 ? 'high' : 'normal'} />
+    </Animated.View>
+  );
 }
 
-function TicketHero() {
+/** A page's words: they drift in from the swipe direction and fade, a beat behind the photo. */
+function Copy({ slide, index, x, width }: { slide: Slide; index: number; x: SharedValue<number>; width: number }) {
+  const lead = useAnimatedStyle(() => {
+    const p = x.get() / width;
+    return {
+      opacity: interpolate(p, [index - 0.6, index, index + 0.6], [0, 1, 0], Extrapolation.CLAMP),
+      transform: [{ translateX: interpolate(p, [index - 1, index, index + 1], [width * 0.35, 0, -width * 0.35], Extrapolation.CLAMP) }],
+    };
+  });
+  const tail = useAnimatedStyle(() => {
+    const p = x.get() / width;
+    return {
+      opacity: interpolate(p, [index - 0.45, index, index + 0.45], [0, 1, 0], Extrapolation.CLAMP),
+      transform: [{ translateX: interpolate(p, [index - 1, index, index + 1], [width * 0.55, 0, -width * 0.55], Extrapolation.CLAMP) }],
+    };
+  });
   return (
-    <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.xl} notch={11} style={styles.ticket}>
-      <Photo source={photos.dusk} style={styles.ticketPhoto} />
-      <View style={styles.ticketBody}>
-        <Text variant="h3" style={styles.italic}>
-          Bashundhara Arena
-        </Text>
-        <View style={styles.rowCenter}>
-          <Clock3 size={16} color={colors.ink} strokeWidth={2} />
-          <Text variant="label">7:00–8:30 PM</Text>
-        </View>
-        <View style={styles.confirmed}>
-          <CircleCheck size={16} color={colors.charcoal} strokeWidth={2.2} />
-          <Text variant="labelStrong" color={colors.charcoal}>
-            Booking confirmed
+    <View style={[styles.page, { width }]}>
+      <Animated.View style={lead}>
+        <View style={styles.stepPill}>
+          <Text variant="caption" color={colors.charcoal} style={styles.stepText}>
+            {String(index + 1).padStart(2, '0')} · {slide.step.toUpperCase()}
           </Text>
         </View>
-      </View>
-      <TicketDivider gap={8} />
-      <View style={styles.ticketPass}>
-        <QrCode size={26} color={colors.textOnDark} strokeWidth={1.8} />
-        <View style={styles.vrDark} />
-        <Text variant="labelStrong" color={colors.textOnDark} style={styles.italic}>
-          Your entry pass
+        <Text variant="h1" color="#FFFFFF" style={styles.title} maxFontSizeMultiplier={1.15}>
+          {slide.title}
         </Text>
-      </View>
-    </TicketSurface>
+      </Animated.View>
+      <Animated.View style={tail}>
+        <Text variant="body" color="rgba(255,255,255,0.78)" style={styles.body} maxFontSizeMultiplier={1.2}>
+          {slide.body}
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 
 function Dot({ index, x, width }: { index: number; x: SharedValue<number>; width: number }) {
   const style = useAnimatedStyle(() => {
-    const p = interpolate(x.value / width, [index - 1, index, index + 1], [0, 1, 0], Extrapolation.CLAMP);
-    return { width: 10 + p * 26, backgroundColor: p > 0.5 ? colors.lime : colors.borderStrong };
+    const p = interpolate(x.get() / width, [index - 1, index, index + 1], [0, 1, 0], Extrapolation.CLAMP);
+    return { width: 8 + p * 22, opacity: 0.4 + p * 0.6, backgroundColor: p > 0.5 ? colors.lime : '#FFFFFF' };
   });
   return <Animated.View style={[styles.dot, style]} />;
 }
 
+/** First run: four full-screen photos you swipe through, then straight to sign in. */
 export default function Onboarding() {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { completeOnboarding } = useSession();
   const list = useRef<FlatList<Slide>>(null);
   const [page, setPage] = useState(0);
@@ -132,155 +130,85 @@ export default function Onboarding() {
   const onScroll = useAnimatedScrollHandler((e) => {
     x.set(e.contentOffset.x);
   });
-  const heroH = Math.min(height * 0.44, 420);
+  const last = page >= SLIDES.length - 1;
 
   const finish = () => {
     completeOnboarding();
-    router.replace('/sign-up');
+    router.replace('/sign-in');
   };
   const next = () => {
-    if (page >= SLIDES.length - 1) return finish();
+    if (last) return finish();
     list.current?.scrollToIndex({ index: page + 1 });
     setPage(page + 1);
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Wordmark height={30} />
-        <Pressable accessibilityRole="button" hitSlop={12} onPress={() => finish()}>
-          <Text variant="bodyStrong">Skip</Text>
-        </Pressable>
-      </View>
-
-      <Animated.FlatList
-        ref={list as never}
-        data={SLIDES}
-        keyExtractor={(s) => s.key}
-        horizontal
-        pagingEnabled
-        bounces={false}
-        showsHorizontalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
-        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-        renderItem={({ item }) => (
-          <View style={[styles.slide, { width }]}>
-            <View style={[styles.hero, { height: heroH }]}>
-              <View style={styles.blob} />
-              {item.overlay === 'ticket' ? (
-                <TicketHero />
-              ) : (
-                <View style={styles.photoWrap}>
-                  <Photo source={item.photo} style={styles.photo} rounded={radius.xl + 12} />
-                  <View style={styles.overlayPos}>
-                    <Overlay kind={item.overlay} />
-                  </View>
-                </View>
-              )}
-            </View>
-            <View style={styles.copy}>
-              <Text variant="overline" color={colors.textMuted}>
-                {item.step.toUpperCase()}
-              </Text>
-              <Text variant="h1" style={styles.title}>
-                {item.title}
-              </Text>
-              <Text variant="body" color={colors.textMuted} style={styles.body}>
-                {item.body}
-              </Text>
-            </View>
-          </View>
-        )}
+    <View style={styles.root}>
+      {SLIDES.map((s, i) => (
+        <Backdrop key={s.key} index={i} image={s.image} x={x} width={width} />
+      ))}
+      {/* Keeps the words readable on any photo: clear at the top, near-black at the bottom. */}
+      <LinearGradient
+        colors={['rgba(4,7,5,0.55)', 'rgba(4,7,5,0)', 'rgba(4,7,5,0.35)', 'rgba(4,7,5,0.92)', '#040705']}
+        locations={[0, 0.18, 0.45, 0.72, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
 
-      <View style={styles.footer}>
-        <View style={styles.dots}>
-          {SLIDES.map((s, i) => (
-            <Dot key={s.key} index={i} x={x} width={width} />
-          ))}
-        </View>
-        <Button
-          label={page === SLIDES.length - 1 ? 'Get started' : 'Next'}
-          variant="dark"
-          trailingIcon={ArrowRight}
-          spread
-          onPress={next}
-        />
+      <Animated.View entering={FadeIn.duration(500)} style={[styles.header, { paddingTop: insets.top + space[2] }]}>
+        <Wordmark height={26} tone="light" />
+        {!last ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip intro" hitSlop={12} onPress={finish} style={styles.skip}>
+            <Text variant="labelStrong" color="#FFFFFF">
+              Skip
+            </Text>
+          </Pressable>
+        ) : null}
+      </Animated.View>
+
+      <View style={styles.bottom}>
+        <Animated.View entering={FadeInDown.duration(600).delay(150)} style={styles.copyArea}>
+          <Animated.FlatList
+            ref={list as never}
+            data={SLIDES}
+            keyExtractor={(s) => s.key}
+            horizontal
+            pagingEnabled
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+            getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+            renderItem={({ item, index }) => <Copy slide={item} index={index} x={x} width={width} />}
+          />
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(600).delay(300)} style={[styles.footer, { paddingBottom: insets.bottom + space[4] }]}>
+          <View style={styles.dots} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: SLIDES.length, now: page + 1 }}>
+            {SLIDES.map((s, i) => (
+              <Dot key={s.key} index={i} x={x} width={width} />
+            ))}
+          </View>
+          <Button label={last ? 'Get started' : 'Next'} variant="primary" trailingIcon={ArrowRight} spread onPress={next} />
+        </Animated.View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
-const styles = createStyles(() => ({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: gutter,
-    paddingVertical: space[3],
-  },
-  slide: { paddingHorizontal: gutter, gap: space[6] },
-  hero: { justifyContent: 'center', alignItems: 'center', marginTop: space[2] },
-  blob: {
-    position: 'absolute',
-    top: -10,
-    left: -20,
-    width: 220,
-    height: 160,
-    borderRadius: 120,
-    backgroundColor: colors.limeTint,
-    opacity: 0.7,
-    transform: [{ rotate: '-18deg' }],
-  },
-  photoWrap: { width: '100%', height: '100%' },
-  photo: { width: '100%', height: '100%' },
-  overlayPos: { position: 'absolute', left: space[4], right: space[4], bottom: space[5], alignItems: 'flex-start' },
-  placeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[4],
-    height: 48,
-  },
-  vr: { width: 1, height: 22, backgroundColor: colors.border, marginHorizontal: space[1] },
-  vrDark: { width: 1, height: 24, backgroundColor: colors.borderOnDark },
-  playersCard: { alignSelf: 'flex-end', backgroundColor: colors.surface, borderRadius: radius.lg, padding: space[4], gap: space[2] },
-  rowCenter: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  liveDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#A8D52B' },
-  ticket: { width: '82%', transform: [{ rotate: '-4deg' }] },
-  ticketPhoto: { height: 150, margin: space[2] },
-  ticketBody: { paddingHorizontal: space[4], gap: space[2], paddingBottom: space[2] },
-  italic: { fontFamily: 'Geist_800ExtraBold_Italic' },
-  confirmed: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: colors.lime,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    height: 32,
-  },
-  ticketPass: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    backgroundColor: colors.inverse,
-    margin: space[2],
-    marginTop: space[3],
-    borderRadius: radius.lg,
-    paddingHorizontal: space[4],
-    height: 60,
-  },
-  copy: { gap: space[3] },
-  title: { fontSize: 30, lineHeight: 35 },
-  body: { fontSize: 17, lineHeight: 24 },
-  footer: { paddingHorizontal: gutter, paddingBottom: space[3], gap: space[5] },
-  dots: { flexDirection: 'row', gap: space[2], justifyContent: 'center' },
-  dot: { height: 10, borderRadius: 5 },
-}));
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#040705' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter },
+  skip: { paddingHorizontal: space[3], height: 34, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.16)' },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  copyArea: { height: 250 },
+  page: { paddingHorizontal: gutter, justifyContent: 'flex-end', paddingBottom: space[4], gap: space[3] },
+  stepPill: { alignSelf: 'flex-start', backgroundColor: colors.lime, borderRadius: radius.pill, paddingHorizontal: space[3], paddingVertical: 5, marginBottom: space[3] },
+  stepText: { fontFamily: font.semibold, letterSpacing: 1.2 },
+  title: { fontFamily: font.bold, fontSize: 44, lineHeight: 47, letterSpacing: -1.4 },
+  body: { fontSize: 17, lineHeight: 25, maxWidth: 360 },
+  footer: { paddingHorizontal: gutter, gap: space[5] },
+  dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  dot: { height: 8, borderRadius: 4 },
+});

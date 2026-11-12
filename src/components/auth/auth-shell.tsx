@@ -23,7 +23,7 @@ type Props = {
 /** The header is light in both themes, so its text uses the light palette. */
 const HEAD = palettes.light;
 
-/** Shared layout for sign in / sign up: light header, wave, dark form. */
+/** Shared layout for sign in / sign up: a short light header, a high wave, then the title and form on dark. */
 export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a' }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -62,19 +62,22 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
               <ArrowUpRight size={18} color={HEAD.ink} strokeWidth={2.2} />
             </Pressable>
           </View>
-          <View style={styles.heading}>
-            <Text variant="h1" color={HEAD.ink} align="center">
-              {title}
-            </Text>
-            <Text variant="body" color={HEAD.textMuted} align="center">
-              {subtitle}
-            </Text>
-          </View>
         </View>
         <Svg width="100%" height={110} viewBox={`0 0 ${w} 110`} preserveAspectRatio="none" style={styles.wave}>
           <Path d={d} fill={colors.deep} />
         </Svg>
-        <View style={[styles.dark, { paddingBottom: insets.bottom + space[6] }]}>{children}</View>
+        <View style={[styles.dark, { paddingBottom: insets.bottom + space[6] }]}>
+          {/* The title sits on the dark side, right above the form it introduces. */}
+          <View style={styles.heading}>
+            <Text variant="h1" color={colors.textOnDark}>
+              {title}
+            </Text>
+            <Text variant="body" color={colors.textOnDarkMuted}>
+              {subtitle}
+            </Text>
+          </View>
+          {children}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -83,7 +86,7 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
 const styles = createStyles(() => ({
   flex: { flex: 1, backgroundColor: colors.deep },
   grow: { flexGrow: 1, backgroundColor: colors.deep },
-  top: { backgroundColor: colors.authTop, paddingHorizontal: gutter, paddingBottom: space[2] },
+  top: { backgroundColor: colors.authTop, paddingHorizontal: gutter, paddingBottom: space[3] },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brand: { gap: space[1] },
   badge: {
@@ -96,7 +99,7 @@ const styles = createStyles(() => ({
   },
   badgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1 },
   corner: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
-  heading: { alignItems: 'center', gap: space[2], marginTop: space[9] },
+  heading: { gap: space[1], marginBottom: space[2] },
   wave: { backgroundColor: colors.authTop, marginTop: -1 },
   dark: { flex: 1, backgroundColor: colors.deep, paddingHorizontal: gutter, gap: space[4], marginTop: -1 },
 }));

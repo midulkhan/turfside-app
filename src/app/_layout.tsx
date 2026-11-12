@@ -70,7 +70,7 @@ function RootNavigator() {
             statusBarStyle: scheme === 'dark' ? 'light' : 'dark',
           }}>
           <Stack.Screen name="index" options={{ animation: 'none' }} />
-          <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+          <Stack.Screen name="onboarding" options={{ animation: 'fade', statusBarStyle: 'light' }} />
           <Stack.Protected guard={!user} redirectTo="/">
             <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
           </Stack.Protected>

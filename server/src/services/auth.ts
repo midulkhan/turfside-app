@@ -82,12 +82,18 @@ async function createSession(u: UserRow, meta: { ip: string; ua?: string; device
 }
 
 // ── Sign up: details → SMS code → account ──────────────────────────────────
-export async function signupStart(input: { name: string; phone: string; email?: string; password: string; role: 'player' | 'owner' }, ip: string) {
-  const taken = await one('select 1 from users where phone = $1 or ($2::text is not null and email = $2)', [input.phone, input.email ?? null]);
-  // Same response either way, so the endpoint can't be used to discover registered numbers.
-  if (taken) return isProd ? { sent: true } : { sent: true, note: 'already registered' };
+export async function signupStart(input: { name: string; phone: string; email: string; password: string; role: 'player' | 'owner' }, ip: string) {
+  // Say plainly when the number or email already has an account (and which), so people go
+  // to sign in instead of waiting for a code that never comes. Scraping is held back by the
+  // per-minute auth rate limit (no hourly per-IP cap: mobile carriers put many people on one IP).
+  const taken = await one<{ phone: boolean; email: boolean }>(
+    'select bool_or(phone = $1) phone, bool_or(lower(email) = lower($2)) email from users where phone = $1 or lower(email) = lower($2)',
+    [input.phone, input.email],
+  );
+  if (taken?.phone) throw new ApiError('conflict', 'This mobile number already has an account. Sign in instead.', 'phone');
+  if (taken?.email) throw new ApiError('conflict', 'This email already has an account. Sign in instead.', 'email');
   const passwordHash = await hashPassword(input.password);
-  return issueOtp(input.phone, 'signup', { name: input.name, email: input.email ?? null, passwordHash, role: input.role }, ip);
+  return issueOtp(input.phone, 'signup', { name: input.name, email: input.email, passwordHash, role: input.role }, ip);
 }
 
 export async function signupVerify(phone: string, code: string, meta: { ip: string; ua?: string; device?: string }) {
@@ -101,7 +107,11 @@ export async function signupVerify(phone: string, code: string, meta: { ip: stri
     );
     return createSession(u!, meta);
   } catch (e) {
-    if ((e as { code?: string }).code === '23505') throw new ApiError('conflict', 'This number is already registered. Sign in instead.');
+    // Someone took the number or email between the code being sent and now.
+    if ((e as { code?: string; constraint?: string }).code === '23505') {
+      const onEmail = /email/.test((e as { constraint?: string }).constraint ?? '');
+      throw new ApiError('conflict', onEmail ? 'This email already has an account. Sign in instead.' : 'This mobile number already has an account. Sign in instead.', onEmail ? 'email' : 'phone');
+    }
     throw e;
   }
 }

@@ -52,3 +52,61 @@ export function verifyPass(token: string) {
   if (Number(exp) * 1000 < Date.now()) return null;
   return { bookingId: id };
 }
+
+// ── Entry pass v2: the ticket itself, signed ─────────────────────────────────
+
+/**
+ * What a v2 pass carries. Plain JSON so any scanner (and the admin app) can read and show it
+ * without a network round trip; the signature proves it came from us and wasn't edited.
+ * Keys are short-but-readable to keep the QR small enough to scan off a phone screen.
+ * See docs/pass-qr.md. Amounts are whole taka (BDT); times are Dhaka local.
+ */
+export type PassTicket = {
+  v: 2;
+  code: string; // booking code, e.g. TS-261111-6700 (unique)
+  venue: string;
+  area: string;
+  pitch: string;
+  format: string; // e.g. 5-a-side
+  date: string; // YYYY-MM-DD
+  from: string; // HH:MM
+  to: string; // HH:MM
+  name: string; // who booked
+  phone: string; // masked: 017*****907
+  paid: number; // taka
+  via: string; // payment method
+  exp: number; // unix seconds; the pass is void after this
+};
+
+const PASS2 = 'TSP2';
+const sig2 = (json: string) => hmac(secret('PASS_SECRET'), json).slice(0, 22); // 128-bit, base64url
+
+/** "TSP2.<signature>.<ticket JSON>": the signature first (fixed width), then the readable ticket. */
+export function signPass2(t: Omit<PassTicket, 'v'>) {
+  const json = JSON.stringify({ v: 2, ...t });
+  return `${PASS2}.${sig2(json)}.${json}`;
+}
+
+/** Splits a v2 pass without trusting it (for display). */
+export function readPass2(token: string): { sig: string; json: string; ticket: PassTicket } | null {
+  if (!token.startsWith(`${PASS2}.`)) return null;
+  const rest = token.slice(PASS2.length + 1);
+  const dot = rest.indexOf('.');
+  if (dot <= 0) return null;
+  const json = rest.slice(dot + 1);
+  try {
+    const ticket = JSON.parse(json) as PassTicket;
+    return ticket && ticket.v === 2 && typeof ticket.code === 'string' ? { sig: rest.slice(0, dot), json, ticket } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Any pass we issued (v1 or v2), verified and unexpired: what to look up. */
+export function verifyAnyPass(token: string): { bookingId: string } | { code: string; ticket: PassTicket } | null {
+  if (token.startsWith('tsp1.')) return verifyPass(token);
+  const p = readPass2(token);
+  if (!p || !safeEqual(p.sig, sig2(p.json))) return null;
+  if (!Number.isFinite(p.ticket.exp) || p.ticket.exp * 1000 < Date.now()) return null;
+  return { code: p.ticket.code, ticket: p.ticket };
+}

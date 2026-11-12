@@ -14,7 +14,9 @@ const QR_FG = '#161B1D';
 /** Renders a QR as one SVG path (fast: a single native draw call). */
 export function QRCode({ value, size = 120 }: { value: string; size?: number }) {
   const { d, n } = useMemo(() => {
-    const qr = QRCodeCore.create(value, { errorCorrectionLevel: 'M' });
+    // Long payloads (the v2 pass carries the whole ticket) use level L: fewer, larger modules,
+    // which scan better off a phone screen; a screen doesn't get scratched like paper.
+    const qr = QRCodeCore.create(value, { errorCorrectionLevel: value.length > 120 ? 'L' : 'M' });
     const count: number = qr.modules.size;
     const data: Uint8Array = qr.modules.data;
     let path = '';

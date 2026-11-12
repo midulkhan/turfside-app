@@ -31,6 +31,8 @@ export class ApiError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
+    /** The form field the error is about (e.g. 'email'), so the app can mark that input. */
+    public field?: string,
   ) {
     super(message);
     this.status = STATUS[code];

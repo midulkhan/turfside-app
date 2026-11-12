@@ -50,7 +50,7 @@ d('mobile app client ↔ live API', () => {
   });
 
   it('signs up with an SMS code and stores tokens', async () => {
-    const sent = await api.signupStart({ name: 'App Tester', phone, password: 'app password 1' });
+    const sent = await api.signupStart({ name: 'App Tester', phone, email: `app${Date.now().toString(36)}@test.turfsides.dev`, password: 'app password 1' });
     expect(sent.devCode).toMatch(/^\d{6}$/);
     await expect(api.signupVerify(phone, '000000')).rejects.toBeInstanceOf(ApiError);
     const auth = await api.signupVerify(phone, sent.devCode!);
@@ -116,7 +116,7 @@ d('mobile app client ↔ live API', () => {
     bookingId = st.bookingId!;
     const b = await api.getBooking(bookingId);
     expect(b.status).toBe('confirmed');
-    expect(b.passToken).toMatch(/^tsp1\./);
+    expect(b.passToken).toMatch(/^TSP2\./);
     expect(b.amountPaid).toBe(hold.total);
     expect((await api.getBookings()).map((x) => x.id)).toContain(bookingId);
     expect((await api.getNotifications()).some((n) => n.kind === 'payment')).toBe(true);

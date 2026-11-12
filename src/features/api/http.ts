@@ -112,7 +112,7 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
   }
   if (res.ok) return data as T;
 
-  const err = (data as { error?: { code?: string; message?: string } } | null)?.error;
+  const err = (data as { error?: { code?: string; message?: string; field?: string } } | null)?.error;
   const code = (
     err?.code && KNOWN_CODES.has(err.code as ApiErrorCode)
       ? err.code
@@ -122,7 +122,7 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
           ? 'internal'
           : 'invalid'
   ) as ApiErrorCode;
-  throw new ApiError(code, err?.message ?? (res.status >= 500 ? 'Something went wrong on our side. Try again.' : 'Request failed.'));
+  throw new ApiError(code, err?.message ?? (res.status >= 500 ? 'Something went wrong on our side. Try again.' : 'Request failed.'), err?.field);
 }
 
 /** JSON request to the TurfSides API with auth, refresh-on-401, timeouts and typed errors. */

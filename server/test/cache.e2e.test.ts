@@ -23,7 +23,7 @@ async function call(base: string, method: string, path: string, body?: unknown, 
 
 async function newUser() {
   const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-  const start = await call(API!, 'POST', '/v1/auth/signup/start', { name: 'Cache Test', phone, password: 'correct horse 1' });
+  const start = await call(API!, 'POST', '/v1/auth/signup/start', { name: 'Cache Test', phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1' });
   return (await call(API!, 'POST', '/v1/auth/signup/verify', { phone, code: start.json.devCode })).json as { accessToken: string };
 }
 const dayIn = (n: number) => new Date(Date.now() + 6 * 3600_000 + n * 86400_000).toISOString().slice(0, 10);
@@ -115,7 +115,7 @@ d('cache', () => {
 
   two('a price change applies to the next hold at once, even on a process that has the old price in memory', async () => {
     const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-    const start = await call(API!, 'POST', '/v1/auth/signup/start', { name: 'Cache Owner', phone, password: 'correct horse 1', role: 'owner' });
+    const start = await call(API!, 'POST', '/v1/auth/signup/start', { name: 'Cache Owner', phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'correct horse 1', role: 'owner' });
     const owner = (await call(API!, 'POST', '/v1/auth/signup/verify', { phone, code: start.json.devCode })).json as { accessToken: string };
     const turf = {
       name: `Cache Arena ${randomUUID().slice(0, 6)}`, area: 'Banani', city: 'Dhaka', address: 'Road 1, Banani', lat: 23.79, lng: 90.4,

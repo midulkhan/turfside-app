@@ -180,6 +180,8 @@ export class ApiError extends Error {
   constructor(
     public code: ApiErrorCode,
     message: string,
+    /** The form field it's about (e.g. 'email'), when the server says. */
+    public field?: string,
   ) {
     super(message);
   }
