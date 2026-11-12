@@ -154,6 +154,8 @@ export type Match = {
   payBy: number | null;
   /** When the next held (unpaid) spot is released back to everyone (ms). */
   reservedUntil?: number | null;
+  /** Paid players only: the organiser's entry pass (same code and QR as their ticket). */
+  pass?: { code: string; passToken: string } | null;
 };
 export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number; spots?: number };
 export type MatchManage = Match & {

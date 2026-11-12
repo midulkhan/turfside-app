@@ -5,6 +5,7 @@ import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PinDrop } from '@/components/icons/pin-drop';
+import { EntryPass } from '@/components/ticket/entry-pass';
 import { JoinSheet, MatchAction, SquadBar, Tag, levelLabel, spotsLabel, statusPill, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
@@ -20,6 +21,7 @@ import { useLiveMatch, useRefreshAt } from '@/features/api/realtime';
 import type { Match } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
+import { dayOfMonth, formatRange, weekday } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
@@ -176,6 +178,17 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
             }}
           />
         </Card>
+      ) : null}
+
+      {/* You paid for a spot: the organiser's own entry pass gets you in too. */}
+      {m.my === 'paid' && m.pass?.passToken ? (
+        <EntryPass
+          framed
+          code={m.pass.code}
+          passToken={m.pass.passToken}
+          title={m.venue.name}
+          subtitle={`${weekday(m.day)} ${dayOfMonth(m.day)} · ${formatRange(m.start, m.end)}`}
+        />
       ) : null}
 
       {/* Squad */}

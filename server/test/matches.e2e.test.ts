@@ -131,7 +131,13 @@ d('find players', () => {
     expect(mineJoined.find((x) => x.id === matchId)).toMatchObject({ my: 'paid', mySpots: 2 });
     expect((await call('GET', '/v1/matches/joined', undefined, p2.accessToken)).json).toEqual([]);
     // The organiser's booking is untouched by a share payment.
-    expect((await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json.status).toBe('confirmed');
+    const hostTicket = (await call('GET', `/v1/bookings/${bookingId}`, undefined, org.accessToken)).json;
+    expect(hostTicket.status).toBe('confirmed');
+    // A paid player sees the organiser's entry pass (same code and QR); nobody else does.
+    expect(after.pass).toEqual({ code: hostTicket.code, passToken: hostTicket.passToken });
+    expect(after.pass.passToken).toMatch(/^TSP2\./);
+    expect((await call('GET', `/v1/matches/${matchId}`, undefined, p2.accessToken)).json.pass).toBeUndefined();
+    expect((await call('GET', `/v1/matches/${matchId}`)).json.pass).toBeUndefined();
     expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
   });
 

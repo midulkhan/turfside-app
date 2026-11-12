@@ -181,7 +181,13 @@ async function loadMatch(id: string, viewerId: string | null) {
 }
 
 export async function getMatch(viewerId: string | null, id: string) {
-  return shape(await loadMatch(id, viewerId), viewerId);
+  const r = await loadMatch(id, viewerId);
+  const m = await shape(r, viewerId);
+  // A paid player gets the organiser's own entry pass (same code and QR), so they can get in too.
+  if (m.my !== 'paid') return m;
+  const { getBooking } = await import('./bookings'); // lazy: bookings imports this module
+  const t = await getBooking(r.user_id, r.booking_id).catch(() => null);
+  return { ...m, pass: t ? { code: t.code, passToken: t.passToken } : null };
 }
 
 /** Spots paid for or held right now (inside a transaction that has locked the match row). */
