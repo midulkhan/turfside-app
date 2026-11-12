@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Navigation, Share2, Ticket, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Share2, Ticket, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PinDrop } from '@/components/icons/pin-drop';
 import { Alert } from '@/components/ui/dialog';
 import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
@@ -159,7 +160,7 @@ export default function BookingTicket() {
                   <Text variant="h3" style={[styles.venueName, styles.flex]} numberOfLines={2}>
                     {b?.venue.name ?? ' '}
                   </Text>
-                  <IconButton icon={Navigation} label="Directions" size={40} onPress={directions} />
+                  <IconButton icon={PinDrop} label="Directions" size={40} onPress={directions} />
                 </View>
                 <View style={styles.row}>
                   <MapPin size={18} color={colors.ink} strokeWidth={1.8} />

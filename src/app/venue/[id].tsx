@@ -17,7 +17,6 @@ import {
   Banknote,
   MapPin,
   Moon,
-  Navigation,
   Share2,
   Shirt,
   ShowerHead,
@@ -48,6 +47,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { PinDrop } from '@/components/icons/pin-drop';
 import { Alert } from '@/components/ui/dialog';
 import { SlotTicket } from '@/components/ticket/slot-ticket';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -948,7 +948,7 @@ const DetailsTab = memo(function DetailsTab({ v, onDirections }: { v: VenueDetai
             {v.address}
           </Text>
         </View>
-        <Button label="Directions" icon={Navigation} variant="outline" small onPress={onDirections} />
+        <Button label="Directions" icon={PinDrop} variant="outline" small onPress={onDirections} />
       </Card>
     </View>
   );

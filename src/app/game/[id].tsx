@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Navigation, Plus, ShieldCheck, Share2, Timer, Undo2 } from 'lucide-react-native';
+import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Plus, ShieldCheck, Share2, Timer, Undo2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PinDrop } from '@/components/icons/pin-drop';
 import { JoinSheet, MatchAction, SquadBar, Tag, levelLabel, spotsLabel, statusPill, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
@@ -138,7 +139,7 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
               </Text>
             ) : null}
           </View>
-          <IconButton icon={Navigation} label="Directions" size={44} onPress={directions} />
+          <IconButton icon={PinDrop} label="Directions" size={44} onPress={directions} />
         </View>
       </Card>
 
