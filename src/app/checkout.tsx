@@ -35,7 +35,7 @@ import { ErrorState } from '@/components/ui/states';
 import { Stepper } from '@/components/ui/stepper';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { qk, useHold, useMatch } from '@/features/api/queries';
+import { markSlots, qk, useHold, useMatch } from '@/features/api/queries';
 import { ApiError, type QuoteLine } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
@@ -144,10 +144,12 @@ export default function Checkout() {
   // way keeps its hold on the server.
   const heldId = useRef<string | null>(null);
   const heldVenue = useRef<string | null>(null);
+  const heldSlots = useRef<string[]>([]);
   useEffect(() => {
     heldId.current = hold.data?.holdId ?? null;
     heldVenue.current = hold.data?.venue.id ?? null;
-  }, [hold.data?.holdId, hold.data?.venue.id]);
+    heldSlots.current = hold.data?.slots?.map((x) => x.id) ?? [];
+  }, [hold.data?.holdId, hold.data?.venue.id, hold.data?.slots]);
   useEffect(
     () => () => {
       const id = heldId.current;
@@ -157,6 +159,7 @@ export default function Checkout() {
       api
         .releaseHold(id)
         .catch(() => {})
+        .then(() => venue && markSlots(qc, venue, heldSlots.current, 'available'))
         .finally(() => {
           qc.invalidateQueries({ queryKey: qk.myHolds });
           qc.invalidateQueries({ queryKey: venue ? ['slots', venue] : ['slots'] });
@@ -172,6 +175,7 @@ export default function Checkout() {
     setRemoving(slotId);
     try {
       const res = await api.removeHoldSlot(hold.data.holdId, slotId);
+      markSlots(qc, hold.data.venue.id, [slotId], 'available');
       qc.invalidateQueries({ queryKey: ['slots', hold.data.venue.id] }); // others see it free via realtime; this refreshes us
       qc.invalidateQueries({ queryKey: qk.myHolds });
       if (res.released || !res.hold) {
@@ -224,6 +228,8 @@ export default function Checkout() {
           qc.invalidateQueries({ queryKey: qk.myHolds });
           qc.invalidateQueries({ queryKey: ['bookings'] });
           qc.invalidateQueries({ queryKey: ['notifications'] });
+          // Booked on the turf page straight away (the refetch confirms it).
+          markSlots(qc, hold.data.venue.id, (hold.data.slots ?? []).map((x) => x.id), 'booked');
           qc.invalidateQueries({ queryKey: ['slots', hold.data.venue.id] });
           qc.removeQueries({ queryKey: ['hold', hold.data.holdId] });
           router.dismissTo({ pathname: '/booking/[id]', params: { id: res.bookingId, fresh: '1' } });

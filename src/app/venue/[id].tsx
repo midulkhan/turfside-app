@@ -63,7 +63,7 @@ import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { haversineKm } from '@/lib/places';
-import { qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
+import { markSlots, qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
 import { pageStatusBar } from '@/theme/theme-provider';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
@@ -101,6 +101,8 @@ const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
 const HERO_BTN = 40;
 const SHEET_OVERLAP = 28; // content sheet radius = how far it overlaps the photo
 const MAX_SLOTS = 6; // per order (the server enforces the same limit)
+/** Slots loaded this long before a day came into view still count as current. */
+const FRESH_MS = 1500;
 type Picked = Slot & { day: DayKey };
 
 const AMENITY_ICON: Record<string, LucideIcon> = {
@@ -125,6 +127,7 @@ export default function VenueScreen() {
   const today = dhakaToday();
 
   const [day, setDay] = useState<DayKey>(today);
+  const [viewAt, setViewAt] = useState(() => Date.now()); // when this day came into view
   const days = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i)), [today]);
   // Picked slots, kept across day changes (one order can span days at this turf).
   const [picked, setPicked] = useState<Picked[]>([]);
@@ -170,15 +173,27 @@ export default function VenueScreen() {
   const gridDay = useDeferredValue(day);
   const settledDay = useDebouncedValue(gridDay, 160);
   const queryDay = qc.getQueryData(qk.slots(id, gridDay)) !== undefined ? gridDay : settledDay;
-  const live = useLiveSlots(id, queryDay); // instant updates when someone else holds or books
-  const slots = useSlots(id, queryDay, live);
+  const liveSince = useLiveSlots(id, queryDay); // instant updates when someone else holds or books
+  const slots = useSlots(id, queryDay, liveSince > 0);
   const shownDay = slots.data?.day;
+  // Never show a remembered copy of a day as if it were current: a day only shows once its
+  // slots were loaded just now (since this day came into view), or while the live feed has
+  // been keeping them current. Otherwise it shows as loading while it is re-checked.
+  // (`viewAt` is set when the screen opens and on every date tap.)
+  const checked =
+    !!slots.data &&
+    !slots.isPlaceholderData &&
+    (slots.dataUpdatedAt >= viewAt - FRESH_MS || (liveSince > 0 && slots.dataUpdatedAt >= liveSince));
+  const recheck = slots.refetch;
+  useEffect(() => {
+    if (shownDay === day && !checked && !slots.isFetching && !slots.isError) void recheck();
+  }, [shownDay, day, checked, slots.isFetching, slots.isError, recheck]);
   const slotState: SlotState =
     slots.isError && queryDay === day && !slots.isFetching
       ? 'error'
       : !slots.data
         ? 'first'
-        : shownDay !== day || slots.isPlaceholderData
+        : shownDay !== day || !checked
           ? 'loading'
           : 'ready';
   // Warm the neighbouring days once a day is on screen, so the next taps are instant.
@@ -211,11 +226,11 @@ export default function VenueScreen() {
   const chosen = useMemo(
     () =>
       picked.flatMap((p) => {
-        if (!slots.data || p.day !== slots.data.day || slots.isPlaceholderData) return [p];
+        if (!slots.data || p.day !== slots.data.day || !checked) return [p]; // only drop on checked data
         const live = slots.data.slots.find((s) => s.id === p.id);
         return live && (live.status === 'available' || live.status === 'mine') ? [{ ...p, price: live.price }] : [];
       }),
-    [picked, slots.data, slots.isPlaceholderData],
+    [picked, slots.data, checked],
   );
   const chosenIds = useMemo(() => new Set(chosen.map((p) => p.id)), [chosen]);
   // Stable identity: tickets are memoised, so a tab tap or a pick never re-renders the whole grid.
@@ -243,8 +258,9 @@ export default function VenueScreen() {
         holdKey.current,
       );
     },
-    onSuccess: (h) => {
+    onSuccess: (h, list) => {
       holdKey.current = null;
+      markSlots(qc, id, list.map((p) => p.id), 'mine', h.holdId); // yours, the moment you come back
       qc.setQueryData(qk.hold(h.holdId), h);
       qc.invalidateQueries({ queryKey: qk.myHolds });
       qc.invalidateQueries({ queryKey: ['slots'] }); // this cart's slots (and any cart it replaced) refresh everywhere
@@ -259,7 +275,10 @@ export default function VenueScreen() {
     },
   });
 
-  const pickDay = useCallback((d: DayKey) => setDay(d), []);
+  const pickDay = useCallback((d: DayKey) => {
+    setDay(d);
+    setViewAt(Date.now());
+  }, []);
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
   const noneOpen = slotState === 'ready' && !slots.data!.slots.some((s) => s.status === 'available' || s.status === 'mine');
 

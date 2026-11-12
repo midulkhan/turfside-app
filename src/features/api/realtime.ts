@@ -44,23 +44,27 @@ export function useAppConfig() {
  * A realtime event said this day changed in transaction `xid`: re-fetch it, asking the server
  * for an answer that includes that change (served from its cache when it already does).
  */
-function refreshDay(qc: QueryClient, venueId: string, day: string, xid?: string) {
+async function refreshDay(qc: QueryClient, venueId: string, day: string, xid?: string) {
   const key = qk.slots(venueId, day as DayKey);
   if (!qc.getQueryState(key)) return; // nobody is looking at that day
   const after = xid && /^\d{1,20}$/.test(xid) ? xid : true;
+  // A load already under way may have started before this change: cancel it rather than
+  // reuse it, or the change could be missed until the next event or poll.
+  await qc.cancelQueries({ queryKey: key, exact: true });
   qc.fetchQuery({ queryKey: key, queryFn: ({ signal }) => api.getSlots(venueId, day as DayKey, signal, after), staleTime: 0 }).catch(
     () => {},
   );
 }
 
 /**
- * Live slots for one turf. Returns whether the realtime channel is connected,
- * so the caller can poll fast only when it isn't.
+ * Live slots for one turf. Returns when the realtime channel last connected (ms, 0 while it
+ * isn't), so the caller can poll fast only when it isn't, and can trust any slots loaded since
+ * then: every change after that moment refreshes them.
  */
 export function useLiveSlots(venueId: string, day: DayKey) {
   const qc = useQueryClient();
   const rt = useAppConfig().data?.realtime;
-  const [live, setLive] = useState(false);
+  const [live, setLive] = useState(0);
   const dayRef = useRef(day);
   useEffect(() => {
     dayRef.current = day;
@@ -73,19 +77,19 @@ export function useLiveSlots(venueId: string, day: DayKey) {
       .on('postgres_changes', { event: '*', schema: 'public', table: rt.table, filter: `venue_id=eq.${venueId}` }, (payload) => {
         const row = (payload.new ?? null) as { day?: string; xid?: string | number } | null;
         const changedDay = row?.day ?? (payload.old as { day?: string } | null)?.day;
-        if (changedDay) refreshDay(qc, venueId, changedDay, row?.xid != null ? String(row.xid) : undefined);
+        if (changedDay) void refreshDay(qc, venueId, changedDay, row?.xid != null ? String(row.xid) : undefined);
         else qc.invalidateQueries({ queryKey: ['slots', venueId] });
       })
       .subscribe((status) => {
         const ok = status === 'SUBSCRIBED';
-        setLive(ok);
+        setLive(ok ? Date.now() : 0);
         // After (re)connecting we may have missed events: catch up once. The server keeps its
-        // cache current on every booking change, so a normal (cached) refetch is enough.
-        // A load already under way is reused rather than repeated.
-        if (ok) qc.invalidateQueries({ queryKey: qk.slots(venueId, dayRef.current), exact: true }, { cancelRefetch: false });
+        // cache current on every booking change, so a normal (cached) refetch is enough. A load
+        // already under way is restarted: it may have begun before we were listening.
+        if (ok) qc.invalidateQueries({ queryKey: qk.slots(venueId, dayRef.current), exact: true });
       });
     return () => {
-      setLive(false);
+      setLive(0);
       void getClient(rt).removeChannel(channel);
     };
   }, [rt, venueId, qc]);

@@ -6,7 +6,7 @@ import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { Booking, BookingFilter, BookingPage, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
+import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -60,6 +60,26 @@ export function useSlots(id: string, day: DayKey, live = false) {
     refetchInterval: live ? 60_000 : 5_000,
     placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * Write the result of your own action straight into the cached days (hold → yours, paid →
+ * booked, released → free), so the turf page is right the moment you return to it, before the
+ * server's answer lands. A refetch should still follow.
+ */
+export function markSlots(qc: QueryClient, venueId: string, ids: string[], status: SlotStatus, holdId?: string) {
+  if (!ids.length) return;
+  const want = new Set(ids);
+  for (const [key, old] of qc.getQueriesData<DaySlots>({ queryKey: ['slots', venueId] })) {
+    if (!old || !old.slots.some((s) => want.has(s.id))) continue;
+    const slots = old.slots.map((s) => {
+      if (!want.has(s.id)) return s;
+      const { holdId: _drop, ...rest } = s;
+      return status === 'mine' && holdId ? { ...rest, status, holdId } : { ...rest, status };
+    });
+    // Keep the copy's age: only these slots are known to be current, not the rest of the day.
+    qc.setQueryData<DaySlots>(key, { ...old, slots }, { updatedAt: qc.getQueryState(key)?.dataUpdatedAt });
+  }
 }
 
 /** Warm the cache when the user starts pressing a card — the detail screen opens instantly. */
