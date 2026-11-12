@@ -11,8 +11,39 @@ import { signPass, signPass2 } from '../lib/tokens';
 import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules } from './venues';
 
-const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total,
+const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id,
   (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
+
+/** One slot of a booking made of several (same order / payment). */
+type Slot = { id: string; code: string; day: string; start: number; end: number; status: string; amountPaid: number };
+const VISIBLE = "status in ('confirmed','checked_in','completed','cancelled')";
+
+/** For each order with 2+ slots among these rows: all of its slots, in time order. */
+async function groupsFor(userId: string, rows: { order_id?: string | null }[]) {
+  const orders = [...new Set(rows.map((r) => r.order_id).filter((x): x is string => !!x))];
+  const out = new Map<string, Slot[]>();
+  if (!orders.length) return out;
+  const all = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number; order_id: string }>(
+    `select id, code, day::text, start_min, end_min, status, total, order_id from bookings
+      where order_id = any($1::uuid[]) and user_id = $2 and ${VISIBLE} order by day, start_min`,
+    [orders, userId],
+  );
+  for (const x of all) {
+    const list = out.get(x.order_id) ?? [];
+    list.push({
+      id: x.id,
+      code: x.code,
+      day: x.day,
+      start: x.start_min,
+      end: x.end_min,
+      status: x.status === 'confirmed' && instant(x.day, x.end_min).getTime() < Date.now() ? 'completed' : x.status,
+      amountPaid: x.total,
+    });
+    out.set(x.order_id, list);
+  }
+  for (const [k, v] of out) if (v.length < 2) out.delete(k);
+  return out;
+}
 
 /** Who booked: printed on the entry pass. */
 type Holder = { name: string; phone: string };
@@ -24,6 +55,7 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '
 
 type BookingRow = {
   pitch_name?: string | null;
+  order_id?: string | null;
   id: string;
   code: string;
   user_id: string | null;
@@ -307,7 +339,7 @@ export async function getHold(userId: string, holdId: string) {
 
 const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s);
 
-export async function bookingShape(b: BookingRow, holder?: Holder) {
+export async function bookingShape(b: BookingRow, holder?: Holder, group: Slot[] = []) {
   const v = await getVenueRow(b.venue_id).catch(() => null);
   const endAt = instant(b.day, b.end_min).getTime();
   const status = b.status === 'confirmed' && endAt < Date.now() ? 'completed' : b.status;
@@ -323,6 +355,10 @@ export async function bookingShape(b: BookingRow, holder?: Holder) {
     amountPaid: b.total,
     method: 'bKash' as const,
     status,
+    /** Every slot of this booking when there are several (same payment); [] for a single slot. */
+    group,
+    /** What the whole booking cost (all its slots). */
+    orderTotal: group.length ? group.reduce((t, g) => t + g.amountPaid, 0) : b.total,
     // Signed entry pass carrying the ticket itself (docs/pass-qr.md), valid until 6 hours after
     // the session ends. Without the holder (not expected) it falls back to the id-only v1 pass.
     passToken:
@@ -339,7 +375,9 @@ export async function bookingShape(b: BookingRow, holder?: Holder) {
               to: hhmm(b.end_min),
               name: holder.name,
               phone: maskPhone(holder.phone),
-              paid: Math.round(b.total / 100),
+              paid: Math.round((group.length ? group.reduce((t, g) => t + g.amountPaid, 0) : b.total) / 100),
+              // Several slots in one booking: one pass covers them all (checked in together).
+              ...(group.length ? { slots: group.filter((g) => g.status !== 'cancelled').map((g) => ({ date: g.day, from: hhmm(g.start), to: hhmm(g.end) })) } : {}),
               via: 'bKash',
               exp: Math.floor(endAt / 1000) + 6 * 3600,
             })
@@ -350,13 +388,14 @@ export async function bookingShape(b: BookingRow, holder?: Holder) {
 
 export async function listBookings(userId: string) {
   const rows = await q<BookingRow>(
-    `select ${BOOKING_COLS}
-       from bookings where user_id = $1 and status in ('confirmed','checked_in','completed','cancelled')
+    `select * from (select ${BOOKING_COLS}, row_number() over (partition by coalesce(order_id, id) order by day, start_min) rn
+       from bookings where user_id = $1 and ${VISIBLE}) b where rn = 1
       order by day desc, start_min desc limit 200`,
     [userId],
   );
   const holder = await holderOf(userId);
-  return Promise.all(rows.map((r) => bookingShape(r, holder)));
+  const groups = await groupsFor(userId, rows);
+  return Promise.all(rows.map((r) => bookingShape(r, holder, groups.get(r.order_id ?? '') ?? [])));
 }
 
 /**
@@ -368,12 +407,14 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
   const today = dhakaToday();
   const holder = await holderOf(userId);
   const OPEN = "status in ('confirmed','checked_in') and day >= $2::date";
+  const OPEN_OUT = "status in ('confirmed','checked_in') and day::date >= $2::date"; // day is text in the outer select
   const where = filter === 'open' ? OPEN : filter === 'closed' ? `not (${OPEN})` : 'true';
+  // One item per booking: several slots bought together show as one (its first slot leads).
   const rows = await q<BookingRow>(
-    `select ${BOOKING_COLS}
-       from bookings where user_id = $1 and status in ('confirmed','checked_in','completed','cancelled') and ${where}
-      order by (${OPEN}) desc,
-               case when ${OPEN} then day end asc, case when ${OPEN} then start_min end asc,
+    `select * from (select ${BOOKING_COLS}, row_number() over (partition by coalesce(order_id, id) order by day, start_min) rn
+       from bookings where user_id = $1 and ${VISIBLE} and ${where}) b where rn = 1
+      order by (${OPEN_OUT}) desc,
+               case when ${OPEN_OUT} then day end asc, case when ${OPEN_OUT} then start_min end asc,
                day desc, start_min desc, id
       offset $3 limit $4`,
     [userId, today, cursor, limit + 1],
@@ -383,13 +424,15 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
     cursor === 0 && filter !== 'closed'
       ? await one<BookingRow>(
           `select ${BOOKING_COLS}
-             from bookings where user_id = $1 and ${OPEN} order by day, start_min limit 1`,
+             from bookings where user_id = $1 and ${OPEN} order by day, start_min, id limit 1`,
           [userId, today],
         )
       : null;
+  const groups = await groupsFor(userId, next ? [...page, next] : page);
+  const g = (r: BookingRow) => groups.get(r.order_id ?? '') ?? [];
   return {
-    items: await Promise.all(page.map((r) => bookingShape(r, holder))),
-    next: next ? await bookingShape(next, holder) : null,
+    items: await Promise.all(page.map((r) => bookingShape(r, holder, g(r)))),
+    next: next ? await bookingShape(next, holder, g(next)) : null,
     nextCursor: rows.length > limit ? cursor + limit : null,
   };
 }
@@ -402,27 +445,9 @@ export async function getBooking(userId: string, id: string) {
   );
   if (!b || b.status === 'held' || b.status === 'pending' || b.status === 'expired') throw new ApiError('not_found', 'Booking not found.');
   const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
-  // Slots bought together (one payment): every one of them, so the ticket can show them all.
-  const together = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number }>(
-    `select id, code, day::text, start_min, end_min, status, total from bookings
-      where order_id = (select order_id from bookings where id = $1) and order_id is not null and user_id = $2
-        and status in ('confirmed','checked_in','completed','cancelled')
-      order by day, start_min`,
-    [b.id, userId],
-  );
-  const group =
-    together.length > 1
-      ? together.map((x) => ({
-          id: x.id,
-          code: x.code,
-          day: x.day,
-          start: x.start_min,
-          end: x.end_min,
-          status: x.status === 'confirmed' && instant(x.day, x.end_min).getTime() < Date.now() ? 'completed' : x.status,
-          amountPaid: x.total,
-        }))
-      : [];
-  return { ...(await bookingShape(b, await holderOf(userId))), matchId: m?.id ?? null, group };
+  // Slots bought together (one payment): all of them, so the ticket shows the whole booking.
+  const groups = await groupsFor(userId, [b]);
+  return { ...(await bookingShape(b, await holderOf(userId), groups.get(b.order_id ?? '') ?? [])), matchId: m?.id ?? null };
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */

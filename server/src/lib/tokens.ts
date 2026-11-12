@@ -75,6 +75,8 @@ export type PassTicket = {
   phone: string; // masked: 017*****907
   paid: number; // taka
   via: string; // payment method
+  /** Several slots in one booking: all of them (from/to above are the first). One pass admits all. */
+  slots?: { date: string; from: string; to: string }[];
   exp: number; // unix seconds; the pass is void after this
 };
 

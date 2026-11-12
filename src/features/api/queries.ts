@@ -6,7 +6,7 @@ import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { BookingFilter, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
+import type { Booking, BookingFilter, BookingPage, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -114,12 +114,21 @@ export function useBookings() {
 }
 
 export function useBooking(id: string) {
-  return useQuery({
+  const qc = useQueryClient();
+  return useQuery<Booking>({
     queryKey: qk.booking(id),
     queryFn: ({ signal }) => api.getBooking(id, signal),
     staleTime: 60_000,
-    // Switching between slots of one booking keeps the ticket on screen while the next loads.
-    placeholderData: (prev) => (prev?.group?.some((g) => g.id === id) ? prev : undefined),
+    // Opened from My bookings: show that card's copy (all its slots included) at once, then refresh.
+    placeholderData: (): Booking | undefined => {
+      for (const [, data] of qc.getQueriesData<InfiniteData<BookingPage>>({ queryKey: ['bookings', 'pages'] })) {
+        for (const pg of data?.pages ?? []) {
+          const hit = pg.next?.id === id ? pg.next : pg.items.find((b) => b.id === id || b.group?.some((g) => g.id === id));
+          if (hit && hit.id === id) return hit;
+        }
+      }
+      return undefined;
+    },
   });
 }
 

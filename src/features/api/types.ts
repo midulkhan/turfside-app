@@ -80,8 +80,10 @@ export type Booking = {
   passToken: string;
   /** Open spots posted on this booking (detail only). */
   matchId?: string | null;
-  /** Every slot bought in the same payment (2+), this one included; each has its own pass. */
+  /** Every slot of this booking when there are several (same payment); [] for one. One pass covers all. */
   group?: BookingSlot[];
+  /** The whole booking's cost (all slots). */
+  orderTotal?: Poisha;
 };
 export type BookingFilter = 'all' | 'open' | 'closed';
 export type BookingPage = { items: Booking[]; next: Booking | null; nextCursor: number | null };

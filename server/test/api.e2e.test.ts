@@ -190,8 +190,21 @@ d('TurfSides API', () => {
     // Opening the other slot shows the same group.
     const other = ticket.group.find((g: Json) => g.id !== ticket.id);
     expect((await call('GET', `/v1/bookings/${other.id}`, undefined, u.accessToken)).json.group).toHaveLength(2);
-    // A single booking has no group.
+    // Others can't see it.
     expect((await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, a.accessToken)).status).toBe(404);
+    // One pass for the whole booking: the QR lists every slot and the total.
+    const pass = JSON.parse(ticket.passToken.slice(ticket.passToken.indexOf('{')));
+    expect(pass.slots).toHaveLength(2);
+    expect(pass.paid).toBe((free[0].price + free[1].price) / 100);
+    expect(ticket.orderTotal).toBe(free[0].price + free[1].price);
+    // My bookings shows it once, with both slots.
+    const page = (await call('GET', '/v1/me/bookings?filter=open&limit=10', undefined, u.accessToken)).json;
+    const mine = page.items.filter((x: Json) => ticket.group.some((g: Json) => g.id === x.id));
+    expect(mine).toHaveLength(1);
+    expect(mine[0].group).toHaveLength(2);
+    expect(page.next.group).toHaveLength(2);
+    const all = (await call('GET', '/v1/me/bookings?filter=all&limit=10', undefined, u.accessToken)).json;
+    expect(all.items).toHaveLength(1);
   });
 
   it('cancelled payment frees the hold for a retry', async () => {
@@ -378,8 +391,10 @@ d('cart: one order, one turf, many slots', () => {
     expect(res.status).toBe(302);
     expect((await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, a.accessToken)).json.status).toBe('confirmed');
     const mine = (await call('GET', '/v1/me/bookings', undefined, a.accessToken)).json as Json[];
+    // One booking in the list, carrying all three slots.
     const booked = mine.filter((b) => b.day === day && b.status === 'confirmed');
-    expect(booked).toHaveLength(3);
+    expect(booked).toHaveLength(1);
+    expect(booked[0].group.filter((g: Json) => g.status === 'confirmed')).toHaveLength(3);
     const after = ((await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`)).json.slots as Json[]).filter((s) => picks.some((p) => p.id === s.id));
     expect(after.every((s) => s.status === 'booked')).toBe(true);
     expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toEqual([]);
