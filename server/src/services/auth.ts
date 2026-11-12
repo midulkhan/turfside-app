@@ -85,8 +85,9 @@ async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: s
     throw failure instanceof ApiError ? failure : new ApiError('not_configured', 'We couldn’t send your code right now. Try again in a moment.');
   }
   const where = { sent: true as const, channels, ...(channels.includes('email') && to.email ? { email: maskEmail(to.email) } : {}) };
-  // Outside production we return the code so the app can be tested without a gateway.
-  return isProd ? where : { ...where, devCode: code };
+  // Outside production, and only when no real channel (email) carried it, the code comes back
+  // so the app can be tested without a gateway. Once it's emailed it is never in the response.
+  return isProd || channels.includes('email') ? where : { ...where, devCode: code };
 }
 
 async function consumeOtp(phone: string, purpose: Purpose, code: string) {
