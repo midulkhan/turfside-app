@@ -21,7 +21,6 @@ import * as api from '@/features/api/client';
 import { qk, useBookingPages, useJoinedMatches } from '@/features/api/queries';
 import type { Booking, Match } from '@/features/api/types';
 import { formatTaka } from '@/lib/money';
-import { slotsCount, timesLabel, totalPaid } from '@/lib/booking-slots';
 import { dhakaToday, formatDay, formatRange } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, space } from '@/theme/tokens';
@@ -69,11 +68,10 @@ const BookingRow = memo(function BookingRow({ b, today }: { b: Booking; today: s
             </View>
           </View>
           <Text variant="label" color={colors.textMuted}>
-            {formatDay(b.day, { year: false })} · {timesLabel(b)}
-            {slotsCount(b) ? ` · ${slotsCount(b)}` : ''}
+            {formatDay(b.day, { year: false })} · {formatRange(b.start, b.end)}
           </Text>
           <View style={styles.rowBottom}>
-            <Text variant="labelStrong">{formatTaka(totalPaid(b))}</Text>
+            <Text variant="labelStrong">{formatTaka(b.amountPaid)}</Text>
             {live ? (
               <View style={styles.link}>
                 <QrCode size={15} color={colors.ink} />
@@ -196,8 +194,7 @@ export default function Bookings() {
                 <View style={styles.metaItem}>
                   <Clock3 size={16} color={colors.textOnDarkMuted} />
                   <Text variant="label" color={colors.textOnDark}>
-                    {timesLabel(next)}
-                    {slotsCount(next) ? ` · ${slotsCount(next)}` : ''}
+                    {formatRange(next.start, next.end)}
                   </Text>
                 </View>
               </View>

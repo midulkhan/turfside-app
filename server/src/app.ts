@@ -662,12 +662,12 @@ export async function buildApp() {
   app.post('/v1/passes/check-in', { preHandler: requireUser }, async (req) => {
     ownerOnly(req.user!.roles);
     const { b, ticket } = await passLookup(parse(tokenBody, req.body).token, req.user!.userId);
-    // One pass admits the whole booking: every slot bought with it (same order) is checked in.
+    // One pass admits its whole ticket: every back-to-back slot it covers (not other tickets).
+    const ids = await bookings.ticketBookingIds(b.id);
     const done = await one<{ n: number }>(
-      `with u as (update bookings set status = 'checked_in'
-         where (id = $1 or (order_id is not null and order_id = (select order_id from bookings where id = $1))) and status = 'confirmed' returning 1)
+      `with u as (update bookings set status = 'checked_in' where id = any($1::uuid[]) and status = 'confirmed' returning 1)
        select count(*)::int n from u`,
-      [b.id],
+      [ids],
     );
     if (!done?.n) throw new ApiError('conflict', b.status === 'checked_in' ? 'This pass was already used.' : 'This booking is cancelled or no longer valid.');
     return { ok: true, code: b.code, booking: passView({ ...b, status: 'checked_in' }), ticket };

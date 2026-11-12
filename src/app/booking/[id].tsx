@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, Clock3, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Navigation, Share2, Ticket, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
@@ -21,90 +21,44 @@ import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useBooking, useCancelBooking } from '@/features/api/queries';
-import type { Booking, BookingSlot } from '@/features/api/types';
+import type { OtherTicket } from '@/features/api/types';
 import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
-import { liveSlots, slotsCount, timesLabel, totalPaid } from '@/lib/booking-slots';
 import { formatTaka } from '@/lib/money';
-import { dhakaInstant, dhakaToday, formatRange, weekday, dayOfMonth } from '@/lib/time';
+import { dhakaInstant, formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/** "Fri, 13 Nov"; the year only when it isn't this one. */
-const dateLong = (day: string) =>
-  `${weekday(day)}, ${dayOfMonth(day)} ${MONTHS_SHORT[Number(day.slice(5, 7)) - 1]}${day.slice(0, 4) === dhakaToday().slice(0, 4) ? '' : ` ${day.slice(0, 4)}`}`;
-/** 90 → "1h 30m", 60 → "1h". */
-const short = (mins: number) => `${Math.floor(mins / 60) ? `${Math.floor(mins / 60)}h` : ''}${mins % 60 ? ` ${mins % 60}m` : ''}`.trim();
-/** 360 → "6 hours", 60 → "1 hour", 270 → "4h 30m". */
-const total = (mins: number) => (mins % 60 ? short(mins) : `${mins / 60} hour${mins === 60 ? '' : 's'}`);
-
-/** Two tiles: the date, then the total duration (several slots) or the time (one slot). */
-function Facts({ b }: { b: Booking }) {
-  const slots = liveSlots(b);
-  const multi = slots.length > 1;
-  const days = [...new Set(slots.map((s) => s.day))];
-  const mins = slots.reduce((t, s) => t + (s.end - s.start), 0);
+/**
+ * Slots that weren't back to back become separate tickets, though paid for together.
+ * Each opens its own ticket (and pass).
+ */
+function OtherTickets({ tickets }: { tickets: OtherTicket[] }) {
   return (
-    <View style={styles.facts}>
-      <View style={styles.fact}>
-        <CalendarDays size={20} color={colors.ink} strokeWidth={1.7} />
-        <View style={styles.flex}>
-          <Text variant="caption" color={colors.textMuted} style={styles.factLabel} numberOfLines={1}>
-            {days.length > 1 ? 'DATES' : 'DATE'}
-          </Text>
-          <Text variant="labelStrong" style={styles.factValue} numberOfLines={2}>
-            {days.length > 1 ? `${days.length} days from ${dayOfMonth(days[0])} ${MONTHS_SHORT[Number(days[0].slice(5, 7)) - 1]}` : dateLong(b.day)}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.fact}>
-        <Clock3 size={20} color={colors.ink} strokeWidth={1.7} />
-        <View style={styles.flex}>
-          <Text variant="caption" color={colors.textMuted} style={styles.factLabel} numberOfLines={1}>
-            {multi ? 'TOTAL DURATION' : 'TIME'}
-          </Text>
-          <Text variant="labelStrong" style={styles.factValue} numberOfLines={2}>
-            {multi ? total(mins) : formatRange(b.start, b.end)}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** A booking of several slots (one payment): every slot, numbered. One pass below admits them all. */
-function SlotList({ group }: { group: BookingSlot[] }) {
-  const days = new Set(group.map((g) => g.day)).size;
-  const live = group.filter((g) => g.status !== 'cancelled').length;
-  return (
-    <View style={styles.slots}>
-      <View style={styles.slotsHead}>
-        <Text variant="title" style={styles.flex}>
-          Booked slots
-        </Text>
-        <View style={styles.countPill}>
-          <Text variant="labelStrong" color={colors.charcoal}>
-            {live} slot{live === 1 ? '' : 's'}
-          </Text>
-        </View>
-      </View>
-      {group.map((g, i) => (
-        <View key={g.id} style={[styles.slot, i > 0 && styles.slotRule]}>
-          <View style={styles.slotNo}>
-            <Text variant="labelStrong" color={colors.textMuted}>
-              {String(i + 1).padStart(2, '0')}
-            </Text>
-          </View>
-          <Text variant="bodyStrong" style={[styles.flex, g.status === 'cancelled' && styles.struck]} numberOfLines={1}>
-            {days > 1 ? `${weekday(g.day)} ${dayOfMonth(g.day)} · ` : ''}
-            {formatRange(g.start, g.end)}
-          </Text>
-          <Text variant="label" color={colors.textMuted}>
-            {g.status === 'cancelled' ? 'Cancelled' : short(g.end - g.start)}
-          </Text>
-        </View>
+    <View style={styles.others}>
+      <Overline>Also in this payment</Overline>
+      {tickets.map((t) => (
+        <PressableScale
+          key={t.id}
+          scaleTo={0.985}
+          onPress={() => router.setParams({ id: t.id })}
+          accessibilityRole="button"
+          accessibilityLabel={`Ticket for ${weekday(t.day)} ${dayOfMonth(t.day)}, ${formatRange(t.start, t.end)}`}>
+          <Card style={styles.otherRow}>
+            <Ticket size={20} color={colors.ink} strokeWidth={1.8} />
+            <View style={styles.flex}>
+              <Text variant="bodyStrong" numberOfLines={1} style={t.status === 'cancelled' && styles.struck}>
+                {weekday(t.day)} {dayOfMonth(t.day)} · {formatRange(t.start, t.end)}
+              </Text>
+              <Text variant="caption" color={colors.textMuted}>
+                {t.status === 'cancelled' ? 'Cancelled' : `Ticket ${t.code}`}
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </Card>
+        </PressableScale>
       ))}
     </View>
   );
@@ -131,11 +85,10 @@ export default function BookingTicket() {
     );
   }
 
-  const multi = (b?.group?.length ?? 0) > 1;
   const share = () =>
     b &&
     Share.share({
-      message: `Game on! ${b.venue.name}, ${weekday(b.day)} ${dayOfMonth(b.day)} · ${timesLabel(b)}. Booking ${b.code} on TurfSides.`,
+      message: `Game on! ${b.venue.name}, ${weekday(b.day)} ${dayOfMonth(b.day)} · ${formatRange(b.start, b.end)}. Booking ${b.code} on TurfSides.`,
     });
   const canCancel = !!b && b.status === 'confirmed' && dhakaInstant(b.day, b.start) - openedAt > 24 * 3600_000;
   const askCancel = () =>
@@ -164,18 +117,14 @@ export default function BookingTicket() {
   return (
     <View style={styles.root}>
       <StickyHeader progress={scrolled.progress}>
-        <ScreenHeader
-          title="Your ticket"
-          leftIcon={X}
-          onBack={close}
-          right={<IconButton icon={Share2} label="Share booking" onPress={share} />}
-        />
+        <ScreenHeader title="Your ticket" leftIcon={X} onBack={close} right={<IconButton icon={Share2} label="Share booking" onPress={share} />} />
       </StickyHeader>
       <ScrollView
         onScroll={scrolled.onScroll}
         scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingTop: space[2], paddingBottom: insets.bottom + space[6] }]}
         showsVerticalScrollIndicator={false}>
+
         {justBooked ? (
           <Animated.View entering={FadeInDown.duration(320)} style={styles.hello}>
             <Animated.View entering={ZoomIn.delay(120).springify()} style={styles.check}>
@@ -193,125 +142,147 @@ export default function BookingTicket() {
         {b ? (
           // Everything arrives together: no icons, labels or buttons before the booking itself.
           <Animated.View entering={FadeIn.duration(260)} style={styles.stack}>
-            <Overline>
-              {b?.status === 'cancelled' ? 'Booking cancelled' : b?.status === 'completed' ? 'Played' : 'Booking confirmed'}
-            </Overline>
+          <Overline>{b?.status === 'cancelled' ? 'Booking cancelled' : b?.status === 'completed' ? 'Played' : 'Booking confirmed'}</Overline>
 
-            {/* Ticket */}
-            <View>
-              <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={13} style={styles.ticket}>
-                <Photo source={b.venue.photo} style={styles.photo} />
-                {b ? (
-                  <View style={styles.formatBadge}>
-                    <Text variant="labelStrong" color={colors.textOnDark}>
-                      {b.venue.formats[0]}
-                    </Text>
-                  </View>
-                ) : null}
-                <View style={styles.ticketBody}>
-                  <Text variant="h3" style={styles.venueName}>
-                    {b?.venue.name ?? ' '}
+          {/* Ticket */}
+          <View>
+            <TicketSurface fill={colors.surface} stroke={colors.border} radius={radius.lg} notch={13} style={styles.ticket}>
+              <Photo source={b.venue.photo} style={styles.photo} />
+              {b ? (
+                <View style={styles.formatBadge}>
+                  <Text variant="labelStrong" color={colors.textOnDark}>
+                    {b.venue.formats[0]}
                   </Text>
-                  <View style={styles.row}>
-                    <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
-                    <Text variant="body" color={colors.textMuted}>
-                      {b ? `${b.venue.area}, ${b.venue.city}` : ''}
-                    </Text>
-                  </View>
-                  <Facts b={b} />
-                  {multi ? <SlotList group={b.group!} /> : null}
                 </View>
-                <TicketDivider />
-                <View style={styles.pass}>
-                  <View style={styles.flex}>
-                    <View style={styles.passBadge}>
-                      <Text variant="caption" style={styles.passBadgeText}>
-                        YOUR ENTRY PASS
+              ) : null}
+              <View style={styles.ticketBody}>
+                <Text variant="h3" style={styles.venueName}>
+                  {b?.venue.name ?? ' '}
+                </Text>
+                <View style={styles.row}>
+                  <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
+                  <Text variant="body" color={colors.textMuted}>
+                    {b ? `${b.venue.area}, ${b.venue.city}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.when}>
+                  <View style={styles.whenCol}>
+                    <CalendarDays size={22} color={colors.ink} strokeWidth={1.7} />
+                    <View style={styles.whenText}>
+                      <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
+                        {b ? `${weekday(b.day).toUpperCase()}, ${dayOfMonth(b.day)} ${MONTHS[Number(b.day.slice(5, 7)) - 1]}` : ' '}
+                      </Text>
+                      <Text variant="label" color={colors.textMuted}>
+                        {b?.day.slice(0, 4)}
                       </Text>
                     </View>
-                    <Text variant="h2" color={colors.textOnDark} style={styles.code} adjustsFontSizeToFit numberOfLines={1}>
-                      {b?.code ?? ' '}
-                    </Text>
-                    <Text variant="label" color={colors.textOnDarkMuted}>
-                      Show this code at reception
-                    </Text>
                   </View>
-                  <View style={styles.passRule} />
-                  {b.passToken ? (
-                    <Pressable
-                      onPress={() => {
-                        haptic.select();
-                        setQrOpen(true);
-                      }}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel="Enlarge entry pass QR code"
-                      style={({ pressed }) => [styles.qrTap, pressed && styles.qrPressed]}>
-                      <QRCode value={b.passToken} size={84} />
-                      <View style={styles.qrExpand}>
-                        <Maximize2 size={12} color={colors.charcoal} strokeWidth={2.6} />
-                      </View>
-                    </Pressable>
-                  ) : (
-                    // Cancelled or played: the pass is no longer valid, so no QR is shown.
-                    <View style={styles.noPass}>
-                      <X size={28} color={colors.textOnDarkMuted} />
+                  <View style={styles.vr} />
+                  <View style={styles.whenCol}>
+                    <Clock3 size={22} color={colors.ink} strokeWidth={1.7} />
+                    <View style={styles.whenText}>
+                      <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
+                        {b ? formatRange(b.start, b.end) : ' '}
+                      </Text>
+                      <Text variant="label" color={colors.textMuted}>
+                        {b ? formatDuration(b.end - b.start) : ''}
+                      </Text>
                     </View>
-                  )}
+                  </View>
                 </View>
-              </TicketSurface>
-            </View>
-
-            {b ? (
-              <View style={styles.paid}>
-                <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
-                <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
-                  Paid {formatTaka(totalPaid(b))}
-                  {slotsCount(b) ? ` · ${slotsCount(b)}` : ''}
-                </Text>
-                <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
-                  via {b.method}
-                </Text>
               </View>
-            ) : null}
-
-            <Button label="Directions" icon={Navigation} variant="light" onPress={directions} />
-
-            {/* Find players: open spots on this booking (or manage the ones already open). */}
-            {b.status === 'confirmed' || b.matchId ? (
-              <PressableScale
-                scaleTo={0.99}
-                accessibilityRole="button"
-                onPress={() => (b.matchId ? router.push({ pathname: '/match/[id]', params: { id: b.matchId } }) : setFinding(true))}>
-                <Card tone="lime" style={styles.tip}>
-                  <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
-                  <View style={styles.flex}>
-                    <Text variant="bodyStrong" color={colors.charcoal}>
-                      {b.matchId ? 'Manage your squad' : 'Need more players?'}
-                    </Text>
-                    <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
-                      {b.matchId ? 'See requests and who has paid' : 'Open spots and let players nearby join'}
+              <TicketDivider />
+              <View style={styles.pass}>
+                <View style={styles.flex}>
+                  <View style={styles.passBadge}>
+                    <Text variant="caption" style={styles.passBadgeText}>
+                      YOUR ENTRY PASS
                     </Text>
                   </View>
-                  <View style={styles.darkArrow}>
-                    <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
+                  <Text variant="h2" color={colors.textOnDark} style={styles.code} adjustsFontSizeToFit numberOfLines={1}>
+                    {b?.code ?? ' '}
+                  </Text>
+                  <Text variant="label" color={colors.textOnDarkMuted}>
+                    Show this code at reception
+                  </Text>
+                </View>
+                <View style={styles.passRule} />
+                {b.passToken ? (
+                  <Pressable
+                    onPress={() => {
+                      haptic.select();
+                      setQrOpen(true);
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Enlarge entry pass QR code"
+                    style={({ pressed }) => [styles.qrTap, pressed && styles.qrPressed]}>
+                    <QRCode value={b.passToken} size={84} />
+                    <View style={styles.qrExpand}>
+                      <Maximize2 size={12} color={colors.charcoal} strokeWidth={2.6} />
+                    </View>
+                  </Pressable>
+                ) : (
+                  // Cancelled or played: the pass is no longer valid, so no QR is shown.
+                  <View style={styles.noPass}>
+                    <X size={28} color={colors.textOnDarkMuted} />
                   </View>
-                </Card>
-              </PressableScale>
-            ) : null}
+                )}
+              </View>
+            </TicketSurface>
+          </View>
 
-            <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
-              <Text variant="bodyStrong" style={styles.u}>
-                Back to explore
+          {b ? (
+            <View style={styles.paid}>
+              <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
+              <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
+                Paid {formatTaka(b.amountPaid)}
+              </Text>
+              <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
+                via {b.method}
+              </Text>
+            </View>
+          ) : null}
+
+          <Button label="Directions" icon={Navigation} variant="light" onPress={directions} />
+
+          {b.otherTickets?.length ? <OtherTickets tickets={b.otherTickets} /> : null}
+
+          {/* Find players: open spots on this booking (or manage the ones already open). */}
+          {b.status === 'confirmed' || b.matchId ? (
+            <PressableScale
+              scaleTo={0.99}
+              accessibilityRole="button"
+              onPress={() => (b.matchId ? router.push({ pathname: '/match/[id]', params: { id: b.matchId } }) : setFinding(true))}>
+              <Card tone="lime" style={styles.tip}>
+                <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
+                <View style={styles.flex}>
+                  <Text variant="bodyStrong" color={colors.charcoal}>
+                    {b.matchId ? 'Manage your squad' : 'Need more players?'}
+                  </Text>
+                  <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
+                    {b.matchId ? 'See requests and who has paid' : 'Open spots and let players nearby join'}
+                  </Text>
+                </View>
+                <View style={styles.darkArrow}>
+                  <ArrowRight size={18} color={colors.lime} strokeWidth={2.6} />
+                </View>
+              </Card>
+            </PressableScale>
+          ) : null}
+
+          <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
+            <Text variant="bodyStrong" style={styles.u}>
+              Back to explore
+            </Text>
+          </Pressable>
+          {canCancel ? (
+            <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
+              <Text variant="label" color={colors.danger}>
+                {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
               </Text>
             </Pressable>
-            {canCancel ? (
-              <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
-                <Text variant="label" color={colors.danger}>
-                  {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
-                </Text>
-              </Pressable>
-            ) : null}
+          ) : null}
           </Animated.View>
         ) : (
           <TicketSkeleton />
@@ -396,16 +367,13 @@ const styles = createStyles(() => ({
   },
   ticketBody: { paddingHorizontal: space[4], paddingTop: space[4], gap: space[2] },
   venueName: { fontSize: 20, lineHeight: 26 },
-  facts: { flexDirection: 'row', gap: space[2], marginTop: space[3], marginBottom: space[4] },
-  fact: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2] + 2, backgroundColor: colors.surfaceMuted, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[3] },
-  factLabel: { letterSpacing: 0.8, fontSize: 11, marginBottom: 2 },
-  factValue: { fontSize: 15, lineHeight: 19 },
-  slots: { marginBottom: space[4] },
-  slotsHead: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginBottom: space[2] },
-  countPill: { backgroundColor: colors.lime, borderRadius: radius.pill, paddingHorizontal: space[3], paddingVertical: 4 },
-  slot: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[2] + 2 },
-  slotRule: { borderTopWidth: 1, borderTopColor: colors.border },
-  slotNo: { width: 36, height: 30, borderRadius: radius.sm, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  when: { flexDirection: 'row', alignItems: 'center', marginTop: space[3], marginBottom: space[4] },
+  whenCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  whenText: { flex: 1 },
+  caps: { fontFamily: 'Geist_700Bold', fontSize: 15 },
+  vr: { width: 1, height: 44, backgroundColor: colors.border, marginHorizontal: space[2] },
+  others: { gap: space[2] },
+  otherRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   struck: { textDecorationLine: 'line-through' },
   pass: {
     flexDirection: 'row',

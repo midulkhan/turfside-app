@@ -119,12 +119,12 @@ export function useBooking(id: string) {
     queryKey: qk.booking(id),
     queryFn: ({ signal }) => api.getBooking(id, signal),
     staleTime: 60_000,
-    // Opened from My bookings: show that card's copy (all its slots included) at once, then refresh.
+    // Opened from My bookings: show that card's copy at once, then refresh.
     placeholderData: (): Booking | undefined => {
       for (const [, data] of qc.getQueriesData<InfiniteData<BookingPage>>({ queryKey: ['bookings', 'pages'] })) {
         for (const pg of data?.pages ?? []) {
-          const hit = pg.next?.id === id ? pg.next : pg.items.find((b) => b.id === id || b.group?.some((g) => g.id === id));
-          if (hit && hit.id === id) return hit;
+          const hit = pg.next?.id === id ? pg.next : pg.items.find((b) => b.id === id);
+          if (hit) return hit;
         }
       }
       return undefined;

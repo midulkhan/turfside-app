@@ -63,8 +63,8 @@ export type Hold = {
 };
 
 export type BookingStatus = 'confirmed' | 'checked_in' | 'completed' | 'cancelled';
-/** One slot of a multi-slot booking (same payment). */
-export type BookingSlot = { id: string; code: string; day: DayKey; start: number; end: number; status: BookingStatus; amountPaid: Poisha };
+/** Another ticket bought in the same payment. */
+export type OtherTicket = { id: string; code: string; day: DayKey; start: number; end: number; status: BookingStatus };
 
 export type Booking = {
   id: string;
@@ -80,10 +80,10 @@ export type Booking = {
   passToken: string;
   /** Open spots posted on this booking (detail only). */
   matchId?: string | null;
-  /** Every slot of this booking when there are several (same payment); [] for one. One pass covers all. */
-  group?: BookingSlot[];
-  /** The whole booking's cost (all slots). */
-  orderTotal?: Poisha;
+  /** Booked slots this ticket covers: back-to-back slots bought together merge into one ticket. */
+  slotCount?: number;
+  /** Other tickets from the same payment (slots that weren't back to back). */
+  otherTickets?: OtherTicket[];
 };
 export type BookingFilter = 'all' | 'open' | 'closed';
 export type BookingPage = { items: Booking[]; next: Booking | null; nextCursor: number | null };

@@ -174,37 +174,44 @@ d('TurfSides API', () => {
     expect((await call('GET', '/v1/me/notifications', undefined, b.accessToken)).json[0].title).toBe('Payment received');
   });
 
-  it('slots bought together all show on the ticket, each with its own pass', async () => {
-    const u = await newUser('Two Slots');
+  it('back-to-back slots make one ticket; a separate slot in the same payment gets its own', async () => {
+    const u = await newUser('Two Tickets');
     const day = new Date(Date.now() + 6 * 3600_000 + 11 * 86400_000).toISOString().slice(0, 10);
-    const free = ((await call('GET', `/v1/venues/v_badda_pitch/slots?day=${day}`)).json.slots as Json[]).filter((x) => x.status === 'available').slice(0, 2);
-    expect(free.length).toBe(2);
-    const hold = await call('POST', '/v1/holds', { slotIds: free.map((x) => x.id) }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    const free = ((await call('GET', `/v1/venues/v_badda_pitch/slots?day=${day}`)).json.slots as Json[]).filter((x) => x.status === 'available');
+    // Two touching slots, plus one with a gap after them.
+    const i = free.findIndex((x, k) => free[k + 1] && x.end === free[k + 1].start);
+    const [s1, s2] = [free[i], free[i + 1]];
+    const s3 = free.find((x) => x.start > s2.end)!;
+    expect(s1 && s2 && s3).toBeTruthy();
+    const hold = await call('POST', '/v1/holds', { slotIds: [s1.id, s2.id, s3.id] }, u.accessToken, { 'Idempotency-Key': randomUUID() });
     const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, u.accessToken, { 'Idempotency-Key': randomUUID() });
     await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
     const st = await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, u.accessToken);
-    const ticket = (await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, u.accessToken)).json;
-    expect(ticket.group).toHaveLength(2);
-    expect(new Set(ticket.group.map((g: Json) => g.code)).size).toBe(2);
-    expect(ticket.group.map((g: Json) => g.id)).toContain(ticket.id);
-    // Opening the other slot shows the same group.
-    const other = ticket.group.find((g: Json) => g.id !== ticket.id);
-    expect((await call('GET', `/v1/bookings/${other.id}`, undefined, u.accessToken)).json.group).toHaveLength(2);
-    // Others can't see it.
-    expect((await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, a.accessToken)).status).toBe(404);
-    // One pass for the whole booking: the QR lists every slot and the total.
-    const pass = JSON.parse(ticket.passToken.slice(ticket.passToken.indexOf('{')));
-    expect(pass.slots).toHaveLength(2);
-    expect(pass.paid).toBe((free[0].price + free[1].price) / 100);
-    expect(ticket.orderTotal).toBe(free[0].price + free[1].price);
-    // My bookings shows it once, with both slots.
-    const page = (await call('GET', '/v1/me/bookings?filter=open&limit=10', undefined, u.accessToken)).json;
-    const mine = page.items.filter((x: Json) => ticket.group.some((g: Json) => g.id === x.id));
-    expect(mine).toHaveLength(1);
-    expect(mine[0].group).toHaveLength(2);
-    expect(page.next.group).toHaveLength(2);
+    expect(st.json.status).toBe('confirmed');
+
+    // My bookings: two tickets, one payment.
     const all = (await call('GET', '/v1/me/bookings?filter=all&limit=10', undefined, u.accessToken)).json;
-    expect(all.items).toHaveLength(1);
+    expect(all.items).toHaveLength(2);
+    const joined = all.items.find((x: Json) => x.slotCount === 2);
+    const single = all.items.find((x: Json) => x.slotCount === 1);
+    // The joined ticket runs first start → last end, costs both slots, and one QR says so.
+    expect(joined).toMatchObject({ start: s1.start, end: s2.end, amountPaid: s1.price + s2.price });
+    expect(single).toMatchObject({ start: s3.start, end: s3.end, amountPaid: s3.price });
+    expect(joined.code).not.toBe(single.code);
+    const pass = JSON.parse(joined.passToken.slice(joined.passToken.indexOf('{')));
+    expect(pass).toMatchObject({ code: joined.code, paid: (s1.price + s2.price) / 100 });
+    expect(pass.slots).toBeUndefined();
+    // Each ticket points at the other one from the same payment.
+    expect(joined.otherTickets.map((t: Json) => t.id)).toEqual([single.id]);
+    expect(single.otherTickets.map((t: Json) => t.id)).toEqual([joined.id]);
+    // Opening the second slot of the joined ticket opens that ticket.
+    const s2Booking = (await call('GET', `/v1/bookings/${joined.id}`, undefined, u.accessToken)).json;
+    expect(s2Booking).toMatchObject({ id: joined.id, start: s1.start, end: s2.end, slotCount: 2 });
+    // The next game on top is the joined ticket, whole.
+    const open = (await call('GET', '/v1/me/bookings?filter=open&limit=10', undefined, u.accessToken)).json;
+    expect(open.next).toMatchObject({ id: joined.id, end: s2.end });
+    // Others can't see it.
+    expect((await call('GET', `/v1/bookings/${joined.id}`, undefined, a.accessToken)).status).toBe(404);
   });
 
   it('cancelled payment frees the hold for a retry', async () => {
@@ -391,10 +398,10 @@ d('cart: one order, one turf, many slots', () => {
     expect(res.status).toBe(302);
     expect((await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, a.accessToken)).json.status).toBe('confirmed');
     const mine = (await call('GET', '/v1/me/bookings', undefined, a.accessToken)).json as Json[];
-    // One booking in the list, carrying all three slots.
+    // Tickets: touching slots merge, so the three slots cover exactly their total time.
     const booked = mine.filter((b) => b.day === day && b.status === 'confirmed');
-    expect(booked).toHaveLength(1);
-    expect(booked[0].group.filter((g: Json) => g.status === 'confirmed')).toHaveLength(3);
+    expect(booked.reduce((n, b) => n + b.slotCount, 0)).toBe(3);
+    expect(booked.reduce((t, b) => t + b.amountPaid, 0)).toBe(picks.reduce((t, p) => t + p.price, 0));
     const after = ((await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`)).json.slots as Json[]).filter((s) => picks.some((p) => p.id === s.id));
     expect(after.every((s) => s.status === 'booked')).toBe(true);
     expect((await call('GET', '/v1/me/holds', undefined, a.accessToken)).json).toEqual([]);

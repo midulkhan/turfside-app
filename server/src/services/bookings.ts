@@ -18,19 +18,23 @@ const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min
 type Slot = { id: string; code: string; day: string; start: number; end: number; status: string; amountPaid: number };
 const VISIBLE = "status in ('confirmed','checked_in','completed','cancelled')";
 
-/** For each order with 2+ slots among these rows: all of its slots, in time order. */
-async function groupsFor(userId: string, rows: { order_id?: string | null }[]) {
+/**
+ * Tickets from slots: back-to-back slots on the same day (one payment) make one ticket
+ * ("1:30–4:00"); a gap starts another. Returns, for every booking id in these orders, the run
+ * (ticket) it belongs to, and for each order all of its runs.
+ */
+async function runsFor(userId: string, rows: { id: string; order_id?: string | null }[]) {
   const orders = [...new Set(rows.map((r) => r.order_id).filter((x): x is string => !!x))];
-  const out = new Map<string, Slot[]>();
-  if (!orders.length) return out;
+  const byId = new Map<string, Slot[]>();
+  const byOrder = new Map<string, Slot[][]>();
+  if (!orders.length) return { byId, byOrder };
   const all = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number; order_id: string }>(
     `select id, code, day::text, start_min, end_min, status, total, order_id from bookings
-      where order_id = any($1::uuid[]) and user_id = $2 and ${VISIBLE} order by day, start_min`,
+      where order_id = any($1::uuid[]) and user_id = $2 and ${VISIBLE} order by order_id, day, start_min`,
     [orders, userId],
   );
   for (const x of all) {
-    const list = out.get(x.order_id) ?? [];
-    list.push({
+    const slot: Slot = {
       id: x.id,
       code: x.code,
       day: x.day,
@@ -38,12 +42,45 @@ async function groupsFor(userId: string, rows: { order_id?: string | null }[]) {
       end: x.end_min,
       status: x.status === 'confirmed' && instant(x.day, x.end_min).getTime() < Date.now() ? 'completed' : x.status,
       amountPaid: x.total,
-    });
-    out.set(x.order_id, list);
+    };
+    const runs = byOrder.get(x.order_id) ?? [];
+    const last = runs.at(-1)?.at(-1);
+    // Same ticket only if it starts exactly when the previous slot ends, same day, same state.
+    const joins = last && last.day === slot.day && last.end === slot.start && (last.status === 'cancelled') === (slot.status === 'cancelled');
+    if (joins) runs.at(-1)!.push(slot);
+    else runs.push([slot]);
+    byOrder.set(x.order_id, runs);
   }
-  for (const [k, v] of out) if (v.length < 2) out.delete(k);
-  return out;
+  for (const runs of byOrder.values()) for (const run of runs) for (const sl of run) byId.set(sl.id, run);
+  return { byId, byOrder };
 }
+
+/** The bookings one ticket covers (for check-in): its back-to-back slots, or just itself. */
+export async function ticketBookingIds(bookingId: string) {
+  const b = await one<{ id: string; order_id: string | null; user_id: string }>('select id, order_id, user_id from bookings where id = $1', [bookingId]);
+  if (!b?.order_id) return [bookingId];
+  const run = (await runsFor(b.user_id, [b])).byId.get(b.id);
+  return run ? run.map((x) => x.id) : [bookingId];
+}
+
+/** A ticket's neighbours: the other tickets bought in the same payment. */
+const otherTickets = (runs: Slot[][] | undefined, run: Slot[]) =>
+  (runs ?? [])
+    .filter((r) => r[0].id !== run[0].id)
+    .map((r) => ({ id: r[0].id, code: r[0].code, day: r[0].day, start: r[0].start, end: r.at(-1)!.end, status: r[0].status }));
+
+/** SQL: one row per ticket (first slot of each run of back-to-back slots), for the lists. */
+const TICKET_ROWS = (where: string) => `select * from (
+    select x.*, row_number() over (partition by coalesce(order_id, id), run order by day, start_min) rn from (
+      select y.*, sum(brk) over (partition by coalesce(order_id, id) order by day, start_min rows unbounded preceding) run from (
+        select ${BOOKING_COLS},
+          case when lag(end_min) over w = start_min and lag(day) over w = day
+                    and (lag(status) over w = 'cancelled') = (status = 'cancelled') then 0 else 1 end brk
+          from bookings where ${where}
+          window w as (partition by coalesce(order_id, id) order by day, start_min)
+      ) y
+    ) x
+  ) b where rn = 1`;
 
 /** Who booked: printed on the entry pass. */
 type Holder = { name: string; phone: string };
@@ -339,9 +376,14 @@ export async function getHold(userId: string, holdId: string) {
 
 const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s);
 
-export async function bookingShape(b: BookingRow, holder?: Holder, group: Slot[] = []) {
+export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] = [], others: ReturnType<typeof otherTickets> = []) {
+  // A ticket of back-to-back slots shows as one: first start to last end, all of it paid.
+  const merged = run.length > 1;
+  const start = merged ? run[0].start : b.start_min;
+  const end = merged ? run.at(-1)!.end : b.end_min;
+  const paid = merged ? run.reduce((t, x) => t + x.amountPaid, 0) : b.total;
   const v = await getVenueRow(b.venue_id).catch(() => null);
-  const endAt = instant(b.day, b.end_min).getTime();
+  const endAt = instant(b.day, end).getTime();
   const status = b.status === 'confirmed' && endAt < Date.now() ? 'completed' : b.status;
   return {
     id: b.id,
@@ -350,15 +392,15 @@ export async function bookingShape(b: BookingRow, holder?: Holder, group: Slot[]
       ? { id: v.id, name: v.name, area: v.area, city: v.city, photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null, formats: v.formats, latitude: v.lat, longitude: v.lng }
       : { id: b.venue_id, name: 'Turf', area: '', city: '', photo: null, formats: [], latitude: 0, longitude: 0 },
     day: b.day,
-    start: b.start_min,
-    end: b.end_min,
-    amountPaid: b.total,
+    start,
+    end,
+    amountPaid: paid,
     method: 'bKash' as const,
     status,
-    /** Every slot of this booking when there are several (same payment); [] for a single slot. */
-    group,
-    /** What the whole booking cost (all its slots). */
-    orderTotal: group.length ? group.reduce((t, g) => t + g.amountPaid, 0) : b.total,
+    /** How many booked slots this ticket covers (back-to-back slots merge into one ticket). */
+    slotCount: merged ? run.length : 1,
+    /** Other tickets bought in the same payment (slots that weren't back to back). */
+    otherTickets: others,
     // Signed entry pass carrying the ticket itself (docs/pass-qr.md), valid until 6 hours after
     // the session ends. Without the holder (not expected) it falls back to the id-only v1 pass.
     passToken:
@@ -371,13 +413,11 @@ export async function bookingShape(b: BookingRow, holder?: Holder, group: Slot[]
               pitch: b.pitch_name ?? 'Main pitch',
               format: v?.formats?.[0] ?? '',
               date: b.day,
-              from: hhmm(b.start_min),
-              to: hhmm(b.end_min),
+              from: hhmm(start),
+              to: hhmm(end),
               name: holder.name,
               phone: maskPhone(holder.phone),
-              paid: Math.round((group.length ? group.reduce((t, g) => t + g.amountPaid, 0) : b.total) / 100),
-              // Several slots in one booking: one pass covers them all (checked in together).
-              ...(group.length ? { slots: group.filter((g) => g.status !== 'cancelled').map((g) => ({ date: g.day, from: hhmm(g.start), to: hhmm(g.end) })) } : {}),
+              paid: Math.round(paid / 100),
               via: 'bKash',
               exp: Math.floor(endAt / 1000) + 6 * 3600,
             })
@@ -388,14 +428,12 @@ export async function bookingShape(b: BookingRow, holder?: Holder, group: Slot[]
 
 export async function listBookings(userId: string) {
   const rows = await q<BookingRow>(
-    `select * from (select ${BOOKING_COLS}, row_number() over (partition by coalesce(order_id, id) order by day, start_min) rn
-       from bookings where user_id = $1 and ${VISIBLE}) b where rn = 1
-      order by day desc, start_min desc limit 200`,
+    `${TICKET_ROWS(`user_id = $1 and ${VISIBLE}`)} order by day desc, start_min desc limit 200`,
     [userId],
   );
   const holder = await holderOf(userId);
-  const groups = await groupsFor(userId, rows);
-  return Promise.all(rows.map((r) => bookingShape(r, holder, groups.get(r.order_id ?? '') ?? [])));
+  const runs = await runsFor(userId, rows);
+  return Promise.all(rows.map((r) => shapeTicket(r, holder, runs)));
 }
 
 /**
@@ -409,10 +447,9 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
   const OPEN = "status in ('confirmed','checked_in') and day >= $2::date";
   const OPEN_OUT = "status in ('confirmed','checked_in') and day::date >= $2::date"; // day is text in the outer select
   const where = filter === 'open' ? OPEN : filter === 'closed' ? `not (${OPEN})` : 'true';
-  // One item per booking: several slots bought together show as one (its first slot leads).
+  // One item per ticket: back-to-back slots bought together are one ticket (its first slot leads).
   const rows = await q<BookingRow>(
-    `select * from (select ${BOOKING_COLS}, row_number() over (partition by coalesce(order_id, id) order by day, start_min) rn
-       from bookings where user_id = $1 and ${VISIBLE} and ${where}) b where rn = 1
+    `${TICKET_ROWS(`user_id = $1 and ${VISIBLE} and ${where}`)}
       order by (${OPEN_OUT}) desc,
                case when ${OPEN_OUT} then day end asc, case when ${OPEN_OUT} then start_min end asc,
                day desc, start_min desc, id
@@ -428,11 +465,10 @@ export async function pageBookings(userId: string, filter: 'all' | 'open' | 'clo
           [userId, today],
         )
       : null;
-  const groups = await groupsFor(userId, next ? [...page, next] : page);
-  const g = (r: BookingRow) => groups.get(r.order_id ?? '') ?? [];
+  const runs = await runsFor(userId, next ? [...page, next] : page);
   return {
-    items: await Promise.all(page.map((r) => bookingShape(r, holder, g(r)))),
-    next: next ? await bookingShape(next, holder, g(next)) : null,
+    items: await Promise.all(page.map((r) => shapeTicket(r, holder, runs))),
+    next: next ? await shapeTicket(next, holder, runs) : null,
     nextCursor: rows.length > limit ? cursor + limit : null,
   };
 }
@@ -444,22 +480,33 @@ export async function getBooking(userId: string, id: string) {
     [id, userId],
   );
   if (!b || b.status === 'held' || b.status === 'pending' || b.status === 'expired') throw new ApiError('not_found', 'Booking not found.');
-  const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
-  // Slots bought together (one payment): all of them, so the ticket shows the whole booking.
-  const groups = await groupsFor(userId, [b]);
-  return { ...(await bookingShape(b, await holderOf(userId), groups.get(b.order_id ?? '') ?? [])), matchId: m?.id ?? null };
+  // Any slot of a ticket opens the ticket itself (its first slot leads).
+  const runs = await runsFor(userId, [b]);
+  const lead = runs.byId.get(b.id)?.[0];
+  const row = lead && lead.id !== b.id ? ((await one<BookingRow>(`select ${BOOKING_COLS} from bookings where id = $1 and user_id = $2`, [lead.id, userId])) ?? b) : b;
+  const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [row.id]);
+  return { ...(await shapeTicket(row, await holderOf(userId), runs)), matchId: m?.id ?? null };
+}
+
+function shapeTicket(r: BookingRow, holder: Holder, runs: Awaited<ReturnType<typeof runsFor>>) {
+  const run = runs.byId.get(r.id) ?? [];
+  return bookingShape(r, holder, run, run.length ? otherTickets(runs.byOrder.get(r.order_id ?? ''), run) : []);
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */
 export async function cancelBooking(userId: string, id: string) {
   if (!isUuid(id)) throw new ApiError('not_found', 'Booking not found.');
   const res = await tx(async (c) => {
-    const b = (await c.query<BookingRow>('select id, venue_id, day::text, start_min, status from bookings where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
+    const b = (await c.query<BookingRow>('select id, venue_id, day::text, start_min, status, order_id from bookings where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
     if (!b || b.status !== 'confirmed') throw new ApiError('not_found', 'Booking not found.');
-    if (instant(b.day, b.start_min).getTime() - Date.now() < 24 * 3600_000) throw new ApiError('forbidden', 'Bookings can be cancelled up to 24 hours before kick-off.');
-    await c.query("update bookings set status = 'cancelled', cancelled_at = now() where id = $1", [id]);
-    await c.query("update payments set status = 'refund_required', updated_at = now() where booking_id = $1 and status = 'completed'", [id]);
-    await c.query("insert into audit_log(actor_id, action, entity, entity_id) values ($1, 'booking.cancel', 'booking', $2)", [userId, id]);
+    // A ticket of back-to-back slots is cancelled as a whole.
+    const run = (await runsFor(userId, [b])).byId.get(b.id) ?? [];
+    const ids = run.length ? run.filter((x) => x.status === 'confirmed').map((x) => x.id) : [id];
+    const first = run[0] ?? { day: b.day, start: b.start_min };
+    if (instant(first.day, first.start).getTime() - Date.now() < 24 * 3600_000) throw new ApiError('forbidden', 'Bookings can be cancelled up to 24 hours before kick-off.');
+    await c.query("update bookings set status = 'cancelled', cancelled_at = now() where id = any($1::uuid[]) and status = 'confirmed'", [ids]);
+    await c.query("update payments set status = 'refund_required', updated_at = now() where booking_id = any($1::uuid[]) and status = 'completed'", [ids]);
+    for (const x of ids) await c.query("insert into audit_log(actor_id, action, entity, entity_id) values ($1, 'booking.cancel', 'booking', $2)", [userId, x]);
     return b;
   });
   await invalidateDay(res.venue_id, res.day);
