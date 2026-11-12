@@ -10,7 +10,6 @@ import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { QRCode, QRPopup } from '@/components/ticket/qr-code';
 import { AvatarStack } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Overline, ScreenHeader } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
@@ -156,9 +155,12 @@ export default function BookingTicket() {
                 </View>
               ) : null}
               <View style={styles.ticketBody}>
-                <Text variant="h3" style={styles.venueName}>
-                  {b?.venue.name ?? ' '}
-                </Text>
+                <View style={styles.titleRow}>
+                  <Text variant="h3" style={[styles.venueName, styles.flex]} numberOfLines={2}>
+                    {b?.venue.name ?? ' '}
+                  </Text>
+                  <IconButton icon={Navigation} label="Directions" size={40} onPress={directions} />
+                </View>
                 <View style={styles.row}>
                   <MapPin size={18} color={colors.ink} strokeWidth={1.8} />
                   <Text variant="body" color={colors.textMuted}>
@@ -243,8 +245,6 @@ export default function BookingTicket() {
               </Text>
             </View>
           ) : null}
-
-          <Button label="Directions" icon={Navigation} variant="light" onPress={directions} />
 
           {b.otherTickets?.length ? <OtherTickets tickets={b.otherTickets} /> : null}
 
@@ -367,6 +367,7 @@ const styles = createStyles(() => ({
   },
   ticketBody: { paddingHorizontal: space[4], paddingTop: space[4], gap: space[2] },
   venueName: { fontSize: 20, lineHeight: 26 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   when: { flexDirection: 'row', alignItems: 'center', marginTop: space[3], marginBottom: space[4] },
   whenCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2] },
   whenText: { flex: 1 },
