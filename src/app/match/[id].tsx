@@ -244,20 +244,21 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             In your squad
           </Text>
           {m.squad.map((p) => (
-            <Card key={p.userId} style={styles.person}>
-              <Avatar name={p.name} uri={p.avatar} size={44} />
-              <View style={styles.flex}>
-                <View style={styles.nameRow}>
-                  <Text variant="bodyStrong" numberOfLines={1} style={styles.shrink}>
+            <Card key={p.userId} style={styles.member}>
+              {/* Name and details get the full width; spots on the right, payment state below. */}
+              <View style={styles.person}>
+                <Avatar name={p.name} uri={p.avatar} size={44} />
+                <View style={styles.flex}>
+                  <Text variant="bodyStrong" numberOfLines={1}>
                     {p.name}
                   </Text>
-                  <SpotsTag n={p.spots} always />
+                  <Text variant="label" color={colors.textMuted} numberOfLines={1}>
+                    {positionLabel(p.position)} · {levelLabel(p.level)}
+                  </Text>
                 </View>
-                <Text variant="label" color={colors.textMuted} numberOfLines={1}>
-                  {positionLabel(p.position)} · {levelLabel(p.level)}
-                </Text>
+                <SpotsTag n={p.spots} always />
               </View>
-              <View style={[styles.state, p.paid ? styles.statePaid : styles.stateWaiting]}>
+              <View style={[styles.state, styles.memberState, p.paid ? styles.statePaid : styles.stateWaiting]}>
                 <Text variant="caption" color={p.paid ? colors.limeText : colors.warningText}>
                   {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying now'}
                 </Text>
@@ -338,6 +339,9 @@ const styles = createStyles(() => ({
   buttons: { flexDirection: 'row', gap: space[3] },
   section: { marginTop: space[3] },
   person: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  member: { gap: space[3] },
+  // Lines up with the name (avatar 44 + gap).
+  memberState: { alignSelf: 'flex-start', marginLeft: 44 + space[3] },
   request: { gap: space[3] },
   decide: { flexDirection: 'row', gap: space[3] },
   emptyCard: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
