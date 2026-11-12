@@ -12,4 +12,5 @@ export const haptic = {
   select: () => safe(() => Haptics.selectionAsync()),
   success: () => safe(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),
   error: () => safe(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
+  warning: () => safe(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)),
 };

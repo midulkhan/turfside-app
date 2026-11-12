@@ -206,7 +206,8 @@ export type PlayerRequest = {
 export type AuthResult = { user: User; accessToken: string; refreshToken: string };
 
 /** Returned when the server texts a code. `devCode` is only sent by non-production servers. */
-export type CodeSent = { sent: true; devCode?: string };
+/** A code went out: where (email via Sender, SMS) and, for email, the masked address. */
+export type CodeSent = { sent: true; devCode?: string; channels?: ('email' | 'sms')[]; email?: string };
 
 export type AppConfig = {
   paymentsEnabled: boolean;

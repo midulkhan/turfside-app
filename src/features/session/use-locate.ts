@@ -1,7 +1,8 @@
 import * as Location from 'expo-location';
 import { useCallback, useState } from 'react';
-import { Alert, Linking } from 'react-native';
+import { Linking } from 'react-native';
 
+import { Alert } from '@/components/ui/dialog';
 import { haversineKm, KNOWN_AREAS } from '@/lib/places';
 
 import { useSession } from './session';

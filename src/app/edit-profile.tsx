@@ -2,9 +2,10 @@ import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Check, Phone, UserRound } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Overline, ScreenHeader } from '@/components/ui/headers';

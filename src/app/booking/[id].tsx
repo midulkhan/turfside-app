@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Download, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, Clock3, Download, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Share, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Wordmark } from '@/components/brand/logo';
 import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
@@ -217,26 +218,6 @@ export default function BookingTicket() {
             <Button label="Download" icon={Download} variant="light" onPress={share} style={styles.flex} />
           </View>
 
-          <PressableScale
-            scaleTo={0.99}
-            onPress={() =>
-              Alert.alert(
-                'Before you arrive',
-                'Arrive 15 minutes early, bring turf boots or flat trainers, and show your entry pass at reception.',
-              )
-            }>
-            <Card style={styles.tip}>
-              <Clock3 size={26} color={colors.ink} strokeWidth={1.7} />
-              <View style={styles.flex}>
-                <Text variant="bodyStrong">Before you arrive</Text>
-                <Text variant="label" color={colors.textMuted}>
-                  Arrive 15 minutes early. Bring your boots.
-                </Text>
-              </View>
-              <ChevronRight size={20} color={colors.ink} />
-            </Card>
-          </PressableScale>
-
           {/* Find players: open spots on this booking (or manage the ones already open). */}
           {b.status === 'confirmed' || b.matchId ? (
             <PressableScale
@@ -260,7 +241,6 @@ export default function BookingTicket() {
             </PressableScale>
           ) : null}
 
-          <Button label="View my bookings" variant="dark" trailingIcon={ArrowRight} spread onPress={() => router.dismissTo('/bookings')} />
           <Pressable accessibilityRole="link" onPress={() => router.dismissTo('/explore')} style={styles.back}>
             <Text variant="bodyStrong" style={styles.u}>
               Back to explore

@@ -21,6 +21,7 @@ import { OfflineBanner } from '@/components/ui/offline-banner';
 import { OverlayProvider } from '@/components/ui/overlay-host';
 import { installDeviceLabel } from '@/lib/device-label';
 import { installNavGuard } from '@/lib/nav-guard';
+import { DialogHost } from '@/components/ui/dialog';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors } from '@/theme/tokens';
@@ -117,6 +118,8 @@ export default function RootLayout() {
               <OverlayProvider>
                 <RootNavigator />
               </OverlayProvider>
+              {/* The app's own popups (replaces the system alert), above everything. */}
+              <DialogHost />
             </ThemeProvider>
           </SessionProvider>
         </PersistQueryClientProvider>

@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ChevronDown, KeyRound, LogOut, Monitor, Smartphone, Trash2, type LucideIcon } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, Divider } from '@/components/ui/card';
 import { Overline, ScreenHeader } from '@/components/ui/headers';

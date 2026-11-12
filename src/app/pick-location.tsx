@@ -2,10 +2,11 @@ import { AppleMaps, GoogleMaps, type CameraMoveEvent } from 'expo-maps';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, LocateFixed, MapPin, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';

@@ -1,8 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { LogIn } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
+import { Alert } from '@/components/ui/dialog';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { SocialButtons } from '@/components/auth/social-buttons';
 import { Button } from '@/components/ui/button';

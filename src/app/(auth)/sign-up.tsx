@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { ArrowRight, LogIn } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
+import { Alert } from '@/components/ui/dialog';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { SocialButtons } from '@/components/auth/social-buttons';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import { Input, PasswordInput, PhoneInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { ApiError } from '@/features/api/types';
-import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
+import { errorMessage, pendingSignup, sentToLabel } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { isBdMobile, isEmail, isName, isStrongPassword } from '@/lib/validation';
 import { colors, radius, space } from '@/theme/tokens';
@@ -47,7 +48,7 @@ export default function SignUp() {
     try {
       const res = await api.signupStart(details);
       pendingSignup.set(details);
-      router.push({ pathname: '/verify', params: { phone, devCode: res.devCode ?? '' } });
+      router.push({ pathname: '/verify', params: { phone, devCode: res.devCode ?? '', sentTo: sentToLabel(res, phone) } });
     } catch (e) {
       haptic.error();
       // Number or email already registered: say so on that field, with a way to sign in.
@@ -138,7 +139,7 @@ export default function SignUp() {
         ) : null}
         <Button label="Create account" trailingIcon={ArrowRight} onPress={submit} loading={loading} />
         <Text variant="label" color={colors.textOnDarkMuted} align="center">
-          We’ll verify your mobile number next.
+          We’ll send a verification code to your email next.
         </Text>
       </View>
 

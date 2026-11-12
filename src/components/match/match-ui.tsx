@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2 } from 'lucide-react-native';
 import { memo, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
+import { Alert } from '@/components/ui/dialog';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, Divider } from '@/components/ui/card';
@@ -302,7 +303,17 @@ export function CreateMatchSheet({
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Late night';
   const [title, setTitle] = useState('');
   const [level, setLevel] = useState<MatchLevel>('casual');
-  const [spots, setSpots] = useState(2);
+  const [spots, setSpots] = useState(1);
+  // Each time the sheet opens for a booking, start fresh: one open spot, no name, casual.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  if ((booking?.id ?? null) !== openFor) {
+    setOpenFor(booking?.id ?? null);
+    if (booking) {
+      setSpots(1);
+      setTitle('');
+      setLevel('casual');
+    }
+  }
   const create = useCreateMatch();
   const share = booking ? Math.ceil(booking.amountPaid / players / 100) * 100 : 0;
   const open = () => {

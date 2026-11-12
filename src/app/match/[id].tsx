@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import { CalendarDays, CircleCheck, Info, MapPin, Pause, Pencil, Play, Share2, UsersRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { SquadBar, Tag, clockLabel, levelLabel, positionLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';

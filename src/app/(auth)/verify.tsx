@@ -9,7 +9,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { ApiError } from '@/features/api/types';
-import { errorMessage, pendingSignup } from '@/features/session/pending-signup';
+import { errorMessage, pendingSignup, sentToLabel } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
@@ -21,7 +21,8 @@ const MAX_ATTEMPTS = 5;
 
 /** One-time SMS code. Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
 export default function Verify() {
-  const params = useLocalSearchParams<{ phone: string; devCode?: string }>();
+  const params = useLocalSearchParams<{ phone: string; devCode?: string; sentTo?: string }>();
+  const [sentTo, setSentTo] = useState(params.sentTo || '');
   const { phone = '' } = params;
   const [devCode, setDevCode] = useState(params.devCode || '');
   const { signIn } = useSession();
@@ -72,6 +73,7 @@ export default function Verify() {
       const res = await api.signupStart(details);
       setAttempts(0);
       setDevCode(res.devCode ?? '');
+      setSentTo(sentToLabel(res, phone));
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -87,10 +89,10 @@ export default function Verify() {
           <ShieldCheck size={28} color={colors.charcoal} strokeWidth={2} />
         </View>
         <Text variant="h1" color={colors.textOnDark}>
-          Verify your number
+          Enter your code
         </Text>
         <Text variant="body" color={colors.textOnDarkMuted}>
-          Enter the 6-digit code we sent to {masked}.
+          We sent a 6-digit code to {sentTo || masked}. It can take a minute; check spam if it’s not there.
         </Text>
 
         <Pressable onPress={() => input.current?.focus()} style={styles.cells} accessibilityLabel="Verification code">

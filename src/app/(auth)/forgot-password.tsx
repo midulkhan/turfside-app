@@ -1,15 +1,16 @@
 import { router } from 'expo-router';
 import { ArrowLeft, KeyRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { PhoneInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { errorMessage } from '@/features/session/pending-signup';
+import { errorMessage, sentToLabel } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { isBdMobile } from '@/lib/validation';
 import { colors, gutter, radius, space } from '@/theme/tokens';
@@ -29,7 +30,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const res = await api.resetStart(phone);
-      router.push({ pathname: '/reset-password', params: { phone, devCode: res.devCode ?? '' } });
+      router.push({ pathname: '/reset-password', params: { phone, devCode: res.devCode ?? '', sentTo: res.channels ? sentToLabel(res, phone) : '' } });
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t send a code', errorMessage(e));

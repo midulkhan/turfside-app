@@ -1,9 +1,10 @@
 import { router, type Href } from 'expo-router';
 import { ChevronRight, CircleHelp, LogOut, UserPlus, UsersRound, X, type LucideIcon } from 'lucide-react-native';
 import { useRef } from 'react';
-import { Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Wordmark } from '@/components/brand/logo';
 import { Divider } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';

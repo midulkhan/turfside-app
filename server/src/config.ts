@@ -43,6 +43,12 @@ const schema = z.object({
   SMS_HTTP_TOKEN: z.string().optional(),
   SMS_SENDER_ID: z.string().optional(),
 
+  /** Email (verification codes) through Sender (sender.net). The token lives only in the host's env. */
+  SENDER_API_TOKEN: z.string().optional(),
+  SENDER_API_URL: z.string().url().default('https://api.sender.net/v2'),
+  EMAIL_FROM: z.string().email().default('noreply@turfsides.com'),
+  EMAIL_FROM_NAME: z.string().default('TurfSides'),
+
   BKASH_MODE: z.enum(['off', 'simulate', 'sandbox', 'live']).default('off'),
   BKASH_APP_KEY: z.string().optional(),
   BKASH_APP_SECRET: z.string().optional(),
@@ -97,6 +103,7 @@ export function missingConfig() {
   if (!config.CRON_SECRET) missing.push('CRON_SECRET');
   if (!config.UPSTASH_REDIS_REST_URL) missing.push('UPSTASH_REDIS_REST_URL (optional: using in-memory cache)');
   if (config.SMS_PROVIDER === 'http' && !config.SMS_HTTP_URL) missing.push('SMS_HTTP_URL');
+  if (!config.SENDER_API_TOKEN) missing.push('SENDER_API_TOKEN (verification emails disabled)');
   if ((config.BKASH_MODE === 'sandbox' || config.BKASH_MODE === 'live') && !(config.BKASH_APP_KEY && config.BKASH_APP_SECRET && config.BKASH_USERNAME && config.BKASH_PASSWORD))
     missing.push('BKASH_* credentials');
   const r2 = (['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'] as const).filter((k) => !config[k]);

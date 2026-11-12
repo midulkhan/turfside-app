@@ -3,6 +3,7 @@ import { config, isProd } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import { getDummyHash, hashPassword, hmac, otpCode, randomToken, safeEqual, sha256, verifyPassword } from '../lib/crypto';
+import { codeEmail, emailEnabled, sendEmail } from '../lib/email';
 import { sendSms } from '../lib/sms';
 import { publicUrl, storageEnabled } from '../lib/storage';
 import { signAccess } from '../lib/tokens';
@@ -37,7 +38,19 @@ async function guardOtp(phone: string, purpose: Purpose, ip: string) {
   if (last && Date.now() - new Date(last.created_at).getTime() < OTP_RESEND_SECONDS * 1000) throw new ApiError('rate_limited', 'Please wait a few seconds before requesting another code.');
 }
 
-async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: string) {
+const maskEmail = (e: string) => {
+  const [user, domain] = e.split('@');
+  return `${user.slice(0, 2)}${'*'.repeat(Math.max(1, Math.min(6, user.length - 2)))}@${domain}`;
+};
+/** SMS goes out for real only with a gateway; outside production the console stands in. */
+const smsReady = () => config.SMS_PROVIDER === 'http' || !isProd;
+
+/**
+ * Makes a code and delivers it on every channel available: email (Sender) when there's an
+ * address, SMS when a gateway is set up. Fails only if no channel worked; the reply says
+ * where it went (the app shows "sent to mi****@gmail.com").
+ */
+async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: string, to: { email?: string | null; name?: string } = {}) {
   await guardOtp(phone, purpose, ip);
   const code = otpCode();
   await q('update otp_codes set consumed_at = now() where phone = $1 and purpose = $2 and consumed_at is null', [phone, purpose]);
@@ -48,9 +61,32 @@ async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: s
     payload ? JSON.stringify(payload) : null,
     OTP_TTL_MIN,
   ]);
-  await sendSms(phone, `${code} is your TurfSides code. It expires in ${OTP_TTL_MIN} minutes. Never share it.`);
-  // Outside production we return the code so the app can be tested without an SMS gateway.
-  return isProd ? { sent: true } : { sent: true, devCode: code };
+  const channels: ('email' | 'sms')[] = [];
+  let failure: unknown = null;
+  if (to.email && emailEnabled() && purpose !== 'phone_change') {
+    try {
+      const mail = codeEmail({ name: to.name, code, minutes: OTP_TTL_MIN, purpose: purpose === 'signup' ? 'signup' : 'reset' });
+      await sendEmail({ to: to.email, toName: to.name, ...mail });
+      channels.push('email');
+    } catch (e) {
+      failure = e;
+    }
+  }
+  if (smsReady() || purpose === 'phone_change') {
+    try {
+      await sendSms(phone, `${code} is your TurfSides code. It expires in ${OTP_TTL_MIN} minutes. Never share it.`);
+      channels.push('sms');
+    } catch (e) {
+      failure ??= e;
+    }
+  }
+  if (!channels.length) {
+    await q('update otp_codes set consumed_at = now() where phone = $1 and purpose = $2 and consumed_at is null', [phone, purpose]);
+    throw failure instanceof ApiError ? failure : new ApiError('not_configured', 'We couldn’t send your code right now. Try again in a moment.');
+  }
+  const where = { sent: true as const, channels, ...(channels.includes('email') && to.email ? { email: maskEmail(to.email) } : {}) };
+  // Outside production we return the code so the app can be tested without a gateway.
+  return isProd ? where : { ...where, devCode: code };
 }
 
 async function consumeOtp(phone: string, purpose: Purpose, code: string) {
@@ -93,7 +129,7 @@ export async function signupStart(input: { name: string; phone: string; email: s
   if (taken?.phone) throw new ApiError('conflict', 'This mobile number already has an account. Sign in instead.', 'phone');
   if (taken?.email) throw new ApiError('conflict', 'This email already has an account. Sign in instead.', 'email');
   const passwordHash = await hashPassword(input.password);
-  return issueOtp(input.phone, 'signup', { name: input.name, email: input.email, passwordHash, role: input.role }, ip);
+  return issueOtp(input.phone, 'signup', { name: input.name, email: input.email, passwordHash, role: input.role }, ip, { email: input.email, name: input.name });
 }
 
 export async function signupVerify(phone: string, code: string, meta: { ip: string; ua?: string; device?: string }) {
@@ -155,9 +191,9 @@ export async function logout(sessionId: string) {
 
 // ── Password reset ──────────────────────────────────────────────────────────
 export async function resetStart(phone: string, ip: string) {
-  const u = await one('select 1 from users where phone = $1', [phone]);
-  if (!u) return { sent: true }; // identical response: no account discovery
-  return issueOtp(phone, 'reset', null, ip);
+  const u = await one<{ email: string | null; name: string }>('select email, name from users where phone = $1 and deleted_at is null', [phone]);
+  if (!u) return { sent: true }; // no account discovery here
+  return issueOtp(phone, 'reset', null, ip, { email: u.email, name: u.name });
 }
 
 export async function resetVerify(phone: string, code: string, newPassword: string, meta: { ip: string; ua?: string; device?: string }) {

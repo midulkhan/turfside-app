@@ -30,18 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentRef, type RefObject } from 'react';
-import {
-  Alert,
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-  type ScrollViewInstance,
-} from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { setStatusBarStyle } from 'expo-status-bar';
 import Animated, {
@@ -59,6 +48,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { Alert } from '@/components/ui/dialog';
 import { SlotTicket } from '@/components/ticket/slot-ticket';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Avatar } from '@/components/ui/avatar';

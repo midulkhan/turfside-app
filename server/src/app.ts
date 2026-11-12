@@ -16,6 +16,7 @@ import { bkashEnabled, isSimulated } from './lib/bkash';
 import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
 import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
+import { emailState } from './lib/email';
 import { verifyAccess, verifyAnyPass } from './lib/tokens';
 import * as account from './services/account';
 import * as auth from './services/auth';
@@ -162,6 +163,7 @@ export async function buildApp() {
       storage: await pingStorage(),
       payments: config.BKASH_MODE,
       realtime: db === 'ok' ? await realtimeState() : 'unknown',
+      email: await emailState(), // sender:ok once SENDER_API_TOKEN is set and accepted
       missing: missingConfig(),
       startedAt: STARTED_AT, // changes on every restart: shows whether new settings were picked up
       time: new Date().toISOString(),

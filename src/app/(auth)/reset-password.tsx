@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, LockKeyhole } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Input, PasswordInput } from '@/components/ui/input';
@@ -18,7 +19,7 @@ import { createStyles } from '@/theme/styles';
 
 /** Step 2 of password reset: SMS code + new password. Signs out every other device. */
 export default function ResetPassword() {
-  const { phone = '', devCode = '' } = useLocalSearchParams<{ phone: string; devCode?: string }>();
+  const { phone = '', devCode = '', sentTo = '' } = useLocalSearchParams<{ phone: string; devCode?: string; sentTo?: string }>();
   const { signIn } = useSession();
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -62,7 +63,7 @@ export default function ResetPassword() {
             New password
           </Text>
           <Text variant="body" color={colors.textOnDarkMuted}>
-            If {masked} has an account, we’ve texted it a 6-digit code.
+            {sentTo ? `We sent a 6-digit code to ${sentTo}.` : `If ${masked} has an account, we’ve sent a 6-digit code to its email and number.`}
           </Text>
           <Input
             tone="dark"

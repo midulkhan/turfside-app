@@ -16,8 +16,9 @@ import {
   UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View, type ScrollViewInstance } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View, type ScrollViewInstance } from 'react-native';
 
+import { Alert } from '@/components/ui/dialog';
 import { LogoMark } from '@/components/brand/logo';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';

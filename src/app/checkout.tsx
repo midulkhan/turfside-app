@@ -19,9 +19,10 @@ import {
   X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Alert } from '@/components/ui/dialog';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';

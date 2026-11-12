@@ -5,6 +5,14 @@ import { ApiError } from '@/features/api/types';
  * "Resend code" works without passing the password through route params.
  * Never persisted; gone when the app restarts.
  */
+/** "your email mi****@gmail.com" / "+880 1712 ••• 345" / both, for the code screens. */
+export function sentToLabel(res: { channels?: ('email' | 'sms')[]; email?: string }, phone: string) {
+  const num = phone.length === 10 ? `+880 ${phone.slice(0, 4)} ••• ${phone.slice(-3)}` : 'your number';
+  const mail = res.channels?.includes('email') && res.email ? res.email : null;
+  const sms = !res.channels || res.channels.includes('sms');
+  return mail && sms ? `${mail} and ${num}` : mail ?? num;
+}
+
 export type PendingSignup = { name: string; phone: string; email: string; password: string };
 
 let pending: PendingSignup | null = null;
