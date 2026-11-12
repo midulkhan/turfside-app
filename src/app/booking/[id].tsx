@@ -1,23 +1,23 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, Clock3, Download, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, Clock3, Maximize2, MapPin, Navigation, Share2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
-import { Wordmark } from '@/components/brand/logo';
 import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { QRCode, QRPopup } from '@/components/ticket/qr-code';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Overline } from '@/components/ui/headers';
+import { Overline, ScreenHeader } from '@/components/ui/headers';
 import { IconButton } from '@/components/ui/icon-button';
 import { Photo } from '@/components/ui/photo';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useBooking, useCancelBooking } from '@/features/api/queries';
@@ -74,6 +74,7 @@ function SlotPicker({ group, current }: { group: BookingSlot[]; current: string 
 export default function BookingTicket() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const insets = useSafeAreaInsets();
+  const scrolled = useScrolled();
   const { data: b, isError, error, refetch } = useBooking(id);
   const justBooked = fresh === '1';
   const cancel = useCancelBooking();
@@ -122,14 +123,14 @@ export default function BookingTicket() {
 
   return (
     <View style={styles.root}>
+      <StickyHeader progress={scrolled.progress}>
+        <ScreenHeader title="Your ticket" leftIcon={X} onBack={close} right={<IconButton icon={Share2} label="Share booking" onPress={share} />} />
+      </StickyHeader>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + space[2], paddingBottom: insets.bottom + space[6] }]}
+        onScroll={scrolled.onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={[styles.content, { paddingTop: space[2], paddingBottom: insets.bottom + space[6] }]}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.top}>
-          <IconButton icon={X} label="Close" onPress={close} />
-          <Wordmark height={26} />
-          <IconButton icon={Share2} label="Share booking" onPress={share} />
-        </View>
 
         {justBooked ? (
           <Animated.View entering={FadeInDown.duration(320)} style={styles.hello}>
@@ -143,11 +144,7 @@ export default function BookingTicket() {
               </Text>
             </View>
           </Animated.View>
-        ) : (
-          <Text variant="pageTitle" style={styles.hello}>
-            Your ticket
-          </Text>
-        )}
+        ) : null}
 
         {b ? (
           // Everything arrives together: no icons, labels or buttons before the booking itself.
@@ -256,10 +253,7 @@ export default function BookingTicket() {
             </View>
           ) : null}
 
-          <View style={styles.actions}>
-            <Button label="Directions" icon={Navigation} variant="light" onPress={directions} style={styles.flex} />
-            <Button label="Download" icon={Download} variant="light" onPress={share} style={styles.flex} />
-          </View>
+          <Button label="Directions" icon={Navigation} variant="light" onPress={directions} />
 
           {/* Find players: open spots on this booking (or manage the ones already open). */}
           {b.status === 'confirmed' || b.matchId ? (
