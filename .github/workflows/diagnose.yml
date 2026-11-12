@@ -1,5 +1,11 @@
 name: Diagnose live API
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      email_test:
+        description: 'Optional: an address you own. Starts a sign-up (no account is created) so a code email is sent, then prints the result.'
+        required: false
+        default: ''
 jobs:
   diagnose:
     runs-on: ubuntu-latest
@@ -39,3 +45,12 @@ jobs:
           curl -s --ssl-reqd --insecure --max-time 30 --user "$U:$P" "ftp://$S/stderr.log" -o err.log || true
           wc -c err.log || true
           tail -c 6000 err.log | grep -v -i "password\|secret" || true
+      - name: Email probe (only with email_test)
+        if: ${{ inputs.email_test != '' }}
+        env:
+          TO: ${{ inputs.email_test }}
+        run: |
+          PHONE="19$(shuf -i 10000000-99999999 -n 1)"
+          echo "signup/start:"; curl -sS -m 30 -H 'Content-Type: application/json' -d "{\"name\":\"Email Probe\",\"phone\":\"$PHONE\",\"email\":\"$TO\",\"password\":\"probe password 1\"}" https://api.turfsides.com/v1/auth/signup/start | sed -E 's/"devCode":"[0-9]+"/"devCode":"******"/'; echo
+          sleep 2
+          echo "email status:"; curl -sS -m 20 https://api.turfsides.com/health | grep -oE '"email":"[^"]*","emailLastSend":(null|\{[^}]*\})'
