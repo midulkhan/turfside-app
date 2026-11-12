@@ -27,12 +27,25 @@ export async function sendEmail(m: { to: string; toName?: string; subject: strin
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => null);
-  const body = (await res?.json().catch(() => null)) as { success?: boolean; message?: string } | null;
+  const raw = (await res?.text().catch(() => '')) ?? '';
+  let body: { success?: boolean; message?: string; errors?: unknown } | null = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    /* not JSON */
+  }
   if (!res?.ok || body?.success === false) {
-    console.error(`[email] send failed: ${res?.status ?? 'network'} ${body?.message ?? ''}`.trim());
+    const detail = `${res?.status ?? 'network'} ${body?.message ?? raw.slice(0, 200)}${body?.errors ? ` ${JSON.stringify(body.errors).slice(0, 300)}` : ''}`.trim();
+    lastSend = { at: new Date().toISOString(), ok: false, detail };
+    console.error(`[email] send failed: ${detail}`);
     throw new ApiError('internal', 'We couldn’t send the email. Try again in a moment.');
   }
+  lastSend = { at: new Date().toISOString(), ok: true, detail: `sent ${(body as { emailId?: string } | null)?.emailId ?? ''}`.trim() };
 }
+
+/** The last send's outcome (no addresses or secrets), for /health: how a failure is diagnosed. */
+let lastSend: { at: string; ok: boolean; detail: string } | null = null;
+export const lastEmailSend = () => lastSend;
 
 /** For /health: is the token accepted? Checked at most hourly (a read-only call). */
 let state: { at: number; value: string } | null = null;
