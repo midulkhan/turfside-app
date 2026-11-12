@@ -11,8 +11,7 @@ import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, Explore
 /**
  * Query keys + cache policy in one place.
  * - Venue info changes rarely → long staleTime, persisted to disk for instant start.
- * - Slot availability changes constantly → short staleTime, refetched on focus and
- *   on every date change, never persisted.
+ * - Slot availability is never cached: always loaded live (see useSlots).
  */
 export const qk = {
   explore: (p: ExploreParams) => ['explore', p] as const,
@@ -51,13 +50,20 @@ export function useVenue(id: string) {
   return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: 5 * 60_000 });
 }
 
-/** `live`: realtime is connected, so polling is only a slow safety net; otherwise poll fast. */
+/**
+ * Slot status is never cached: every time a day comes into view it is loaded live, and it is
+ * dropped the moment nobody is looking at it. While it's on screen, realtime reloads it on every
+ * change; polling is a safety net (fast if realtime is down).
+ * The previous day's grid is kept only as a layout placeholder: it renders as loading, never as status.
+ */
 export function useSlots(id: string, day: DayKey, live = false) {
   return useQuery({
     queryKey: qk.slots(id, day),
     queryFn: ({ signal }) => api.getSlots(id, day, signal),
-    staleTime: live ? 30_000 : 4_000,
-    refetchInterval: live ? 60_000 : 5_000,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: live ? 15_000 : 4_000,
     placeholderData: keepPreviousData,
   });
 }

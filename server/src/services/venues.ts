@@ -1,4 +1,4 @@
-import { cacheDel, cacheGet, cacheIncr, cacheSet, hashGetAll, hashGetMany, hashWrite, l1Del, l1Get, l1Set, sharedReadable, singleflight } from '../cache';
+import { cacheGet, cacheIncr, cacheSet, sharedReadable, singleflight } from '../cache';
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
@@ -116,44 +116,14 @@ export type SlotOut = { id: string; start: number; end: number; price: number; s
 
 // ── Availability: what is booked / held / blocked, per pitch per day ─────────────────────
 /**
- * Stored in one Redis hash per day (`avail:<day>`), one field per pitch, plus `_full` when
- * the whole day was computed (then a missing field means "nothing booked").
- *
- * Correctness, not just speed:
- *  - Every API path that changes a booking recomputes that pitch-day from Postgres right
- *    after its commit and writes it (write-through), so the shared copy is current.
- *  - Writes carry the database's statement time; Redis keeps the newest, so a slow reader
- *    can never put an older picture back over a newer one.
- *  - Each copy remembers its database snapshot. When the app's realtime feed says "this day
- *    changed in transaction X", the server serves the cached copy only if it already
- *    includes X, else recomputes. No guesswork with timers.
- *  - Holds that run out are dropped at read time; a copy is never used after 3 minutes
- *    (covers anything changed outside the API, e.g. by hand in the database).
- * The database's exclusion constraint still makes double booking impossible regardless.
+ * Always read live from Postgres: no Redis copy, no in-memory copy. Every slot request runs
+ * one indexed query, so a booking, hold, payment or cancellation is visible to the very next
+ * request, on every server process. The exclusion constraint still makes double booking
+ * impossible regardless.
  */
 type Taken = { s: number; e: number; kind: string; id: string | null; userId: string | null; until: number | null };
-type DayEntry = { stamp: number; at: number; snap: string; taken: Taken[] };
 
-const AVAIL_MAX_AGE_MS = 180_000;
-const AVAIL_TTL_S = 600;
-const L1_PITCH_MS = 2_000;
-const L1_DAY_MS = 3_000;
-const FULL = '_full';
-const availKey = (day: string) => `avail:${day}`;
-
-const encode = (e: DayEntry) => `${e.stamp}|${JSON.stringify({ at: e.at, snap: e.snap, taken: e.taken })}`;
-function decode(raw: string | null | undefined): DayEntry | null {
-  if (!raw) return null;
-  const i = raw.indexOf('|');
-  try {
-    const body = JSON.parse(raw.slice(i + 1)) as Omit<DayEntry, 'stamp'>;
-    return { stamp: Number(raw.slice(0, i)), at: body.at, snap: body.snap, taken: body.taken ?? [] };
-  } catch {
-    return null;
-  }
-}
-
-/** Is committed transaction `xid` visible in snapshot "xmin:xmax:xip,…"? */
+/** Is committed transaction `xid` visible in snapshot "xmin:xmax:xip,…"? (kept for tests/tools) */
 export function snapshotIncludes(snap: string, xid: bigint) {
   const [xmin, xmax, xip] = snap.split(':');
   if (xmin === undefined || xmax === undefined) return false;
@@ -162,15 +132,10 @@ export function snapshotIncludes(snap: string, xid: bigint) {
   return !(xip ?? '').split(',').filter(Boolean).some((x) => BigInt(x) === xid);
 }
 
-const usable = (e: DayEntry | null | undefined, since?: bigint): e is DayEntry =>
-  !!e && Date.now() - e.at < AVAIL_MAX_AGE_MS && (since === undefined || snapshotIncludes(e.snap, since));
-
-/** One query: bookings + blocks overlapping the day, for some pitches (or all), with the snapshot it saw. */
+/** One query: live bookings + blocks overlapping the day, for some pitches (or all). */
 async function queryTaken(day: string, pitchIds: string[] | null, closeMin: number) {
-  const row = await one<{ snap: string; stamp: string; rows: { p: string; s: string; e: string; kind: string; id: string | null; u: string | null; h: string | null }[] }>(
-    `select pg_current_snapshot()::text snap,
-            (extract(epoch from statement_timestamp()) * 1000000)::bigint::text stamp,
-            coalesce((select json_agg(t) from (
+  const row = await one<{ rows: { p: string; s: string; e: string; kind: string; id: string | null; u: string | null; h: string | null }[] }>(
+    `select coalesce((select json_agg(t) from (
               select pitch_id p, lower(during) s, upper(during) e,
                      case when status in ('held','pending') then 'held' else 'booked' end kind,
                      coalesce(order_id, id) id, user_id u, hold_expires_at h
@@ -184,103 +149,22 @@ async function queryTaken(day: string, pitchIds: string[] | null, closeMin: numb
             ) t), '[]'::json) rows`,
     [pitchIds, instant(day, 0), instant(day, closeMin + 60)],
   );
-  const stamp = Number(row!.stamp);
-  const at = Date.now();
   const byPitch = new Map<string, Taken[]>();
   for (const r of row!.rows) {
     const list = byPitch.get(r.p) ?? [];
     list.push({ s: Date.parse(r.s), e: Date.parse(r.e), kind: r.kind, id: r.id, userId: r.u, until: r.h ? Date.parse(r.h) : null });
     byPitch.set(r.p, list);
   }
-  return { stamp, at, snap: row!.snap, byPitch };
+  return byPitch;
 }
 
-async function computePitch(v: VenueRow, day: string): Promise<DayEntry> {
-  const r = await queryTaken(day, [v.pitch_id], v.close_min);
-  const entry: DayEntry = { stamp: r.stamp, at: r.at, snap: r.snap, taken: r.byPitch.get(v.pitch_id) ?? [] };
-  await hashWrite(availKey(day), { [v.pitch_id]: encode(entry) }, AVAIL_TTL_S);
-  l1Set(`${availKey(day)}:${v.pitch_id}`, entry, L1_PITCH_MS);
-  l1Del(`${availKey(day)}:all`);
-  return entry;
-}
-
-/** One pitch-day. `since` = a transaction the caller knows has committed; `bypass` = old apps' fresh=1. */
-async function pitchTaken(v: VenueRow, day: string, opts: { since?: bigint; bypass?: boolean } = {}): Promise<Taken[]> {
-  const key = availKey(day);
-  const lk = `${key}:${v.pitch_id}`;
-  if (!opts.bypass) {
-    const local = l1Get<DayEntry>(lk);
-    if (usable(local, opts.since)) return local.taken;
-    const got = await hashGetMany(key, [v.pitch_id, FULL]);
-    if (got) {
-      const own = decode(got[0]);
-      const full = decode(got[1]);
-      // No field but a fresh full-day copy: nothing is booked on this pitch.
-      const e = own ?? (full ? { ...full, taken: [] } : null);
-      if (usable(e, opts.since)) {
-        l1Set(lk, e, L1_PITCH_MS);
-        return e.taken;
-      }
-    }
-  }
-  let e = await singleflight(`pitch:${lk}`, () => computePitch(v, day));
-  // Joined a computation that started before `since` committed: run one more.
-  if (opts.since !== undefined && !snapshotIncludes(e.snap, opts.since)) e = await computePitch(v, day);
-  return e.taken;
-}
-
-/** Every pitch for one day (explore's "available" badge): one Redis read, or one query. */
-async function dayTakenAll(day: string, rows: VenueRow[]): Promise<Map<string, Taken[]>> {
-  const key = availKey(day);
-  const lk = `${key}:all`;
-  const local = l1Get<Map<string, Taken[]>>(lk);
-  if (local) return local;
-  return singleflight(`day:${lk}`, async () => {
-    const all = await hashGetAll(key);
-    const full = decode(all?.[FULL]);
-    if (all && usable(full)) {
-      const map = new Map<string, Taken[]>();
-      for (const [f, raw] of Object.entries(all)) {
-        if (f === FULL) continue;
-        const e = decode(raw);
-        if (e) map.set(f, e.taken);
-      }
-      l1Set(lk, map, L1_DAY_MS);
-      return map;
-    }
-    const maxClose = rows.reduce((m, v) => Math.max(m, v.close_min), 0);
-    const r = await queryTaken(day, null, maxClose);
-    const fields: Record<string, string> = { [FULL]: encode({ stamp: r.stamp, at: r.at, snap: r.snap, taken: [] }) };
-    for (const [p, taken] of r.byPitch) fields[p] = encode({ stamp: r.stamp, at: r.at, snap: r.snap, taken });
-    await hashWrite(key, fields, AVAIL_TTL_S, r.stamp);
-    l1Set(lk, r.byPitch, L1_DAY_MS);
-    return r.byPitch;
-  });
-}
+const pitchTaken = async (v: VenueRow, day: string) => (await queryTaken(day, [v.pitch_id], v.close_min)).get(v.pitch_id) ?? [];
 
 /**
- * Call after any committed change to bookings (holds, payments, cancellations, check-ins).
- * Recomputes those pitch-days so the shared copy is current before anyone asks again.
+ * Kept so existing call sites (after holds, payments, cancellations) still compile. There is
+ * no copy to refresh any more; the realtime trigger on `slot_updates` tells apps to reload.
  */
-export async function refreshDays(pairs: { venueId: string; day: string }[]) {
-  const seen = new Set<string>();
-  await Promise.all(
-    pairs.map(async ({ venueId, day }) => {
-      const k = `${venueId}|${day}`;
-      if (seen.has(k)) return;
-      seen.add(k);
-      const v = (await loadCatalog().catch(() => null))?.byId.get(venueId) ?? (await getVenueRowExact(venueId).catch(() => null));
-      if (!v) return;
-      l1Del(`${availKey(day)}:${v.pitch_id}`, `${availKey(day)}:all`);
-      try {
-        await computePitch(v, day);
-      } catch {
-        // Couldn't recompute: drop the whole day so nobody is served the old picture.
-        await cacheDel(availKey(day));
-      }
-    }),
-  );
-}
+export async function refreshDays(_pairs: { venueId: string; day: string }[]) {}
 export const invalidateDay = (venueId: string, day: string) => refreshDays([{ venueId, day }]);
 
 function inBookingWindow(day: string) {
@@ -312,9 +196,9 @@ function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string)
  * Slots for one day, computed from the schedule (no pre-generated slot rows) and overlaid
  * with active bookings and owner blocks (see Availability above for how that is cached).
  */
-export async function daySlots(v: VenueRow, day: string, viewerId?: string, opts: { since?: bigint; bypass?: boolean } = {}): Promise<SlotOut[]> {
+export async function daySlots(v: VenueRow, day: string, viewerId?: string): Promise<SlotOut[]> {
   if (!inBookingWindow(day)) return [];
-  return buildSlots(v, day, await pitchTaken(v, day, opts), viewerId);
+  return buildSlots(v, day, await pitchTaken(v, day), viewerId);
 }
 
 /** For explore: is anything still bookable on `day`, for each venue? One read for all of them. */
@@ -324,7 +208,8 @@ export async function availabilityFor(rows: VenueRow[], day: string): Promise<Ma
     rows.forEach((v) => out.set(v.id, false));
     return out;
   }
-  const taken = await dayTakenAll(day, rows);
+  const maxClose = rows.reduce((m, v) => Math.max(m, v.close_min), 0);
+  const taken = await queryTaken(day, null, maxClose);
   for (const v of rows) out.set(v.id, buildSlots(v, day, taken.get(v.pitch_id) ?? []).some((s) => s.status === 'available'));
   return out;
 }

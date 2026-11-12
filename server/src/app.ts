@@ -285,9 +285,10 @@ export async function buildApp() {
     );
     const venue = await getVenueRow(id);
     reply.header('Cache-Control', 'no-store');
-    // `v`: served from cache only if the cached copy already contains that transaction.
-    // `fresh=1` (older apps, which don't send `v`): always recomputed.
-    const slots = await daySlots(venue, day, req.user?.userId, since ? { since: BigInt(since) } : { bypass: !!fresh });
+    // `fresh` / `v` are accepted from older apps but no longer matter: every answer is live.
+    void fresh;
+    void since;
+    const slots = await daySlots(venue, day, req.user?.userId);
     return { venueId: id, day, slots, fetchedAt: Date.now() };
   });
 

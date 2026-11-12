@@ -101,8 +101,6 @@ const PARTS: { key: DayPart; label: string; icon: LucideIcon }[] = [
 const HERO_BTN = 40;
 const SHEET_OVERLAP = 28; // content sheet radius = how far it overlaps the photo
 const MAX_SLOTS = 6; // per order (the server enforces the same limit)
-/** Slots loaded this long before a day came into view still count as current. */
-const FRESH_MS = 1500;
 type Picked = Slot & { day: DayKey };
 
 const AMENITY_ICON: Record<string, LucideIcon> = {
@@ -183,7 +181,7 @@ export default function VenueScreen() {
   const checked =
     !!slots.data &&
     !slots.isPlaceholderData &&
-    (slots.dataUpdatedAt >= viewAt - FRESH_MS || (liveSince > 0 && slots.dataUpdatedAt >= liveSince));
+    (slots.dataUpdatedAt >= viewAt || (liveSince > 0 && slots.dataUpdatedAt >= liveSince));
   const recheck = slots.refetch;
   useEffect(() => {
     if (shownDay === day && !checked && !slots.isFetching && !slots.isError) void recheck();
@@ -196,16 +194,6 @@ export default function VenueScreen() {
         : shownDay !== day || !checked
           ? 'loading'
           : 'ready';
-  // Warm the neighbouring days once a day is on screen, so the next taps are instant.
-  useEffect(() => {
-    if (slotState !== 'ready') return;
-    const t = setTimeout(() => {
-      const i = days.indexOf(day);
-      for (const d of [days[i + 1], days[i + 2], days[i - 1]])
-        if (d) qc.prefetchQuery({ queryKey: qk.slots(id, d), queryFn: ({ signal }) => api.getSlots(id, d, signal), staleTime: 30_000 });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [slotState, day, days, id, qc]);
   const reviews = useReviews(id, visited.reviews);
   const toggle = useToggleSaved();
   const v = venue.data;

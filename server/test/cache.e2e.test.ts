@@ -36,28 +36,20 @@ d('cache', () => {
     token = (await newUser()).accessToken;
   });
 
-  it('serves explore, search, filters, turf page, reviews and slots without the database once warm', async () => {
-    const reads = [
-      '/v1/venues/explore?lat=23.79&lng=90.40',
-      '/v1/venues/explore?lat=23.79&lng=90.40&q=ban',
-      '/v1/venues/explore?lat=23.79&lng=90.40&q=bana',
-      '/v1/venues/explore?lat=23.81&lng=90.41&format=5-a-side&floodlit=true',
-      `/v1/venues/explore?lat=23.79&lng=90.40&day=${day}&radius=20`,
-      `/v1/venues/${venue}`,
-      `/v1/venues/${venue}/reviews`,
-      `/v1/venues/${venue}/slots?day=${day}`,
-    ];
+  it('serves the turf page and reviews from cache, but always reads slot status live', async () => {
+    const reads = [`/v1/venues/${venue}`, `/v1/venues/${venue}/reviews`];
     for (const r of reads) expect((await call(API!, 'GET', r)).status).toBe(200); // warm
-    for (const r of reads) {
+    for (const r of reads) expect((await call(API!, 'GET', r)).db, r).toBe(0);
+    // Availability (slots, and explore's "available" badge) is never cached: one live query each time.
+    for (const r of [`/v1/venues/${venue}/slots?day=${day}`, `/v1/venues/explore?lat=23.79&lng=90.40&day=${day}&radius=20`]) {
+      await call(API!, 'GET', r);
       const res = await call(API!, 'GET', r);
       expect(res.status).toBe(200);
-      expect(res.db, r).toBe(0);
+      expect(res.db, r).toBe(1);
     }
-    // Search terms never seen before are answered from the cached catalog too.
-    for (const term of ['g', 'gu', 'gul', 'xyz']) expect((await call(API!, 'GET', `/v1/venues/explore?lat=23.79&lng=90.40&q=${term}`)).db).toBe(0);
   });
 
-  it('shows a new hold at once, and the read after it needs no query', async () => {
+  it('shows a new hold at once, read live from the database', async () => {
     const slots = (await call(API!, 'GET', `/v1/venues/${venue}/slots?day=${day}`)).json.slots as Json[];
     const slot = slots.find((s) => s.status === 'available')!;
     const hold = await call(API!, 'POST', '/v1/holds', { slotId: slot.id }, token, { 'Idempotency-Key': randomUUID() });
@@ -65,12 +57,12 @@ d('cache', () => {
     const read = await call(API!, 'GET', `/v1/venues/${venue}/slots?day=${day}`);
     const seen = read.json.slots as Json[];
     expect(seen.find((s) => s.id === slot.id)!.status).toBe('held');
-    expect(read.db).toBe(0); // the hold itself refreshed the cache
+    expect(read.db).toBe(1); // live read, no cached copy
     // Explore agrees with the turf page.
     const ex = (await call(API!, 'GET', `/v1/venues/explore?lat=23.79&lng=90.40&day=${day}&radius=50`)).json;
     const card = [...ex.near, ...ex.further].find((v: Json) => v.id === venue);
     expect(card.availableToday).toBe(seen.some((s) => s.status === 'available'));
-    // Giving it back frees it, again straight from the cache.
+    // Giving it back frees it straight away.
     expect((await call(API!, 'DELETE', `/v1/holds/${hold.json.holdId}`, undefined, token)).status).toBe(200);
     const after = (await call(API!, 'GET', `/v1/venues/${venue}/slots?day=${day}`)).json.slots as Json[];
     expect(after.find((s) => s.id === slot.id)!.status).toBe('available');
