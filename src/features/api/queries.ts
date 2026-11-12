@@ -114,7 +114,13 @@ export function useBookings() {
 }
 
 export function useBooking(id: string) {
-  return useQuery({ queryKey: qk.booking(id), queryFn: ({ signal }) => api.getBooking(id, signal), staleTime: 60_000 });
+  return useQuery({
+    queryKey: qk.booking(id),
+    queryFn: ({ signal }) => api.getBooking(id, signal),
+    staleTime: 60_000,
+    // Switching between slots of one booking keeps the ticket on screen while the next loads.
+    placeholderData: (prev) => (prev?.group?.some((g) => g.id === id) ? prev : undefined),
+  });
 }
 
 export function useNotifications() {

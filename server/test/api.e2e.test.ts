@@ -174,6 +174,26 @@ d('TurfSides API', () => {
     expect((await call('GET', '/v1/me/notifications', undefined, b.accessToken)).json[0].title).toBe('Payment received');
   });
 
+  it('slots bought together all show on the ticket, each with its own pass', async () => {
+    const u = await newUser('Two Slots');
+    const day = new Date(Date.now() + 6 * 3600_000 + 11 * 86400_000).toISOString().slice(0, 10);
+    const free = ((await call('GET', `/v1/venues/v_badda_pitch/slots?day=${day}`)).json.slots as Json[]).filter((x) => x.status === 'available').slice(0, 2);
+    expect(free.length).toBe(2);
+    const hold = await call('POST', '/v1/holds', { slotIds: free.map((x) => x.id) }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    const st = await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, u.accessToken);
+    const ticket = (await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, u.accessToken)).json;
+    expect(ticket.group).toHaveLength(2);
+    expect(new Set(ticket.group.map((g: Json) => g.code)).size).toBe(2);
+    expect(ticket.group.map((g: Json) => g.id)).toContain(ticket.id);
+    // Opening the other slot shows the same group.
+    const other = ticket.group.find((g: Json) => g.id !== ticket.id);
+    expect((await call('GET', `/v1/bookings/${other.id}`, undefined, u.accessToken)).json.group).toHaveLength(2);
+    // A single booking has no group.
+    expect((await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, a.accessToken)).status).toBe(404);
+  });
+
   it('cancelled payment frees the hold for a retry', async () => {
     const slot = await freeSlot('v_badda_pitch', 5);
     const hold = await call('POST', '/v1/holds', { slotId: slot.id }, a.accessToken, { 'Idempotency-Key': randomUUID() });

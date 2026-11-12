@@ -402,7 +402,27 @@ export async function getBooking(userId: string, id: string) {
   );
   if (!b || b.status === 'held' || b.status === 'pending' || b.status === 'expired') throw new ApiError('not_found', 'Booking not found.');
   const m = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
-  return { ...(await bookingShape(b, await holderOf(userId))), matchId: m?.id ?? null };
+  // Slots bought together (one payment): every one of them, so the ticket can show them all.
+  const together = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number }>(
+    `select id, code, day::text, start_min, end_min, status, total from bookings
+      where order_id = (select order_id from bookings where id = $1) and order_id is not null and user_id = $2
+        and status in ('confirmed','checked_in','completed','cancelled')
+      order by day, start_min`,
+    [b.id, userId],
+  );
+  const group =
+    together.length > 1
+      ? together.map((x) => ({
+          id: x.id,
+          code: x.code,
+          day: x.day,
+          start: x.start_min,
+          end: x.end_min,
+          status: x.status === 'confirmed' && instant(x.day, x.end_min).getTime() < Date.now() ? 'completed' : x.status,
+          amountPaid: x.total,
+        }))
+      : [];
+  return { ...(await bookingShape(b, await holderOf(userId))), matchId: m?.id ?? null, group };
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */

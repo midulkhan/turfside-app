@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useBooking, useCancelBooking } from '@/features/api/queries';
+import type { BookingSlot } from '@/features/api/types';
 import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
@@ -29,6 +30,46 @@ import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+/**
+ * A booking of several slots (one payment): all of them, each with its own entry pass.
+ * Tapping a slot shows that slot's code and QR on this ticket.
+ */
+function SlotPicker({ group, current }: { group: BookingSlot[]; current: string }) {
+  return (
+    <View style={styles.slots}>
+      <Text variant="caption" color={colors.textMuted} style={styles.slotsHead}>
+        {group.length} SLOTS IN THIS BOOKING
+      </Text>
+      {group.map((g) => {
+        const on = g.id === current;
+        return (
+          <Pressable
+            key={g.id}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={`${weekday(g.day)} ${dayOfMonth(g.day)}, ${formatRange(g.start, g.end)}, pass ${g.code}`}
+            onPress={() => {
+              if (on) return;
+              haptic.select();
+              router.setParams({ id: g.id });
+            }}
+            style={({ pressed }) => [styles.slot, on && styles.slotOn, pressed && !on && styles.slotPressed]}>
+            <View style={[styles.slotDot, on && styles.slotDotOn]}>{on ? <Check size={12} color={colors.charcoal} strokeWidth={3} /> : null}</View>
+            <View style={styles.flex}>
+              <Text variant="labelStrong" numberOfLines={1} style={g.status === 'cancelled' && styles.struck}>
+                {weekday(g.day)} {dayOfMonth(g.day)} · {formatRange(g.start, g.end)}
+              </Text>
+              <Text variant="caption" color={colors.textMuted}>
+                {g.status === 'cancelled' ? 'Cancelled' : on ? 'Pass shown below' : `Pass ${g.code}`}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 export default function BookingTicket() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
@@ -159,6 +200,7 @@ export default function BookingTicket() {
                     </View>
                   </View>
                 </View>
+                {b.group && b.group.length > 1 ? <SlotPicker group={b.group} current={id} /> : null}
               </View>
               <TicketDivider />
               <View style={styles.pass}>
@@ -205,7 +247,8 @@ export default function BookingTicket() {
             <View style={styles.paid}>
               <Check size={20} color={colors.charcoal} strokeWidth={2.6} />
               <Text variant="bodyStrong" color={colors.charcoal} style={styles.flex}>
-                Paid {formatTaka(b.amountPaid)}
+                Paid {formatTaka(b.group && b.group.length > 1 ? b.group.reduce((t, g) => t + g.amountPaid, 0) : b.amountPaid)}
+                {b.group && b.group.length > 1 ? ` · ${b.group.length} slots` : ''}
               </Text>
               <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
                 via {b.method}
@@ -342,6 +385,14 @@ const styles = createStyles(() => ({
   whenText: { flex: 1 },
   caps: { fontFamily: 'Geist_700Bold', fontSize: 15 },
   vr: { width: 1, height: 44, backgroundColor: colors.border, marginHorizontal: space[2] },
+  slots: { gap: space[2], marginTop: -space[1], marginBottom: space[4] },
+  slotsHead: { letterSpacing: 1.2, marginBottom: 2 },
+  slot: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[3], paddingVertical: space[2] + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  slotOn: { borderColor: colors.limeText, backgroundColor: colors.limeSoft },
+  slotPressed: { opacity: 0.7 },
+  slotDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  slotDotOn: { backgroundColor: colors.lime, borderColor: colors.lime },
+  struck: { textDecorationLine: 'line-through' },
   pass: {
     flexDirection: 'row',
     alignItems: 'center',
