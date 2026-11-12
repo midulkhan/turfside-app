@@ -21,33 +21,88 @@ import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useBooking, useCancelBooking } from '@/features/api/queries';
-import type { BookingSlot } from '@/features/api/types';
+import type { Booking, BookingSlot } from '@/features/api/types';
 import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
-import { slotsCount, timesLabel, totalPaid } from '@/lib/booking-slots';
+import { liveSlots, slotsCount, timesLabel, totalPaid } from '@/lib/booking-slots';
 import { formatTaka } from '@/lib/money';
-import { dhakaInstant, formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
+import { dhakaInstant, dhakaToday, formatRange, weekday, dayOfMonth } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-/** A booking of several slots (one payment): every slot, plainly. One pass below admits them all. */
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Fri, 13 Nov"; the year only when it isn't this one. */
+const dateLong = (day: string) =>
+  `${weekday(day)}, ${dayOfMonth(day)} ${MONTHS_SHORT[Number(day.slice(5, 7)) - 1]}${day.slice(0, 4) === dhakaToday().slice(0, 4) ? '' : ` ${day.slice(0, 4)}`}`;
+/** 90 → "1h 30m", 60 → "1h". */
+const short = (mins: number) => `${Math.floor(mins / 60) ? `${Math.floor(mins / 60)}h` : ''}${mins % 60 ? ` ${mins % 60}m` : ''}`.trim();
+/** 360 → "6 hours", 60 → "1 hour", 270 → "4h 30m". */
+const total = (mins: number) => (mins % 60 ? short(mins) : `${mins / 60} hour${mins === 60 ? '' : 's'}`);
+
+/** Two tiles: the date, then the total duration (several slots) or the time (one slot). */
+function Facts({ b }: { b: Booking }) {
+  const slots = liveSlots(b);
+  const multi = slots.length > 1;
+  const days = [...new Set(slots.map((s) => s.day))];
+  const mins = slots.reduce((t, s) => t + (s.end - s.start), 0);
+  return (
+    <View style={styles.facts}>
+      <View style={styles.fact}>
+        <CalendarDays size={20} color={colors.ink} strokeWidth={1.7} />
+        <View style={styles.flex}>
+          <Text variant="caption" color={colors.textMuted} style={styles.factLabel} numberOfLines={1}>
+            {days.length > 1 ? 'DATES' : 'DATE'}
+          </Text>
+          <Text variant="labelStrong" style={styles.factValue} numberOfLines={2}>
+            {days.length > 1 ? `${days.length} days from ${dayOfMonth(days[0])} ${MONTHS_SHORT[Number(days[0].slice(5, 7)) - 1]}` : dateLong(b.day)}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.fact}>
+        <Clock3 size={20} color={colors.ink} strokeWidth={1.7} />
+        <View style={styles.flex}>
+          <Text variant="caption" color={colors.textMuted} style={styles.factLabel} numberOfLines={1}>
+            {multi ? 'TOTAL DURATION' : 'TIME'}
+          </Text>
+          <Text variant="labelStrong" style={styles.factValue} numberOfLines={2}>
+            {multi ? total(mins) : formatRange(b.start, b.end)}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** A booking of several slots (one payment): every slot, numbered. One pass below admits them all. */
 function SlotList({ group }: { group: BookingSlot[] }) {
   const days = new Set(group.map((g) => g.day)).size;
+  const live = group.filter((g) => g.status !== 'cancelled').length;
   return (
     <View style={styles.slots}>
-      <Text variant="caption" color={colors.textMuted} style={styles.slotsHead}>
-        YOUR SLOTS
-      </Text>
+      <View style={styles.slotsHead}>
+        <Text variant="title" style={styles.flex}>
+          Booked slots
+        </Text>
+        <View style={styles.countPill}>
+          <Text variant="labelStrong" color={colors.charcoal}>
+            {live} slot{live === 1 ? '' : 's'}
+          </Text>
+        </View>
+      </View>
       {group.map((g, i) => (
         <View key={g.id} style={[styles.slot, i > 0 && styles.slotRule]}>
+          <View style={styles.slotNo}>
+            <Text variant="labelStrong" color={colors.textMuted}>
+              {String(i + 1).padStart(2, '0')}
+            </Text>
+          </View>
           <Text variant="bodyStrong" style={[styles.flex, g.status === 'cancelled' && styles.struck]} numberOfLines={1}>
             {days > 1 ? `${weekday(g.day)} ${dayOfMonth(g.day)} · ` : ''}
             {formatRange(g.start, g.end)}
           </Text>
           <Text variant="label" color={colors.textMuted}>
-            {g.status === 'cancelled' ? 'Cancelled' : formatDuration(g.end - g.start)}
+            {g.status === 'cancelled' ? 'Cancelled' : short(g.end - g.start)}
           </Text>
         </View>
       ))}
@@ -163,34 +218,7 @@ export default function BookingTicket() {
                       {b ? `${b.venue.area}, ${b.venue.city}` : ''}
                     </Text>
                   </View>
-                  <View style={styles.when}>
-                    <View style={styles.whenCol}>
-                      <CalendarDays size={22} color={colors.ink} strokeWidth={1.7} />
-                      <View style={styles.whenText}>
-                        <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
-                          {b ? `${weekday(b.day).toUpperCase()}, ${dayOfMonth(b.day)} ${MONTHS[Number(b.day.slice(5, 7)) - 1]}` : ' '}
-                        </Text>
-                        <Text variant="label" color={colors.textMuted}>
-                          {b?.day.slice(0, 4)}
-                        </Text>
-                      </View>
-                    </View>
-                    {/* One slot: its time sits here. Several: they're listed below instead. */}
-                    {multi ? null : <View style={styles.vr} />}
-                    {multi ? null : (
-                      <View style={styles.whenCol}>
-                        <Clock3 size={22} color={colors.ink} strokeWidth={1.7} />
-                        <View style={styles.whenText}>
-                          <Text variant="bodyStrong" style={styles.caps} numberOfLines={1}>
-                            {b ? formatRange(b.start, b.end) : ' '}
-                          </Text>
-                          <Text variant="label" color={colors.textMuted}>
-                            {b ? formatDuration(b.end - b.start) : ''}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
+                  <Facts b={b} />
                   {multi ? <SlotList group={b.group!} /> : null}
                 </View>
                 <TicketDivider />
@@ -368,15 +396,16 @@ const styles = createStyles(() => ({
   },
   ticketBody: { paddingHorizontal: space[4], paddingTop: space[4], gap: space[2] },
   venueName: { fontSize: 20, lineHeight: 26 },
-  when: { flexDirection: 'row', alignItems: 'center', marginTop: space[3], marginBottom: space[4] },
-  whenCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  whenText: { flex: 1 },
-  caps: { fontFamily: 'Geist_700Bold', fontSize: 15 },
-  vr: { width: 1, height: 44, backgroundColor: colors.border, marginHorizontal: space[2] },
-  slots: { marginTop: -space[1], marginBottom: space[4] },
-  slotsHead: { letterSpacing: 1.2, marginBottom: space[1] },
+  facts: { flexDirection: 'row', gap: space[2], marginTop: space[3], marginBottom: space[4] },
+  fact: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[2] + 2, backgroundColor: colors.surfaceMuted, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[3] },
+  factLabel: { letterSpacing: 0.8, fontSize: 11, marginBottom: 2 },
+  factValue: { fontSize: 15, lineHeight: 19 },
+  slots: { marginBottom: space[4] },
+  slotsHead: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginBottom: space[2] },
+  countPill: { backgroundColor: colors.lime, borderRadius: radius.pill, paddingHorizontal: space[3], paddingVertical: 4 },
   slot: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[2] + 2 },
   slotRule: { borderTopWidth: 1, borderTopColor: colors.border },
+  slotNo: { width: 36, height: 30, borderRadius: radius.sm, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   struck: { textDecorationLine: 'line-through' },
   pass: {
     flexDirection: 'row',
