@@ -127,10 +127,14 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
           </Text>
           <View style={styles.rowBottom}>
             <Text variant="labelStrong">{formatTaka(m.share * spots)}</Text>
-            <View style={styles.link}>
+            <View style={[styles.link, styles.shrink]}>
               <UsersRound size={15} color={colors.ink} />
+              {/* A long squad name shortens with "…"; the spot count always shows in full. */}
+              <Text variant="labelStrong" numberOfLines={1} style={styles.shrink}>
+                {m.title}
+              </Text>
               <Text variant="labelStrong" numberOfLines={1}>
-                {m.title} · {spots === 1 ? '1 spot' : `${spots} spots`}
+                · {spots === 1 ? '1 spot' : `${spots} spots`}
               </Text>
             </View>
           </View>
@@ -278,6 +282,7 @@ export default function Bookings() {
 const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
+  shrink: { flexShrink: 1, minWidth: 0 },
   header: { paddingHorizontal: gutter, gap: space[4], paddingBottom: space[3] },
   filters: { gap: space[2] },
   sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3], gap: space[3] },
@@ -296,6 +301,7 @@ const styles = createStyles(() => ({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: space[3],
     marginTop: 'auto',
     paddingRight: space[2],
     paddingBottom: space[1],
