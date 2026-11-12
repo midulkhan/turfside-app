@@ -160,7 +160,7 @@ export default function BookingTicket() {
                   <Text variant="h3" style={[styles.venueName, styles.flex]} numberOfLines={2}>
                     {b?.venue.name ?? ' '}
                   </Text>
-                  <IconButton icon={PinDrop} label="Directions" size={40} onPress={directions} />
+                  <IconButton icon={PinDrop} label="Directions" size={44} onPress={directions} />
                 </View>
                 <View style={styles.row}>
                   <MapPin size={18} color={colors.ink} strokeWidth={1.8} />

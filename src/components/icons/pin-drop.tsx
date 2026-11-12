@@ -2,13 +2,13 @@ import type { LucideIcon, LucideProps } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 
 /**
- * Directions icon: a solid map pin standing on two rings. Drawn on Lucide's 24-unit grid and
+ * Directions icon: a solid map pin standing on two rings. Drawn on Lucide's 24-unit grid (framed tightly, so it reads a little larger than a Lucide icon) and
  * takes the same props (size, color), so it drops in wherever a Lucide icon goes.
  */
 function PinDropIcon({ size = 24, color = 'currentColor', strokeWidth = 2 }: LucideProps) {
   const ring = Math.max(1.4, Number(strokeWidth) * 0.8);
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Svg width={size} height={size} viewBox="1.2 0.8 21.6 21.6" fill="none">
       {/* Pin with a hole */}
       <Path
         fillRule="evenodd"
