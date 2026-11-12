@@ -8,8 +8,9 @@ import { ApiError } from '@/features/api/types';
 /** "your email mi****@gmail.com" / "+880 1712 ••• 345" / both, for the code screens. */
 export function sentToLabel(res: { channels?: ('email' | 'sms')[]; email?: string }, phone: string) {
   const num = phone.length === 10 ? `+880 ${phone.slice(0, 4)} ••• ${phone.slice(-3)}` : 'your number';
-  const mail = res.channels?.includes('email') && res.email ? res.email : null;
-  const sms = !res.channels || res.channels.includes('sms');
+  // Codes go by email now; the number is named only when the server texted it (phone changes).
+  const mail = res.email ?? null;
+  const sms = res.channels ? res.channels.includes('sms') : !mail;
   return mail && sms ? `${mail} and ${num}` : mail ?? num;
 }
 

@@ -19,7 +19,7 @@ const LEN = 6;
 const RESEND_S = 30;
 const MAX_ATTEMPTS = 5;
 
-/** One-time SMS code. Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
+/** One-time code (emailed). Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
 export default function Verify() {
   const params = useLocalSearchParams<{ phone: string; devCode?: string; sentTo?: string }>();
   const [sentTo, setSentTo] = useState(params.sentTo || '');
@@ -39,7 +39,6 @@ export default function Verify() {
     return () => clearTimeout(t);
   }, [left]);
 
-  const masked = phone.length === 10 ? `+880 ${phone.slice(0, 4)} ••• ${phone.slice(-3)}` : '+880';
   const locked = attempts >= MAX_ATTEMPTS;
 
   const submit = async (value = code) => {
@@ -92,7 +91,7 @@ export default function Verify() {
           Enter your code
         </Text>
         <Text variant="body" color={colors.textOnDarkMuted}>
-          We sent a 6-digit code to {sentTo || masked}. It can take a minute; check spam if it’s not there.
+          We sent a 6-digit code to {sentTo || 'your email'}. It can take a minute; check spam if it’s not there.
         </Text>
 
         <Pressable onPress={() => input.current?.focus()} style={styles.cells} accessibilityLabel="Verification code">
@@ -120,7 +119,7 @@ export default function Verify() {
           autoFocus
           keyboardType="number-pad"
           textContentType="oneTimeCode"
-          autoComplete="sms-otp"
+          autoComplete="one-time-code"
           maxLength={LEN}
           style={styles.hidden}
           editable={!locked}
@@ -130,7 +129,7 @@ export default function Verify() {
             {error}
           </Text>
         ) : devCode ? (
-          // Only test servers send this (no SMS gateway yet). Production never does.
+          // Only test servers send this, when the email could not go out. Production never does.
           <Text variant="caption" color={colors.textOnDarkMuted}>
             Test code: {devCode}
           </Text>

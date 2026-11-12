@@ -17,7 +17,7 @@ import { isStrongPassword } from '@/lib/validation';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
-/** Step 2 of password reset: SMS code + new password. Signs out every other device. */
+/** Step 2 of password reset: emailed code + new password. Signs out every other device. */
 export default function ResetPassword() {
   const { phone = '', devCode = '', sentTo = '' } = useLocalSearchParams<{ phone: string; devCode?: string; sentTo?: string }>();
   const { signIn } = useSession();
@@ -63,7 +63,7 @@ export default function ResetPassword() {
             New password
           </Text>
           <Text variant="body" color={colors.textOnDarkMuted}>
-            {sentTo ? `We sent a 6-digit code to ${sentTo}.` : `If ${masked} has an account, we’ve sent a 6-digit code to its email and number.`}
+            {sentTo ? `We sent a 6-digit code to ${sentTo}.` : `If ${masked} has an account, we’ve sent a 6-digit code to its email.`}
           </Text>
           <Input
             tone="dark"
@@ -73,7 +73,7 @@ export default function ResetPassword() {
             onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
             keyboardType="number-pad"
             textContentType="oneTimeCode"
-            autoComplete="sms-otp"
+            autoComplete="one-time-code"
             maxLength={6}
             error={codeError}
             hint={devCode ? `Test code: ${devCode}` : undefined}

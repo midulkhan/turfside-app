@@ -46,9 +46,11 @@ const maskEmail = (e: string) => {
 const smsReady = () => config.SMS_PROVIDER === 'http' || !isProd;
 
 /**
- * Makes a code and delivers it on every channel available: email (Sender) when there's an
- * address, SMS when a gateway is set up. Fails only if no channel worked; the reply says
- * where it went (the app shows "sent to mi****@gmail.com").
+ * Makes a code and delivers it. Sign-up and password reset codes go by **email only** (Sender);
+ * SMS is used just for confirming a new phone number, and for an old account with no email.
+ * The reply says where it went (the app shows "sent to mi****@gmail.com").
+ * Outside production, if the email can't go out, the code comes back in the reply so the app
+ * can still be tested (the app shows it as "Test code"). In production that is an error.
  */
 async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: string, to: { email?: string | null; name?: string } = {}) {
   await guardOtp(phone, purpose, ip);
@@ -61,33 +63,33 @@ async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: s
     payload ? JSON.stringify(payload) : null,
     OTP_TTL_MIN,
   ]);
+  const byEmail = !!to.email && purpose !== 'phone_change';
   const channels: ('email' | 'sms')[] = [];
   let failure: unknown = null;
-  if (to.email && emailEnabled() && purpose !== 'phone_change') {
+  if (byEmail) {
     try {
+      if (!emailEnabled()) throw new ApiError('not_configured', 'Email isn’t set up on the server.');
       const mail = codeEmail({ name: to.name, code, minutes: OTP_TTL_MIN, purpose: purpose === 'signup' ? 'signup' : 'reset' });
-      await sendEmail({ to: to.email, toName: to.name, ...mail });
+      await sendEmail({ to: to.email!, toName: to.name, ...mail });
       channels.push('email');
     } catch (e) {
       failure = e;
     }
-  }
-  if (smsReady() || purpose === 'phone_change') {
+  } else if (smsReady() || purpose === 'phone_change') {
     try {
       await sendSms(phone, `${code} is your TurfSides code. It expires in ${OTP_TTL_MIN} minutes. Never share it.`);
       channels.push('sms');
     } catch (e) {
-      failure ??= e;
+      failure = e;
     }
   }
-  if (!channels.length) {
-    await q('update otp_codes set consumed_at = now() where phone = $1 and purpose = $2 and consumed_at is null', [phone, purpose]);
-    throw failure instanceof ApiError ? failure : new ApiError('not_configured', 'We couldn’t send your code right now. Try again in a moment.');
-  }
-  const where = { sent: true as const, channels, ...(channels.includes('email') && to.email ? { email: maskEmail(to.email) } : {}) };
-  // Outside production, and only when no real channel (email) carried it, the code comes back
-  // so the app can be tested without a gateway. Once it's emailed it is never in the response.
-  return isProd || channels.includes('email') ? where : { ...where, devCode: code };
+  const where = { sent: true as const, channels, ...(byEmail ? { email: maskEmail(to.email!) } : {}) };
+  if (channels.length) return isProd || channels.includes('email') ? where : { ...where, devCode: code };
+  if (!isProd) return { ...where, devCode: code }; // testing only: nothing went out, show the code
+  await q('update otp_codes set consumed_at = now() where phone = $1 and purpose = $2 and consumed_at is null', [phone, purpose]);
+  throw failure instanceof ApiError && failure.code !== 'not_configured'
+    ? failure
+    : new ApiError('not_configured', 'We couldn’t email your code right now. Try again in a moment.');
 }
 
 async function consumeOtp(phone: string, purpose: Purpose, code: string) {
@@ -118,7 +120,7 @@ async function createSession(u: UserRow, meta: { ip: string; ua?: string; device
   return { user: publicUser(u), accessToken: await signAccess(u.id, u.roles, s!.id), refreshToken: refresh };
 }
 
-// ── Sign up: details → SMS code → account ──────────────────────────────────
+// ── Sign up: details → emailed code → account ──────────────────────────────────
 export async function signupStart(input: { name: string; phone: string; email: string; password: string; role: 'player' | 'owner' }, ip: string) {
   // Say plainly when the number or email already has an account (and which), so people go
   // to sign in instead of waiting for a code that never comes. Scraping is held back by the
