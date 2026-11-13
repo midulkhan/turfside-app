@@ -390,14 +390,18 @@ export default function Checkout() {
               {h
                 ? h.lines.map((l, i) => (
                     <View key={`${i}:${l.label}`} style={styles.line}>
-                      <Text variant="body" color={colors.textMuted} style={styles.lineText}>
-                        {l.label === 'Turf booking' && l.detail
-                          ? l.detail
-                          : l.label === 'Your share' && l.detail
-                            ? `Your share · ${l.detail}`
-                            : l.label}
-                      </Text>
-                      <Text variant="labelStrong" style={styles.lineText}>
+                      {/* Label wraps in its own column; the amount keeps its width on the right. */}
+                      <View style={styles.lineLabel}>
+                        <Text variant="body" color={colors.textMuted} style={styles.lineText}>
+                          {l.label === 'Turf booking' && l.detail ? l.detail : l.label}
+                        </Text>
+                        {l.label === 'Your share' && l.detail ? (
+                          <Text variant="label" color={colors.textSubtle}>
+                            {l.detail}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text variant="labelStrong" style={[styles.lineText, styles.lineAmount]}>
                         {formatTaka(l.amount)}
                       </Text>
                     </View>
@@ -538,7 +542,9 @@ const styles = createStyles(() => ({
   details: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   edit: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: space[1], minHeight: 44 },
   lines: { padding: space[4], gap: space[3] },
-  line: { flexDirection: 'row', justifyContent: 'space-between' },
+  line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: space[4] },
+  lineLabel: { flex: 1, minWidth: 0, gap: 2 },
+  lineAmount: { flexShrink: 0, textAlign: 'right' },
   promo: { flexDirection: 'row', alignItems: 'center', gap: space[3], padding: space[4], minHeight: 56 },
   totalAmount: { fontFamily: 'Geist_700Bold', fontSize: 19, lineHeight: 24 },
   venueName: { fontSize: 18, lineHeight: 23, letterSpacing: -0.2 },
