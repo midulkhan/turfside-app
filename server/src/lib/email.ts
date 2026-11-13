@@ -1,3 +1,5 @@
+import nodemailer, { type Transporter } from 'nodemailer';
+
 import { config } from '../config';
 import { ApiError } from '../errors';
 
@@ -5,7 +7,43 @@ import { ApiError } from '../errors';
  * Transactional email through Sender (sender.net): POST {SENDER_API_URL}/message/send with a
  * Bearer token. The From address (noreply@turfsides.com) must be on a domain verified in Sender.
  */
-export const emailEnabled = () => !!config.SENDER_API_TOKEN;
+const smtpReady = () => !!(config.SMTP_HOST && config.SMTP_PASS);
+export const emailEnabled = () => smtpReady() || !!config.SENDER_API_TOKEN;
+
+/**
+ * SMTP (preferred when configured): the noreply@ mailbox on the hosting server. Use the server's
+ * own name (e.g. server350-1.web-hosting.com): its certificate doesn't cover mail.turfsides.com.
+ */
+let smtp: Transporter | null = null;
+const transport = () =>
+  (smtp ??= nodemailer.createTransport({
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
+    secure: config.SMTP_PORT === 465,
+    auth: { user: config.SMTP_USER || config.EMAIL_FROM, pass: config.SMTP_PASS },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  }));
+
+async function sendSmtp(m: { to: string; toName?: string; subject: string; html: string; text: string }) {
+  try {
+    const info = await transport().sendMail({
+      from: { name: config.EMAIL_FROM_NAME, address: config.EMAIL_FROM },
+      to: m.toName ? { name: m.toName, address: m.to } : m.to,
+      subject: m.subject,
+      html: m.html,
+      text: m.text,
+    });
+    lastSend = { at: new Date().toISOString(), ok: true, detail: `smtp ${String(info.response ?? '').slice(0, 80)}` };
+  } catch (e) {
+    const detail = `smtp ${(e as { code?: string }).code ?? ''} ${(e as Error).message ?? ''}`.replace(/\s+/g, ' ').trim().slice(0, 300);
+    lastSend = { at: new Date().toISOString(), ok: false, detail };
+    console.error(`[email] send failed: ${detail}`);
+    smtp = null; // reconnect next time
+    throw new ApiError('internal', 'We couldn’t send the email. Try again in a moment.');
+  }
+}
 
 const headers = () => ({
   Authorization: `Bearer ${config.SENDER_API_TOKEN}`,
@@ -15,6 +53,7 @@ const headers = () => ({
 
 export async function sendEmail(m: { to: string; toName?: string; subject: string; html: string; text: string }) {
   if (!emailEnabled()) throw new ApiError('not_configured', 'Email is not configured yet.');
+  if (smtpReady()) return sendSmtp(m);
   const res = await fetch(`${config.SENDER_API_URL}/message/send`, {
     method: 'POST',
     headers: headers(),
@@ -52,6 +91,12 @@ let state: { at: number; value: string } | null = null;
 export async function emailState() {
   if (!emailEnabled()) return 'not_configured';
   if (state && Date.now() - state.at < 3600_000) return state.value;
+  if (smtpReady()) {
+    const ok = await transport().verify().then(() => true, () => false);
+    if (!ok) smtp = null;
+    state = { at: Date.now(), value: ok ? 'smtp:ok' : 'smtp:login failed' };
+    return state.value;
+  }
   const res = await fetch(`${config.SENDER_API_URL}/groups?limit=1`, { headers: headers(), signal: AbortSignal.timeout(5000) }).catch(() => null);
   const value = !res ? 'unreachable' : res.ok ? 'sender:ok' : res.status === 401 || res.status === 403 ? 'sender:token rejected' : `sender:http ${res.status}`;
   state = { at: Date.now(), value };
