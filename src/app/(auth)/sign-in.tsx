@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input, PasswordInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
-import { errorMessage } from '@/features/session/pending-signup';
+import type { AuthResult } from '@/features/api/types';
+import { errorMessage, sentToLabel } from '@/features/session/pending-signup';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword, normaliseIdentifier } from '@/lib/validation';
@@ -38,10 +39,19 @@ export default function SignIn() {
     }
     setLoading(true);
     try {
-      const auth = await api.login(ident.value, password);
-      haptic.success();
-      await signIn(auth);
-      router.replace('/explore');
+      const res = await api.login(ident.value, password);
+      if ('accessToken' in res) {
+        // Older server without two-step sign-in.
+        haptic.success();
+        await signIn(res as unknown as AuthResult);
+        router.replace('/explore');
+        return;
+      }
+      // Password accepted: a code was emailed. Enter it on the code screen.
+      router.push({
+        pathname: '/verify',
+        params: { mode: 'login', challenge: res.challenge, devCode: res.devCode ?? '', sentTo: sentToLabel(res, ident.kind === 'phone' ? ident.value : '') },
+      });
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t sign in', errorMessage(e));

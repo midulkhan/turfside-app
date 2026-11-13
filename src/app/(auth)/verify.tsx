@@ -21,7 +21,10 @@ const MAX_ATTEMPTS = 5;
 
 /** One-time code (emailed). Server enforces expiry, attempt limits and rate limits; the UI mirrors them. */
 export default function Verify() {
-  const params = useLocalSearchParams<{ phone: string; devCode?: string; sentTo?: string }>();
+  // mode=login: second step of sign-in (challenge from the password step). Otherwise sign-up.
+  const params = useLocalSearchParams<{ phone?: string; devCode?: string; sentTo?: string; mode?: string; challenge?: string }>();
+  const isLogin = params.mode === 'login';
+  const [challenge, setChallenge] = useState(params.challenge || '');
   const [sentTo, setSentTo] = useState(params.sentTo || '');
   const { phone = '' } = params;
   const [devCode, setDevCode] = useState(params.devCode || '');
@@ -45,9 +48,9 @@ export default function Verify() {
     if (value.length !== LEN || locked) return;
     setLoading(true);
     try {
-      const auth = await api.signupVerify(phone, value);
+      const auth = isLogin ? await api.loginVerify(challenge, value) : await api.signupVerify(phone, value);
       haptic.success();
-      pendingSignup.clear();
+      if (!isLogin) pendingSignup.clear();
       await signIn(auth);
       router.replace('/explore');
     } catch (e) {
@@ -61,6 +64,20 @@ export default function Verify() {
   };
 
   const resend = async () => {
+    if (isLogin) {
+      setLeft(RESEND_S);
+      setError(undefined);
+      try {
+        const res = await api.loginResend(challenge);
+        setChallenge(res.challenge);
+        setAttempts(0);
+        setDevCode(res.devCode ?? '');
+        setSentTo(sentToLabel(res, ''));
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+      return;
+    }
     const details = pendingSignup.get();
     if (!details || details.phone !== phone) {
       router.back(); // app was restarted: the form has to be filled in again

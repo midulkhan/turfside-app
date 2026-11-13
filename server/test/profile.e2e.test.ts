@@ -8,6 +8,11 @@ const API = process.env.API_URL;
 const d = API ? describe : describe.skip;
 type Json = Record<string, any>;
 
+async function signIn(identifier: string, password: string) {
+  const step1 = await call('POST', '/v1/auth/login', { identifier, password });
+  return step1.status !== 200 ? step1 : call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode });
+}
+
 async function call(method: string, path: string, body?: unknown, token?: string) {
   const res = await fetch(`${API}${path}`, {
     method,
@@ -53,7 +58,7 @@ d('edit profile', () => {
     expect(ok.status, JSON.stringify(ok.json)).toBe(200);
     expect(ok.json.phone).toBe(next);
     // The new number signs in; the old one doesn't.
-    expect((await call('POST', '/v1/auth/login', { identifier: next, password: 'correct horse 1' })).status).toBe(200);
+    expect((await signIn(next, 'correct horse 1')).status).toBe(200);
     expect((await call('POST', '/v1/auth/login', { identifier: u.phone, password: 'correct horse 1' })).status).toBe(401);
   });
 });

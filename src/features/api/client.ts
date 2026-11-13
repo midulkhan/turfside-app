@@ -22,6 +22,7 @@ import type {
   ExploreParams,
   ExploreResult,
   Hold,
+  LoginChallenge,
   Match,
   MatchFeedParams,
   MatchLevel,
@@ -53,8 +54,15 @@ export const signupStart = (b: { name: string; phone: string; email: string; pas
 export const signupVerify = (phone: string, code: string) =>
   request<AuthResult>('POST', '/v1/auth/signup/verify', { body: { phone, code } });
 
+/** Step 1: password. The server then emails a code (two-step sign-in). */
 export const login = (identifier: string, password: string) =>
-  request<AuthResult>('POST', '/v1/auth/login', { body: { identifier, password } });
+  request<LoginChallenge>('POST', '/v1/auth/login', { body: { identifier, password } });
+
+/** Step 2: the emailed code opens the session. */
+export const loginVerify = (challenge: string, code: string) =>
+  request<AuthResult>('POST', '/v1/auth/login/verify', { body: { challenge, code } });
+
+export const loginResend = (challenge: string) => request<LoginChallenge>('POST', '/v1/auth/login/resend', { body: { challenge } });
 
 export const resetStart = (phone: string) => request<CodeSent>('POST', '/v1/auth/password/reset/start', { body: { phone } });
 

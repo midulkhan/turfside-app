@@ -106,8 +106,8 @@ export async function emailState() {
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** The verification-code email: plain, branded, readable everywhere (inline styles only). */
-export function codeEmail(o: { name?: string; code: string; minutes: number; purpose: 'signup' | 'reset' }) {
-  const what = o.purpose === 'signup' ? 'finish creating your account' : 'reset your password';
+export function codeEmail(o: { name?: string; code: string; minutes: number; purpose: 'signup' | 'reset' | 'login' }) {
+  const what = o.purpose === 'signup' ? 'finish creating your account' : o.purpose === 'login' ? 'sign in to your account' : 'reset your password';
   const hello = o.name ? `Hi ${esc(o.name.split(' ')[0])},` : 'Hi,';
   const subject = `${o.code} is your TurfSides code`;
   const text = `${hello.replace(/&[^;]+;/g, '')}\n\nUse this code to ${what}: ${o.code}\n\nIt expires in ${o.minutes} minutes. Never share it with anyone, including TurfSides staff.\n\nIf you didn't ask for this, you can ignore this email.\n\nTurfSides`;

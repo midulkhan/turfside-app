@@ -217,6 +217,8 @@ export type AuthResult = { user: User; accessToken: string; refreshToken: string
 /** Returned when the server texts a code. `devCode` is only sent by non-production servers. */
 /** A code went out: where (email via Sender, SMS) and, for email, the masked address. */
 export type CodeSent = { sent: true; devCode?: string; channels?: ('email' | 'sms')[]; email?: string };
+/** Sign-in step 1 passed (password right): a code went to the account's email. */
+export type LoginChallenge = CodeSent & { otpRequired: true; challenge: string };
 
 export type AppConfig = {
   paymentsEnabled: boolean;

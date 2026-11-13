@@ -10,6 +10,13 @@ const API = process.env.API_URL;
 const d = API ? describe : describe.skip;
 
 type Json = Record<string, any>;
+/** Two-step sign-in: password, then the emailed code (returned as devCode by the test server). */
+async function signIn(identifier: string, password: string, headers: Record<string, string> = {}) {
+  const step1 = await call('POST', '/v1/auth/login', { identifier, password }, undefined, headers);
+  if (step1.status !== 200) return step1;
+  return call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode }, undefined, headers);
+}
+
 async function call(method: string, path: string, body?: unknown, token?: string, headers: Record<string, string> = {}) {
   const res = await fetch(`${API}${path}`, {
     method,
@@ -60,10 +67,27 @@ d('TurfSides API', () => {
     expect(r.json.db).toBe('ok');
   });
 
+  it('auth: sign-in needs the emailed code after the password', async () => {
+    const step1 = await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'correct horse 1' });
+    expect(step1.status).toBe(200);
+    expect(step1.json).toMatchObject({ otpRequired: true });
+    expect(step1.json.accessToken).toBeUndefined(); // no session from the password alone
+    expect(step1.json.challenge).not.toContain(a.phone);
+    const wrong = await call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode === '000000' ? '111111' : '000000' });
+    expect(wrong.status).toBe(400);
+    const forged = await call('POST', '/v1/auth/login/verify', { challenge: `${step1.json.challenge}x`, code: step1.json.devCode });
+    expect(forged.status).toBe(400);
+    const ok = await call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode });
+    expect(ok.status, JSON.stringify(ok.json)).toBe(200);
+    expect(ok.json.accessToken).toBeTruthy();
+    // A code works once.
+    expect((await call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode })).status).toBe(400);
+  });
+
   it('auth: login, wrong password, refresh rotation with reuse detection', async () => {
     const bad = await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'nope-nope' });
     expect(bad.status).toBe(401);
-    const ok = await call('POST', '/v1/auth/login', { identifier: `+880${a.phone}`, password: 'correct horse 1' });
+    const ok = await signIn(`+880${a.phone}`, 'correct horse 1');
     expect(ok.status).toBe(200);
     const r1 = await call('POST', '/v1/auth/refresh', { refreshToken: ok.json.refreshToken });
     expect(r1.status).toBe(200);
@@ -411,7 +435,7 @@ d('cart: one order, one turf, many slots', () => {
 d('account: settings, devices, password, deletion', () => {
   const login = async (phone: string, password: string, device: string) =>
     // Sent URL-encoded like the app (header values must be ASCII for Android's HTTP stack).
-    call('POST', '/v1/auth/login', { identifier: phone, password }, undefined, { 'x-device': encodeURIComponent(device) });
+    signIn(phone, password, { 'x-device': encodeURIComponent(device) });
 
   it('toggles the notification setting', async () => {
     const a = await newUser('Settings');

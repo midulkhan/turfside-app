@@ -200,6 +200,12 @@ export async function buildApp() {
     const ident = isEmail ? { kind: 'email' as const, value: parse(email, b.identifier) } : { kind: 'phone' as const, value: parse(phone10, b.identifier) };
     return auth.login(ident, b.password, meta(req));
   });
+  const challenge = z.string().min(20).max(300);
+  app.post('/v1/auth/login/verify', authLimit, async (req) => {
+    const b = parse(z.object({ challenge, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
+    return auth.loginVerify(b.challenge, b.code, meta(req));
+  });
+  app.post('/v1/auth/login/resend', authLimit, async (req) => auth.loginResend(parse(z.object({ challenge }), req.body).challenge, req.ip));
   app.post('/v1/auth/refresh', authLimit, async (req) => auth.refresh(parse(z.object({ refreshToken: z.string().min(20).max(200) }), req.body).refreshToken, meta(req)));
   app.post('/v1/auth/logout', { preHandler: requireUser }, async (req) => auth.logout(req.user!.sessionId));
   app.post('/v1/auth/password/reset/start', authLimit, async (req) => auth.resetStart(parse(z.object({ phone: phone10 }), req.body).phone, req.ip));

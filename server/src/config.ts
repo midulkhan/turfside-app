@@ -77,6 +77,9 @@ const schema = z.object({
   AUTH_RATE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(10),
   /** Verification codes one IP can request per hour (SMS-abuse guard). Raised only in CI. */
   OTP_IP_LIMIT: z.coerce.number().int().min(1).max(10_000).default(20),
+  /** Codes per account per hour, and seconds between codes (raised only for the test server). */
+  OTP_PHONE_LIMIT: z.coerce.number().int().min(1).max(10_000).default(6),
+  OTP_RESEND_SECONDS: z.coerce.number().int().min(0).max(600).default(30),
 
   SERVICE_FEE_POISHA: z.coerce.number().int().min(0).default(0),
   HOLD_MINUTES: z.coerce.number().int().min(2).max(30).default(5),

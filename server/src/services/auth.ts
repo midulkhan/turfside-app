@@ -10,10 +10,9 @@ import { signAccess } from '../lib/tokens';
 
 const OTP_TTL_MIN = 5;
 const OTP_MAX_ATTEMPTS = 5;
-const OTP_RESEND_SECONDS = 30;
 const REFRESH_DAYS = 30;
 
-type Purpose = 'signup' | 'reset' | 'phone_change';
+type Purpose = 'signup' | 'reset' | 'phone_change' | 'login';
 type UserRow = { id: string; name: string; phone: string; email: string | null; roles: string[]; password_hash: string; avatar_key?: string | null };
 
 const otpSecret = () => {
@@ -32,10 +31,10 @@ export const publicUser = (u: UserRow) => ({
 
 /** Per-phone and per-IP limits on top of the global HTTP rate limit. */
 async function guardOtp(phone: string, purpose: Purpose, ip: string) {
-  if ((await hit(`otp:phone:${phone}`, 3600)) > 6) throw new ApiError('rate_limited', 'Too many codes requested. Try again in an hour.');
+  if ((await hit(`otp:phone:${phone}`, 3600)) > config.OTP_PHONE_LIMIT) throw new ApiError('rate_limited', 'Too many codes requested. Try again in an hour.');
   if ((await hit(`otp:ip:${ip}`, 3600)) > config.OTP_IP_LIMIT) throw new ApiError('rate_limited', 'Too many requests. Try again later.');
   const last = await one<{ created_at: Date }>('select created_at from otp_codes where phone = $1 and purpose = $2 order by created_at desc limit 1', [phone, purpose]);
-  if (last && Date.now() - new Date(last.created_at).getTime() < OTP_RESEND_SECONDS * 1000) throw new ApiError('rate_limited', 'Please wait a few seconds before requesting another code.');
+  if (last && Date.now() - new Date(last.created_at).getTime() < config.OTP_RESEND_SECONDS * 1000) throw new ApiError('rate_limited', 'Please wait a few seconds before requesting another code.');
 }
 
 const maskEmail = (e: string) => {
@@ -69,7 +68,7 @@ async function issueOtp(phone: string, purpose: Purpose, payload: unknown, ip: s
   if (byEmail) {
     try {
       if (!emailEnabled()) throw new ApiError('not_configured', 'Email isn’t set up on the server.');
-      const mail = codeEmail({ name: to.name, code, minutes: OTP_TTL_MIN, purpose: purpose === 'signup' ? 'signup' : 'reset' });
+      const mail = codeEmail({ name: to.name, code, minutes: OTP_TTL_MIN, purpose: purpose === 'signup' ? 'signup' : purpose === 'login' ? 'login' : 'reset' });
       await sendEmail({ to: to.email!, toName: to.name, ...mail });
       channels.push('email');
     } catch (e) {
@@ -161,7 +160,43 @@ export async function login(identifier: { kind: 'phone' | 'email'; value: string
   const u = await one<UserRow>(`select id, name, phone, email, roles, password_hash, avatar_key from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`, [identifier.value]);
   const ok = await verifyPassword(password, u?.password_hash ?? (await getDummyHash()));
   if (!u || !ok) throw new ApiError('unauthorized', 'Mobile number, email or password is incorrect.');
+  // Two-step sign-in: the password is right, now a code goes to the account's email. The app
+  // gets a short-lived signed challenge (never the phone or user id) to verify it with.
+  const sent = await issueOtp(u.phone, 'login', { userId: u.id }, meta.ip, { email: u.email, name: u.name });
+  return { otpRequired: true as const, challenge: loginChallenge(u.phone), ...sent };
+}
+
+/** Signed "this person passed the password step" token: phone + expiry, base64url, HMAC'd. */
+function loginChallenge(phone: string) {
+  const body = Buffer.from(`${phone}.${Math.floor(Date.now() / 1000) + OTP_TTL_MIN * 60 + 60}`).toString('base64url');
+  return `${body}.${hmac(otpSecret(), `login-challenge:${body}`)}`;
+}
+function readChallenge(challenge: string) {
+  const [body, sig] = challenge.split('.');
+  if (!body || !sig || !safeEqual(sig, hmac(otpSecret(), `login-challenge:${body}`))) throw new ApiError('invalid', 'Sign in again to get a new code.');
+  const [phone, exp] = Buffer.from(body, 'base64url').toString().split('.');
+  if (!phone || !(Number(exp) * 1000 > Date.now())) throw new ApiError('invalid', 'That code has expired. Sign in again.');
+  return phone;
+}
+
+/** Step 2 of sign-in: the emailed code opens the session. */
+export async function loginVerify(challenge: string, code: string, meta: { ip: string; ua?: string; device?: string }) {
+  const phone = readChallenge(challenge);
+  const payload = (await consumeOtp(phone, 'login', code)) as { userId?: string } | null;
+  const u = payload?.userId
+    ? await one<UserRow>('select id, name, phone, email, roles, password_hash, avatar_key from users where id = $1 and phone = $2 and deleted_at is null', [payload.userId, phone])
+    : null;
+  if (!u) throw new ApiError('invalid', 'Sign in again to get a new code.');
   return createSession(u, meta);
+}
+
+/** "Send a new code" on the sign-in code screen. */
+export async function loginResend(challenge: string, ip: string) {
+  const phone = readChallenge(challenge);
+  const u = await one<{ id: string; email: string | null; name: string }>('select id, email, name from users where phone = $1 and deleted_at is null', [phone]);
+  if (!u) throw new ApiError('invalid', 'Sign in again to get a new code.');
+  const sent = await issueOtp(phone, 'login', { userId: u.id }, ip, { email: u.email, name: u.name });
+  return { otpRequired: true as const, challenge: loginChallenge(phone), ...sent };
 }
 
 /** Refresh-token rotation with reuse detection: a stolen, already-used token revokes the whole family. */

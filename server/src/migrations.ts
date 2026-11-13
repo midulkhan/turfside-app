@@ -13,6 +13,7 @@ import m008 from '../db/migrations/008_slot_update_xid.sql';
 import m009 from '../db/migrations/009_matches.sql';
 import m010 from '../db/migrations/010_match_spots_live.sql';
 import m011 from '../db/migrations/011_phone_change.sql';
+import m012 from '../db/migrations/012_login_otp.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -26,6 +27,7 @@ const MIGRATIONS: [string, string][] = [
   ['009_matches', m009],
   ['010_match_spots_live', m010],
   ['011_phone_change', m011],
+  ['012_login_otp', m012],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */
