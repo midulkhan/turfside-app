@@ -12,6 +12,7 @@ import {
   Moon,
   Pencil,
   ShieldCheck,
+  Sparkles,
   Sun,
   UserRound,
   type LucideIcon,
@@ -220,6 +221,8 @@ export default function Profile() {
 
         <Overline>Support</Overline>
         <Card padded={false}>
+          <Row icon={Sparkles} label="View onboarding" onPress={() => router.push({ pathname: '/onboarding', params: { preview: '1' } })} />
+          <Divider />
           <Row icon={CircleHelp} label="Help & support" onPress={soon('Help & support')} />
           <Divider />
           <Row icon={FileText} label="Terms & privacy policy" onPress={soon('Terms & privacy policy')} />

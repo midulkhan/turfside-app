@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRight } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -132,7 +132,10 @@ export default function Onboarding() {
   });
   const last = page >= SLIDES.length - 1;
 
+  // `?preview=1` (Profile → View onboarding): just look through it, then go back.
+  const { preview } = useLocalSearchParams<{ preview?: string }>();
   const finish = () => {
+    if (preview && router.canGoBack()) return router.back();
     completeOnboarding();
     router.replace('/sign-in');
   };
