@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   page: { paddingHorizontal: gutter, justifyContent: 'flex-end', paddingBottom: space[4], gap: space[3] },
   stepPill: { alignSelf: 'flex-start', backgroundColor: colors.lime, borderRadius: radius.pill, paddingHorizontal: space[3], paddingVertical: 5, marginBottom: space[3] },
   stepText: { fontFamily: font.semibold, letterSpacing: 1.2 },
-  title: { fontFamily: font.bold, fontSize: 44, lineHeight: 47, letterSpacing: -1.4 },
+  title: { fontFamily: font.bold, fontSize: 36, lineHeight: 40, letterSpacing: -1.1 },
   body: { fontSize: 17, lineHeight: 25, maxWidth: 360 },
   footer: { paddingHorizontal: gutter, gap: space[5] },
   dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
