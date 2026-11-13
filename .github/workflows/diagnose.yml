@@ -6,6 +6,10 @@ on:
         description: 'Optional: an address you own. Starts a sign-up (no account is created) so a code email is sent, then prints the result.'
         required: false
         default: ''
+      smtp_test:
+        description: 'Optional: "yes" to log in to mail.turfsides.com:465 as noreply@ (password from the SMTP_PASSWORD secret) and send a test to noreply@ itself.'
+        required: false
+        default: ''
 jobs:
   diagnose:
     runs-on: ubuntu-latest
@@ -54,3 +58,25 @@ jobs:
           echo "signup/start:"; curl -sS -m 30 -H 'Content-Type: application/json' -d "{\"name\":\"Email Probe\",\"phone\":\"$PHONE\",\"email\":\"$TO\",\"password\":\"probe password 1\"}" https://api.turfsides.com/v1/auth/signup/start | sed -E 's/"devCode":"[0-9]+"/"devCode":"******"/'; echo
           sleep 2
           echo "email status:"; curl -sS -m 20 https://api.turfsides.com/health | grep -oE '"email":"[^"]*","emailLastSend":(null|\{[^}]*\})'
+      - name: SMTP probe (only with smtp_test)
+        if: ${{ inputs.smtp_test != '' }}
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os, smtplib, ssl, socket
+          from email.message import EmailMessage
+          from datetime import datetime, timezone
+          host, user = 'mail.turfsides.com', 'noreply@turfsides.com'
+          try:
+              print('dns:', socket.gethostbyname(host))
+              s = smtplib.SMTP_SSL(host, 465, context=ssl.create_default_context(), timeout=20)
+              print('connected, TLS ok:', s.ehlo()[0])
+              s.login(user, os.environ['SMTP_PASS']); print('login: ok')
+              m = EmailMessage(); m['From'] = f'TurfSides <{user}>'; m['To'] = user
+              m['Subject'] = 'TurfSides SMTP test ' + datetime.now(timezone.utc).strftime('%H:%M:%S UTC')
+              m.set_content('If you can read this, SMTP from noreply@turfsides.com works.')
+              print('send:', s.send_message(m) or 'accepted by server'); s.quit()
+          except Exception as e:
+              print('FAILED:', type(e).__name__, str(e)[:300])
+          PY
