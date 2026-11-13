@@ -27,7 +27,7 @@ afterAll(() => server.close());
 describe('email via Sender', () => {
   it('sends the code email from noreply@turfsides.com with the token', async () => {
     const m = email.codeEmail({ name: 'Rafi Ahmed', code: '482913', minutes: 10, purpose: 'signup' });
-    expect(m.subject).toBe('482913 is your TurfSides code');
+    expect(m.subject).toBe('482913 is your TurfSides verification code');
     expect(m.html).toContain('482913');
     expect(m.text).toContain('finish creating your account');
     await email.sendEmail({ to: 'rafi@example.com', toName: 'Rafi Ahmed', ...m });

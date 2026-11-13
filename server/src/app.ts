@@ -183,6 +183,16 @@ export async function buildApp() {
     return reply.send(createReadStream(path));
   });
 
+  // Brand images for emails (mail apps fetch them by URL; PNG because Gmail won't show SVG).
+  app.get('/static/brand/:file', async (req, reply) => {
+    const { file } = req.params as { file: string };
+    if (!/^[a-z0-9-]+\.png$/.test(file)) throw new ApiError('not_found', 'Not found.');
+    const path = join(publicDir, 'brand', file);
+    if (!existsSync(path)) throw new ApiError('not_found', 'Not found.');
+    reply.header('Cache-Control', 'public, max-age=86400').type('image/png');
+    return reply.send(createReadStream(path));
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   const authLimit = { config: { rateLimit: { max: config.AUTH_RATE_LIMIT, timeWindow: '1 minute' } } };
   app.post('/v1/auth/signup/start', authLimit, async (req) => {

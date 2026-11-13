@@ -109,15 +109,19 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 export function codeEmail(o: { name?: string; code: string; minutes: number; purpose: 'signup' | 'reset' | 'login' }) {
   const what = o.purpose === 'signup' ? 'finish creating your account' : o.purpose === 'login' ? 'sign in to your account' : 'reset your password';
   const hello = o.name ? `Hi ${esc(o.name.split(' ')[0])},` : 'Hi,';
-  const subject = `${o.code} is your TurfSides code`;
-  const text = `${hello.replace(/&[^;]+;/g, '')}\n\nUse this code to ${what}: ${o.code}\n\nIt expires in ${o.minutes} minutes. Never share it with anyone, including TurfSides staff.\n\nIf you didn't ask for this, you can ignore this email.\n\nTurfSides`;
+  // Plain wording that mail apps recognise as a one-time code (Gmail's "Copy code" button):
+  // the code in the subject and the first line, labelled "verification code", as plain digits.
+  const subject = `${o.code} is your TurfSides verification code`;
+  const logo = `${config.PUBLIC_URL.replace(/\/+$/, '')}/static/brand/email-wordmark.png`;
+  const text = `Your TurfSides verification code is ${o.code}\n\n${hello.replace(/&[^;]+;/g, '')}\n\nUse this code to ${what}: ${o.code}\n\nIt expires in ${o.minutes} minutes. Never share it with anyone, including TurfSides staff.\n\nIf you didn't ask for this, you can ignore this email.\n\nTurfSides`;
   const html = `<!doctype html><html><body style="margin:0;background:#F3F3EF;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#161B1D">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Your TurfSides verification code is ${o.code}. It expires in ${o.minutes} minutes.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFFFF;border-radius:24px;overflow:hidden">
-<tr><td style="background:#161B1D;padding:22px 28px"><span style="font-size:22px;font-weight:800;font-style:italic;color:#FFFFFF;letter-spacing:-0.5px">Turf<span style="color:#DDF65A">Sides</span></span></td></tr>
+<tr><td style="background:#161B1D;padding:24px 28px"><img src="${logo}" width="171" height="32" alt="TurfSides" style="display:block;border:0;outline:none;height:32px;width:171px;color:#FFFFFF;font-size:22px;font-weight:800"></td></tr>
 <tr><td style="padding:28px">
 <p style="margin:0 0 8px;font-size:16px">${hello}</p>
-<p style="margin:0 0 20px;font-size:16px;line-height:24px;color:#5C6468">Use this code to ${what}:</p>
+<p style="margin:0 0 20px;font-size:16px;line-height:24px;color:#5C6468">Your verification code to ${what}:</p>
 <div style="font-size:36px;font-weight:800;letter-spacing:10px;background:#F1FBC4;border-radius:16px;padding:18px 0;text-align:center;color:#161B1D">${o.code}</div>
 <p style="margin:20px 0 0;font-size:14px;line-height:21px;color:#5C6468">It expires in ${o.minutes} minutes. Never share it with anyone, including TurfSides staff. If you didn’t ask for this, you can ignore this email.</p>
 </td></tr></table>
