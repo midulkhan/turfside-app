@@ -288,7 +288,7 @@ export async function manage(userId: string, id: string) {
   const people = await q<{ user_id: string; name: string; avatar_key: string | null; position: string | null; level: string | null; status: string; pay_by: Date | null; holding: boolean; spots: number; games: number; phone: string | null }>(
     `select m.user_id, u.name, u.avatar_key, m.position, m.level, m.status, m.pay_by, ${HOLDING} holding, m.spots,
             -- The organiser sees a player's number only once they've paid (and agreed when asking).
-            case when m.status = 'paid' and m.phone_consent_at is not null then u.phone end phone,
+            case when m.status = 'paid' and m.phone_consent_at is not null then coalesce(m.contact_phone, u.phone) end phone,
             ((select count(*) from bookings x where x.user_id = m.user_id and x.status in ('checked_in','completed','confirmed') and x.day < (now() at time zone 'Asia/Dhaka')::date)
              + (select count(*) from player_request_members y join player_requests z on z.id = y.request_id join bookings w on w.id = z.booking_id
                  where y.user_id = m.user_id and y.status = 'paid' and w.day < (now() at time zone 'Asia/Dhaka')::date))::int games
@@ -371,7 +371,7 @@ export async function decide(userId: string, id: string, memberId: string, accep
 
 // ── Player ─────────────────────────────────────────────────────────────────
 
-export async function requestToJoin(userId: string, id: string, input: { position: Position; level: Level; spots?: number; sharePhone?: true }) {
+export async function requestToJoin(userId: string, id: string, input: { position: Position; level: Level; spots?: number; sharePhone?: true; contactPhone?: string }) {
   const spots = Math.max(1, Math.floor(input.spots ?? 1));
   await tx(async (c) => {
     const r = (
@@ -392,10 +392,11 @@ export async function requestToJoin(userId: string, id: string, input: { positio
     if (free <= 0) throw new ApiError('conflict', 'This game is full.');
     if (spots > free) throw new ApiError('conflict', `Only ${free} ${free === 1 ? 'spot is' : 'spots are'} left. Lower the number and try again.`);
     await c.query(
-      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at, phone_consent_at) values ($1,$2,'pending',$3,$4,$5, now(), now())
+      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at, phone_consent_at, contact_phone) values ($1,$2,'pending',$3,$4,$5, now(), now(), $6)
        on conflict (request_id, user_id) do update set status = 'pending', position = $3, level = $4, spots = $5, created_at = now(), decided_at = null, pay_by = null,
-         phone_consent_at = now()`,
-      [id, userId, input.position, input.level, spots],
+         phone_consent_at = now(), contact_phone = $6`,
+      // A different number for this squad (10 national digits, already validated), or null for their account number.
+      [id, userId, input.position, input.level, spots, input.contactPhone ? `+880${input.contactPhone}` : null],
     );
     const who = (await c.query<{ name: string }>('select name from users where id = $1', [userId])).rows[0]?.name ?? 'A player';
     const n = spots === 1 ? '' : ` with ${spots - 1} friend${spots === 2 ? '' : 's'}`;

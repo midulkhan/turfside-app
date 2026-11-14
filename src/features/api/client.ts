@@ -192,7 +192,7 @@ export const decideRequest = (id: string, userId: string, accept: boolean) =>
 export const getJoinedMatches = (signal?: AbortSignal) => request<Match[]>('GET', '/v1/matches/joined', { auth: 'required', signal });
 export const getMyMatches = (signal?: AbortSignal) => request<MyMatches>('GET', '/v1/matches/mine', { auth: 'required', signal });
 /** The UI only allows this after the player agrees to share their number (sharePhone). */
-export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number }) =>
+export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number; contactPhone?: string }) =>
   request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: { ...b, sharePhone: true } });
 export const leaveMatch = (id: string) => request<Match>('DELETE', `/v1/matches/${enc(id)}/join`, { auth: 'required' });
 /** Pay your share of a match you were accepted into (bKash, like a booking). */

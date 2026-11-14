@@ -365,7 +365,8 @@ function touchMatches(qc: QueryClient, id: string, manage?: MatchManage) {
 export function useJoinMatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, position, level, spots }: { id: string; position: MatchPosition; level: MatchLevel; spots: number }) => api.joinMatch(id, { position, level, spots }),
+    mutationFn: ({ id, position, level, spots, contactPhone }: { id: string; position: MatchPosition; level: MatchLevel; spots: number; contactPhone?: string }) =>
+      api.joinMatch(id, { position, level, spots, contactPhone }),
     onSuccess: (m) => {
       qc.setQueryData(qk.match(m.id), m);
       touchMatches(qc, m.id);

@@ -109,7 +109,9 @@ d('find players', () => {
     expect(noConsent.status).toBe(400);
     // More spots than are open: refused, nothing recorded.
     expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 4, sharePhone: true }, p1.accessToken)).status).toBe(409);
-    const asked = (await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual', spots: 2, sharePhone: true }, p1.accessToken)).json;
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', sharePhone: true, contactPhone: '999' }, p1.accessToken)).status).toBe(400);
+    // A player may share a different number for this squad too.
+    const asked = (await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual', spots: 2, sharePhone: true, contactPhone: '+8801899000222' }, p1.accessToken)).json;
     expect(asked).toMatchObject({ my: 'pending', mySpots: 2 });
     expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular', sharePhone: true }, p2.accessToken)).json.my).toBe('pending');
     expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true }, org.accessToken)).status).toBe(403); // own match
@@ -176,7 +178,8 @@ d('find players', () => {
     }
     expect(JSON.stringify(after)).not.toContain(p2.user.phone);
     const managed = (await call('GET', `/v1/matches/${matchId}/manage`, undefined, org.accessToken)).json;
-    expect(managed.squad.find((x: Json) => x.userId === p1.user.id).phone).toBe(p1.user.phone);
+    expect(managed.squad.find((x: Json) => x.userId === p1.user.id).phone).toBe('+8801899000222'); // the number they chose
+    expect(JSON.stringify(managed)).not.toContain(p1.user.phone);
     expect(JSON.stringify(managed.requests)).not.toContain(p2.user.phone); // asked, not paid: hidden
     expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
   });

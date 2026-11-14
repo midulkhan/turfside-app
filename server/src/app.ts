@@ -568,7 +568,7 @@ export async function buildApp() {
     matches.requestToJoin(
       req.user!.userId,
       matchId(req),
-      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1), sharePhone }), req.body ?? {}),
+      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1), sharePhone, contactPhone: phone10.optional() }), req.body ?? {}),
     ),
   );
   app.delete('/v1/matches/:id/join', { preHandler: requireUser }, async (req) => matches.withdraw(req.user!.userId, matchId(req)));

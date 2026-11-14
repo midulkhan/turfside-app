@@ -230,17 +230,21 @@ export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; 
   const [position, setPosition] = useState<MatchPosition>('any');
   const [level, setLevel] = useState<MatchLevel>('casual');
   const [sharePhone, setSharePhone] = useState(false);
+  // Which number the organiser sees: the account's, or another one just for this game.
+  const number = useNumberChoice();
   // Fresh agreement each time the sheet opens for a game.
   const [openFor, setOpenFor] = useState<string | null>(null);
   if ((match?.id ?? null) !== openFor) {
     setOpenFor(match?.id ?? null);
     setSharePhone(false);
+    number.reset();
   }
   const join = useJoinMatch();
+  const canSend = sharePhone && number.ok;
   const send = () => {
-    if (!match || !sharePhone) return;
+    if (!match || !canSend) return;
     join.mutate(
-      { id: match.id, position, level, spots },
+      { id: match.id, position, level, spots, contactPhone: number.value },
       {
         onSuccess: () => {
           haptic.success();
@@ -284,12 +288,14 @@ export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; 
               You then have 5 minutes to pay.
             </Text>
           </View>
-          <PhoneConsent role="player" checked={sharePhone} onChange={setSharePhone} />
+          <PhoneConsent role="player" checked={sharePhone} onChange={setSharePhone}>
+            <NumberChoice choice={number} audience="The organiser" />
+          </PhoneConsent>
           <Button
             label={spots === 1 ? 'Send request' : `Send request · ${spots} spots`}
             onPress={send}
             loading={join.isPending}
-            disabled={!sharePhone}
+            disabled={!canSend}
           />
         </View>
       ) : null}
@@ -327,6 +333,51 @@ function PhoneConsent({
   );
 }
 
+/** Share the account's number, or a different one just for this squad. */
+function useNumberChoice() {
+  const [other, setOther] = useState(false);
+  const [phone, setPhone] = useState('');
+  const valid = /^1[3-9]\d{8}$/.test(phone);
+  return {
+    other,
+    setOther,
+    phone,
+    setPhone,
+    valid,
+    ok: !other || valid,
+    /** 10 national digits when a different number is chosen; otherwise the account's is used. */
+    value: other && valid ? phone : undefined,
+    reset: () => {
+      setOther(false);
+      setPhone('');
+    },
+  };
+}
+
+function NumberChoice({ choice, audience }: { choice: ReturnType<typeof useNumberChoice>; audience: string }) {
+  const { user } = useSession();
+  return (
+    <View style={styles.numberPick}>
+      <View style={styles.choices}>
+        <Chip label="My number" small active={!choice.other} tone="dark" onPress={() => choice.setOther(false)} />
+        <Chip label="Different number" small active={choice.other} tone="dark" onPress={() => choice.setOther(true)} />
+      </View>
+      {choice.other ? (
+        <PhoneInput
+          value={choice.phone}
+          onChangeText={choice.setPhone}
+          error={choice.phone.length === 10 && !choice.valid ? 'Enter a valid Bangladesh mobile number.' : undefined}
+          hint="Only for this squad. Your account number stays private."
+        />
+      ) : user?.phone ? (
+        <Text variant="label" color={colors.textMuted}>
+          {audience} will see {formatPhone(user.phone)}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 /** "5-a-side" → 10 players (same rule as the server). */
 export const squadSize = (format: string) => {
   const m = /^(\d+)-a-side$/.exec(format);
@@ -352,10 +403,7 @@ export function CreateMatchSheet({
   const [spots, setSpots] = useState(1);
   const [sharePhone, setSharePhone] = useState(false);
   // Which number players see: the account's, or another one just for this squad.
-  const { user } = useSession();
-  const [otherNumber, setOtherNumber] = useState(false);
-  const [contactPhone, setContactPhone] = useState('');
-  const contactValid = /^1[3-9]\d{8}$/.test(contactPhone);
+  const number = useNumberChoice();
   // Each time the sheet opens for a booking, start fresh: one open spot, no name, casual.
   const [openFor, setOpenFor] = useState<string | null>(null);
   if ((booking?.id ?? null) !== openFor) {
@@ -365,17 +413,16 @@ export function CreateMatchSheet({
       setTitle('');
       setLevel('casual');
       setSharePhone(false);
-      setOtherNumber(false);
-      setContactPhone('');
+      number.reset();
     }
   }
   const create = useCreateMatch();
-  const canOpen = sharePhone && (!otherNumber || contactValid);
+  const canOpen = sharePhone && number.ok;
   const share = booking ? Math.ceil(booking.amountPaid / players / 100) * 100 : 0;
   const open = () => {
     if (!booking || !canOpen) return;
     create.mutate(
-      { bookingId: booking.id, title: title.trim() || undefined, level, openSpots: spots, contactPhone: otherNumber ? contactPhone : undefined },
+      { bookingId: booking.id, title: title.trim() || undefined, level, openSpots: spots, contactPhone: number.value },
       {
         onSuccess: (m) => {
           haptic.success();
@@ -426,24 +473,7 @@ export function CreateMatchSheet({
             </Text>
           </View>
           <PhoneConsent role="host" checked={sharePhone} onChange={setSharePhone}>
-            <View style={styles.numberPick}>
-              <View style={styles.choices}>
-                <Chip label="My number" small active={!otherNumber} tone="dark" onPress={() => setOtherNumber(false)} />
-                <Chip label="Different number" small active={otherNumber} tone="dark" onPress={() => setOtherNumber(true)} />
-              </View>
-              {otherNumber ? (
-                <PhoneInput
-                  value={contactPhone}
-                  onChangeText={setContactPhone}
-                  error={contactPhone.length === 10 && !contactValid ? 'Enter a valid Bangladesh mobile number.' : undefined}
-                  hint="Only for this squad. Your account number stays private."
-                />
-              ) : user?.phone ? (
-                <Text variant="label" color={colors.textMuted}>
-                  Players will see {formatPhone(user.phone)}
-                </Text>
-              ) : null}
-            </View>
+            <NumberChoice choice={number} audience="Players" />
           </PhoneConsent>
           <Button label={`Open ${spots} spot${spots === 1 ? '' : 's'}`} onPress={open} loading={create.isPending} disabled={!canOpen} />
         </View>
