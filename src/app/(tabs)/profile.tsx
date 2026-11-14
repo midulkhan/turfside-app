@@ -213,12 +213,12 @@ export default function Profile() {
           <Divider />
           <Row
             icon={KeyRound}
-            label="Enable 2 Factor"
+            label="Enable 2FA"
             right={
               <Switch
                 value={!!settings.data?.twoFactor}
                 disabled={settings.isPending || updateSettings.isPending}
-                accessibilityLabel="Enable 2 Factor: email me a code when I sign in"
+                accessibilityLabel="Enable 2FA: email me a code when I sign in"
                 onValueChange={(v) =>
                   updateSettings.mutate(
                     { twoFactor: v },
