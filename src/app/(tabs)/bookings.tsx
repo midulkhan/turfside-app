@@ -231,6 +231,7 @@ export default function Bookings() {
         <View style={styles.sticky}>
           <Text variant="pageTitle">My bookings</Text>
           <Segmented
+            large
             accessibilityLabel="Show"
             value={tab}
             onChange={(t) => {
@@ -244,7 +245,7 @@ export default function Bookings() {
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
             {FILTERS.map((f) => (
-              <Chip key={f.key} label={f.label} active={filter === f.key} tone="dark" onPress={() => setFilter(f.key)} />
+              <Chip key={f.key} label={f.label} active={filter === f.key} tone="dark" small onPress={() => setFilter(f.key)} />
             ))}
           </ScrollView>
         </View>

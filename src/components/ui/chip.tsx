@@ -15,11 +15,13 @@ type Props = {
   dropdown?: boolean;
   onPress?: () => void;
   tone?: 'lime' | 'dark';
+  /** Compact filter pill (34 tall; the tap area stays 44). */
+  small?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 /** Pill filter / choice chip. Active = lime (filters) or dark (segmented choices). */
-export function Chip({ label, active, icon: Icon, dropdown, onPress, tone = 'lime', style }: Props) {
+export function Chip({ label, active, icon: Icon, dropdown, onPress, tone = 'lime', small, style }: Props) {
   const activeBg = tone === 'lime' ? colors.lime : colors.inverse;
   const activeFg = tone === 'lime' ? colors.charcoal : colors.lime;
   const fg = active ? activeFg : colors.ink;
@@ -32,13 +34,15 @@ export function Chip({ label, active, icon: Icon, dropdown, onPress, tone = 'lim
         haptic.select();
         onPress?.();
       }}
+      hitSlop={small ? { top: 5, bottom: 5 } : undefined}
       style={[
         styles.base,
+        small && styles.small,
         active ? { backgroundColor: activeBg, borderColor: activeBg } : { backgroundColor: colors.surface, borderColor: colors.border },
         style,
       ]}>
       {Icon ? <Icon size={size.iconSm} color={fg} strokeWidth={2} /> : null}
-      <Text variant="labelStrong" color={fg} numberOfLines={1}>
+      <Text variant="labelStrong" color={fg} numberOfLines={1} style={small ? styles.smallText : undefined}>
         {label}
       </Text>
       {dropdown ? <ChevronDown size={16} color={fg} strokeWidth={2.2} /> : null}
@@ -57,4 +61,6 @@ const styles = createStyles(() => ({
     justifyContent: 'center',
     gap: space[2],
   },
+  small: { minHeight: 34, paddingHorizontal: space[3] + 2 },
+  smallText: { fontSize: 14, lineHeight: 18 },
 }));

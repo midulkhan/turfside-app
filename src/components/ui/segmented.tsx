@@ -13,11 +13,14 @@ export function Segmented<T extends string>({
   value,
   onChange,
   accessibilityLabel,
+  large,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
   accessibilityLabel?: string;
+  /** Page-level tabs (44 tall, larger text) instead of the compact settings switch. */
+  large?: boolean;
 }) {
   const [w, setW] = useState(0);
   const seg = w / options.length;
@@ -29,7 +32,7 @@ export function Segmented<T extends string>({
   const thumb = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   return (
     <View
-      style={styles.wrap}
+      style={[styles.wrap, large && styles.wrapLarge]}
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
       onLayout={(e) => setW(e.nativeEvent.layout.width - 4)}>
@@ -47,7 +50,7 @@ export function Segmented<T extends string>({
               onChange(o.value);
             }}
             style={styles.seg}>
-            <Text variant="caption" color={on ? colors.text : colors.textMuted} style={on ? styles.on : undefined}>
+            <Text variant={large ? 'label' : 'caption'} color={on ? colors.text : colors.textMuted} style={on ? styles.on : undefined}>
               {o.label}
             </Text>
           </Pressable>
@@ -59,6 +62,7 @@ export function Segmented<T extends string>({
 
 const styles = createStyles(() => ({
   wrap: { flexDirection: 'row', padding: 2, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, height: 32 },
+  wrapLarge: { height: 44 },
   thumb: {
     position: 'absolute',
     left: 2,
