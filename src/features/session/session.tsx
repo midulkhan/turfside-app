@@ -30,7 +30,13 @@ type SessionState = {
   /** Replace the cached profile after an edit (e.g. a new photo). */
   updateUser: (u: User) => void;
   setPlace: (p: Place) => void;
+  /** Explore's distance filter (km): remembered across tabs and app restarts. */
+  radiusKm: number;
+  setRadiusKm: (km: number) => void;
 };
+
+/** Explore's starting distance (km), until the user picks another. */
+export const DEFAULT_RADIUS_KM = 5;
 
 const SessionContext = createContext<SessionState | null>(null);
 const DEFAULT_PLACE: Place = { ...KNOWN_AREAS[0], source: 'manual' };
@@ -47,11 +53,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [place, setPlaceState] = useState<Place>(DEFAULT_PLACE);
+  const [radiusKm, setRadiusState] = useState(DEFAULT_RADIUS_KM);
 
   useEffect(() => {
     // All reads in parallel so start-up is a single round trip to storage.
-    Promise.all([prefs.get('ts.onboarded'), prefs.get('ts.user'), prefs.get('ts.place'), tokens.load()])
-      .then(([ob, u, p]) => {
+    Promise.all([prefs.get('ts.onboarded'), prefs.get('ts.user'), prefs.get('ts.place'), prefs.get('ts.radius'), tokens.load()])
+      .then(([ob, u, p, r]) => {
+        const km = Number(r);
+        if (Number.isInteger(km) && km >= 1 && km <= 100) setRadiusState(km);
         setOnboarded(ob === '1');
         // A cached profile only counts if there is a refresh token to back it.
         if (u && tokens.refresh) setUser(JSON.parse(u));
@@ -120,9 +129,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     prefs.set('ts.place', JSON.stringify(p));
   }, []);
 
+  const setRadiusKm = useCallback((km: number) => {
+    setRadiusState(km);
+    prefs.set('ts.radius', String(km));
+  }, []);
+
   const value = useMemo(
-    () => ({ ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace }),
-    [ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace],
+    () => ({ ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace, radiusKm, setRadiusKm }),
+    [ready, onboarded, user, place, completeOnboarding, signIn, signOut, updateUser, setPlace, radiusKm, setRadiusKm],
   );
   return <SessionContext value={value}>{children}</SessionContext>;
 }

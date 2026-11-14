@@ -37,9 +37,8 @@ export default function Explore() {
   const listRef = useRef<FlashListRef<Row>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const bottom = useTabBarSpace();
-  const { place } = useSession();
+  const { place, radiusKm, setRadiusKm } = useSession(); // distance is remembered (tabs, restarts)
   const day = dhakaToday(); // Explore shows today's availability; the turf page picks other days
-  const [radiusKm, setRadiusKm] = useState(DEFAULT_DISTANCE);
   const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
   const scrolled = useScrolled();
   useLiveExplore(day);

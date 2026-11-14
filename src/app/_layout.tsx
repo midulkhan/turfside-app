@@ -13,6 +13,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -65,7 +66,8 @@ function RootNavigator() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.bg },
-            animation: 'ios_from_right',
+            // Android: its own native slide (the iOS-style one can flash there on push/back).
+            animation: Platform.OS === 'android' ? 'slide_from_right' : 'ios_from_right',
             // iOS takes the status bar style from the screen in front (react-native-screens),
             // not from <StatusBar>, so it is set here per screen as well.
             statusBarStyle: scheme === 'dark' ? 'light' : 'dark',

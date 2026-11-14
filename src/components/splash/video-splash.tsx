@@ -4,7 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { createStyles } from '@/theme/styles';
 
 const SOURCE = require('@/assets/video/splash.mp4');
@@ -17,12 +17,14 @@ const MAX_SPLASH_MS = 6500; // never trap the user if the video fails
  * The video (1024×576, 140 KB, white background) is bundled, so it never waits on the network.
  *
  * Hand-over: a video surface can't fade on Android, and when it's torn down
- * mid-fade it paints black. So before fading we cover the video with a still
- * of its last frame, then remove the video, and only then fade the overlay.
+ * mid-fade it paints black. So a still of the last frame sits *under* the video from the
+ * start (already decoded when it's needed), the video is removed only once that still has
+ * loaded, and only then does the overlay fade. No gap, no pop.
  */
 export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: () => void }) {
   const [ended, setEnded] = useState(false);
   const [videoGone, setVideoGone] = useState(false);
+  const [stillReady, setStillReady] = useState(false);
   const hidNative = useRef(false);
 
   const player = useVideoPlayer(SOURCE, (p) => {
@@ -57,22 +59,47 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
   // The fade is a plain opacity animation and the unmount a timer, not an `exiting` layout
   // animation: on some Android builds those never complete and the white layer stayed on top.
   const finishing = ended && appReady;
+  // The still must be on screen before the video goes, or Android shows a blank frame.
+  const handOver = finishing && stillReady;
   const opacity = useSharedValue(1);
   useEffect(() => {
-    if (!finishing) return;
+    if (!handOver) return;
     if (!videoGone) {
-      const t = setTimeout(() => setVideoGone(true), 60);
+      player.pause();
+      const t = setTimeout(() => setVideoGone(true), 50);
       return () => clearTimeout(t);
     }
-    opacity.set(withTiming(0, { duration: 320 }));
-    const t = setTimeout(onDone, 340);
+    // Two frames with only the still on screen, then a soft fade into the app.
+    const wait = setTimeout(() => {
+      opacity.set(withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) }));
+    }, 34);
+    const t = setTimeout(onDone, 34 + 380);
+    return () => {
+      clearTimeout(wait);
+      clearTimeout(t);
+    };
+  }, [handOver, videoGone, onDone, opacity, player]);
+  // Never wait on the still for long: if it can't load, hand over anyway.
+  useEffect(() => {
+    if (!finishing || stillReady) return;
+    const t = setTimeout(() => setStillReady(true), 400);
     return () => clearTimeout(t);
-  }, [finishing, videoGone, onDone, opacity]);
+  }, [finishing, stillReady]);
   const fade = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
   return (
-    <Animated.View style={[styles.root, fade]} pointerEvents={finishing && videoGone ? 'none' : 'auto'}>
+    <Animated.View style={[styles.root, fade]} pointerEvents={handOver && videoGone ? 'none' : 'auto'}>
       <View style={styles.videoWrap}>
+        {/* Loaded (and decoded) from the start but invisible; it shows only at the hand-over,
+            under the video's own last frame, so removing the video changes nothing on screen. */}
+        <Image
+          source={LAST_FRAME}
+          style={[styles.still, { opacity: handOver ? 1 : 0 }]}
+          contentFit="contain"
+          transition={0}
+          onLoad={() => setStillReady(true)}
+          onError={() => setStillReady(true)}
+        />
         {!videoGone ? (
           <VideoView
             player={player}
@@ -84,7 +111,6 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
             onFirstFrameRender={hideNative}
           />
         ) : null}
-        {finishing ? <Image source={LAST_FRAME} style={styles.still} contentFit="contain" /> : null}
       </View>
     </Animated.View>
   );
