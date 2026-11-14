@@ -24,6 +24,7 @@ import * as auth from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
 import * as matches from './services/matches';
+import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
 
@@ -316,25 +317,22 @@ export async function buildApp() {
     return { venueId: id, day, slots, fetchedAt: Date.now() };
   });
 
-  app.get('/v1/venues/:id/reviews', async (req) => {
+  // Public reviews, plus (signed in) whether you can review this turf and your own review.
+  app.get('/v1/venues/:id/reviews', { preHandler: optionalUser }, async (req) => {
     const { id } = req.params as { id: string };
-    const v = await getVenueRow(id);
-    // No API path writes reviews yet; when one does, it must cacheDel(`reviews:${id}`).
-    return cached(`reviews:${id}`, 3600, async () => {
-      const items = await q<{ id: string; author_name: string; rating: number; created_at: Date; body: string }>(
-        'select id, author_name, rating, created_at, body from reviews where venue_id = $1 order by created_at desc limit 20',
-        [id],
-      );
-      const hist = await q<{ rating: number; n: number }>('select rating, count(*)::int n from reviews where venue_id = $1 group by rating', [id]);
-      const histogram = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<1 | 2 | 3 | 4 | 5, number>;
-      hist.forEach((h) => (histogram[h.rating as 1 | 2 | 3 | 4 | 5] = h.n));
-      return {
-        average: Number(v.rating),
-        count: v.review_count,
-        histogram,
-        items: items.map((r) => ({ id: r.id, author: r.author_name, rating: r.rating, at: new Date(r.created_at).getTime(), text: r.body })),
-      };
-    }, 300);
+    await getVenueRow(id); // 404 for unknown turfs
+    const pub = await reviews.publicReviews(id);
+    return req.user ? { ...pub, ...(await reviews.myReviewState(req.user.userId, id)) } : { ...pub, canReview: false, mine: null };
+  });
+  app.put('/v1/venues/:id/reviews/mine', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
+    const { id } = req.params as { id: string };
+    await getVenueRow(id);
+    const b = parse(z.object({ rating: z.number().int().min(1).max(5), text: z.string().trim().max(1000).default('') }), req.body);
+    return reviews.saveReview(req.user!.userId, id, b);
+  });
+  app.delete('/v1/venues/:id/reviews/mine', { preHandler: requireUser }, async (req) => {
+    const { id } = req.params as { id: string };
+    return reviews.deleteReview(req.user!.userId, id);
   });
 
   // ── Me ────────────────────────────────────────────────────────────────────

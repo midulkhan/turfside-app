@@ -39,7 +39,16 @@ export type VenueDetail = VenueSummary & {
 };
 
 export type Review = { id: string; author: string; rating: number; at: number; text: string };
-export type ReviewSummary = { average: number; count: number; histogram: Record<1 | 2 | 3 | 4 | 5, number>; items: Review[] };
+/** `canReview`: signed in and played here (or already reviewed). `mine`: your own review, editable. */
+export type MyReview = { id: string; rating: number; text: string; at: number };
+export type ReviewSummary = {
+  average: number;
+  count: number;
+  histogram: Record<1 | 2 | 3 | 4 | 5, number>;
+  items: Review[];
+  canReview?: boolean;
+  mine?: MyReview | null;
+};
 
 /** held = another player is checking out (up to 5 min); mine = your own hold, resumable via holdId. */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';

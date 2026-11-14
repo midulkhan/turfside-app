@@ -51,7 +51,6 @@ import { PinDrop } from '@/components/icons/pin-drop';
 import { Alert } from '@/components/ui/dialog';
 import { SlotTicket } from '@/components/ticket/slot-ticket';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
-import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, Divider } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';
@@ -63,6 +62,7 @@ import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { haversineKm } from '@/lib/places';
+import { ReviewsTab } from '@/components/venue/reviews';
 import { markSlots, qk, useReviews, useSlots, useToggleSaved, useVenue } from '@/features/api/queries';
 import { useLiveSlots } from '@/features/api/realtime';
 import { pageStatusBar } from '@/theme/theme-provider';
@@ -442,8 +442,6 @@ export default function VenueScreen() {
                 ['reviews', 'Reviews'],
               ] as const
             )
-              // No reviews yet: no Reviews tab.
-              .filter(([key]) => key !== 'reviews' || (v?.reviewCount ?? 0) > 0)
               .map(([key, label]) => {
                 const active = tab === key;
                 return (
@@ -502,7 +500,7 @@ export default function VenueScreen() {
             ) : null}
             {visited.reviews ? (
               <View style={tab !== 'reviews' && styles.hidden}>
-                <ReviewsTab data={reviews.data} loading={reviews.isPending} />
+                <ReviewsTab venueId={id} data={reviews.data} loading={reviews.isPending} />
               </View>
             ) : null}
           </View>
@@ -963,66 +961,6 @@ const DetailsTab = memo(function DetailsTab({ v, onDirections }: { v: VenueDetai
         </View>
         <Button label="Directions" icon={PinDrop} variant="outline" small onPress={onDirections} />
       </Card>
-    </View>
-  );
-});
-
-const ReviewsTab = memo(function ReviewsTab({ data, loading }: { data?: Awaited<ReturnType<typeof api.getReviews>>; loading: boolean }) {
-  const [now] = useState(() => Date.now());
-  if (loading || !data) return <Skeleton height={180} r={radius.lg} />;
-  const max = Math.max(...Object.values(data.histogram), 1);
-  return (
-    <View style={styles.gap}>
-      <Card style={styles.summary}>
-        <View style={styles.summaryLeft}>
-          <Text variant="number" style={styles.bigRating}>
-            {data.average.toFixed(1)}
-          </Text>
-          <View style={styles.row}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} size={14} color="#F5B301" fill={i < Math.round(data.average) ? '#F5B301' : 'transparent'} />
-            ))}
-          </View>
-          <Text variant="caption" color={colors.textMuted}>
-            {data.count} reviews
-          </Text>
-        </View>
-        <View style={styles.flex}>
-          {([5, 4, 3, 2, 1] as const).map((n) => (
-            <View key={n} style={styles.histRow}>
-              <Text variant="caption" color={colors.textMuted} style={styles.histLabel}>
-                {n}
-              </Text>
-              <View style={styles.histTrack}>
-                <View style={[styles.histFill, { width: `${(data.histogram[n] / max) * 100}%` }]} />
-              </View>
-            </View>
-          ))}
-        </View>
-      </Card>
-      {data.items.map((r) => (
-        <Card key={r.id} style={styles.gapSm}>
-          <View style={styles.row}>
-            <Avatar name={r.author} size={36} />
-            <View style={styles.flex}>
-              <Text variant="labelStrong">{r.author}</Text>
-              <Text variant="caption" color={colors.textMuted}>
-                {Math.round((now - r.at) / 86400_000)} days ago · played here
-              </Text>
-            </View>
-            <View style={styles.row}>
-              <Star size={14} color="#F5B301" fill="#F5B301" />
-              <Text variant="labelStrong">{r.rating}</Text>
-            </View>
-          </View>
-          <Text variant="label" color={colors.textMuted}>
-            {r.text}
-          </Text>
-        </Card>
-      ))}
-      <Text variant="caption" color={colors.textMuted} align="center">
-        Only players who completed a booking can leave a review.
-      </Text>
     </View>
   );
 });

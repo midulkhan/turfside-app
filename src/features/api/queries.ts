@@ -186,6 +186,22 @@ export function useReviews(venueId: string, enabled = true) {
   });
 }
 
+/** Write, edit or remove your review; the list and the turf's rating refresh. */
+export function useSaveReview(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (b: { rating: number; text: string } | null): Promise<void> => {
+      if (b) await api.saveReview(venueId, b);
+      else await api.deleteReview(venueId);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.reviews(venueId) });
+      void qc.invalidateQueries({ queryKey: qk.venue(venueId) });
+      void qc.invalidateQueries({ queryKey: ['explore'] }); // card ratings
+    },
+  });
+}
+
 /** Player cancellation (server allows it up to 24 h before kick-off and flags the refund). */
 export function useCancelBooking() {
   const qc = useQueryClient();

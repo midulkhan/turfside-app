@@ -57,6 +57,7 @@ export const Input = forwardRef<TextInputInstance, InputProps>(function Input(
       <View
         style={[
           styles.field,
+          rest.multiline && styles.fieldMulti,
           { backgroundColor: t.bg, borderColor: error ? (tone === 'dark' ? '#FF8A80' : colors.danger) : focused ? t.focus : t.border },
         ]}>
         {Icon ? <Icon size={size.icon} color={tone === 'dark' ? t.placeholder : colors.textMuted} strokeWidth={2} /> : null}
@@ -76,7 +77,7 @@ export const Input = forwardRef<TextInputInstance, InputProps>(function Input(
             setFocused(false);
             onBlur?.(e);
           }}
-          style={[styles.input, { color: t.text }, style]}
+          style={[styles.input, rest.multiline && styles.inputMulti, { color: t.text }, style]}
         />
         {trailing}
       </View>
@@ -168,6 +169,9 @@ const styles = createStyles(() => ({
     alignItems: 'center',
     gap: space[3],
   },
+  // Multi-line (e.g. a review): a taller box, text starts at the top.
+  fieldMulti: { height: undefined, minHeight: 120, borderRadius: radius.md, alignItems: 'flex-start', paddingVertical: space[3] },
+  inputMulti: { height: undefined, minHeight: 96, textAlignVertical: 'top', paddingTop: 0 },
   input: {
     flex: 1,
     height: '100%',
