@@ -5,6 +5,7 @@ import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PinDrop } from '@/components/icons/pin-drop';
+import { ContactRow } from '@/components/match/contact-row';
 import { EntryPass } from '@/components/ticket/entry-pass';
 import { JoinSheet, MatchAction, SquadBar, Tag, levelLabel, spotsLabel, statusPill, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
@@ -191,6 +192,16 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
         />
       ) : null}
 
+      {/* Paid: you and the organiser can reach each other. Nobody else sees either number. */}
+      {m.my === 'paid' && m.host ? (
+        <Card style={styles.contact}>
+          <ContactRow caption="Your organiser" name={m.host.name} phone={m.host.phone} />
+          <Text variant="caption" color={colors.textMuted}>
+            Only you and the organiser see each other’s numbers.
+          </Text>
+        </Card>
+      ) : null}
+
       {/* Squad */}
       <View style={styles.section}>
         <View style={styles.sectionRow}>
@@ -342,6 +353,7 @@ const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1, minWidth: 0 },
   content: { paddingHorizontal: gutter, paddingTop: space[2], gap: space[5] },
+  contact: { gap: space[3] },
   hero: { width: '100%', height: 220 },
   heroPill: {
     position: 'absolute',

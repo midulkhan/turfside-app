@@ -550,11 +550,13 @@ export async function buildApp() {
     );
     return matches.feed(req.user?.userId ?? null, { ...p, nearby: p.nearby === 'true' });
   });
+  // Explicit agreement to share your phone number in a squad (organiser ⇄ paid players only).
+  const sharePhone = z.literal(true, { message: 'Agree to share your phone number to continue.' });
   app.get('/v1/matches/:id', { preHandler: optionalUser }, async (req) => matches.getMatch(req.user?.userId ?? null, matchId(req)));
   app.post('/v1/matches', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
     matches.createMatch(
       req.user!.userId,
-      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29) }), req.body),
+      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29), sharePhone }), req.body),
     ),
   );
   app.get('/v1/matches/joined', { preHandler: requireUser }, async (req) => matches.joined(req.user!.userId));
@@ -571,7 +573,7 @@ export async function buildApp() {
     matches.requestToJoin(
       req.user!.userId,
       matchId(req),
-      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1) }), req.body ?? {}),
+      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1), sharePhone }), req.body ?? {}),
     ),
   );
   app.delete('/v1/matches/:id/join', { preHandler: requireUser }, async (req) => matches.withdraw(req.user!.userId, matchId(req)));

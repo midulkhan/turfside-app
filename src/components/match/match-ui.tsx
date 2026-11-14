@@ -7,6 +7,7 @@ import { Alert } from '@/components/ui/dialog';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, Divider } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
@@ -226,9 +227,16 @@ export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
 export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; spots?: number; onClose: () => void }) {
   const [position, setPosition] = useState<MatchPosition>('any');
   const [level, setLevel] = useState<MatchLevel>('casual');
+  const [sharePhone, setSharePhone] = useState(false);
+  // Fresh agreement each time the sheet opens for a game.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  if ((match?.id ?? null) !== openFor) {
+    setOpenFor(match?.id ?? null);
+    setSharePhone(false);
+  }
   const join = useJoinMatch();
   const send = () => {
-    if (!match) return;
+    if (!match || !sharePhone) return;
     join.mutate(
       { id: match.id, position, level, spots },
       {
@@ -274,10 +282,35 @@ export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; 
               You then have 5 minutes to pay.
             </Text>
           </View>
-          <Button label={spots === 1 ? 'Send request' : `Send request · ${spots} spots`} onPress={send} loading={join.isPending} />
+          <PhoneConsent role="player" checked={sharePhone} onChange={setSharePhone} />
+          <Button
+            label={spots === 1 ? 'Send request' : `Send request · ${spots} spots`}
+            onPress={send}
+            loading={join.isPending}
+            disabled={!sharePhone}
+          />
         </View>
       ) : null}
     </Sheet>
+  );
+}
+
+/**
+ * Agreement to share your phone number inside a squad. Organiser ⇄ paid players only:
+ * players never see each other's numbers. Required before opening spots or asking to join.
+ */
+function PhoneConsent({ checked, onChange, role }: { checked: boolean; onChange: (v: boolean) => void; role: 'host' | 'player' }) {
+  return (
+    <View style={[styles.consent, checked && styles.consentOn]}>
+      <Checkbox checked={checked} onChange={onChange}>
+        <Text variant="labelStrong">Share my phone number</Text>
+        <Text variant="caption" color={colors.textMuted} style={styles.consentBody}>
+          {role === 'host'
+            ? 'Players who pay to join this game will see your number, so they can reach you. Players who only ask to join won’t.'
+            : 'Once you’ve paid, the organiser sees your number and you see theirs. Other players in the squad never see it.'}
+        </Text>
+      </Checkbox>
+    </View>
   );
 }
 
@@ -304,6 +337,7 @@ export function CreateMatchSheet({
   const [title, setTitle] = useState('');
   const [level, setLevel] = useState<MatchLevel>('casual');
   const [spots, setSpots] = useState(1);
+  const [sharePhone, setSharePhone] = useState(false);
   // Each time the sheet opens for a booking, start fresh: one open spot, no name, casual.
   const [openFor, setOpenFor] = useState<string | null>(null);
   if ((booking?.id ?? null) !== openFor) {
@@ -312,12 +346,13 @@ export function CreateMatchSheet({
       setSpots(1);
       setTitle('');
       setLevel('casual');
+      setSharePhone(false);
     }
   }
   const create = useCreateMatch();
   const share = booking ? Math.ceil(booking.amountPaid / players / 100) * 100 : 0;
   const open = () => {
-    if (!booking) return;
+    if (!booking || !sharePhone) return;
     create.mutate(
       { bookingId: booking.id, title: title.trim() || undefined, level, openSpots: spots },
       {
@@ -369,7 +404,8 @@ export function CreateMatchSheet({
               Each player pays {formatTaka(share)}, the booking split {players} ways. Nobody pays more than their share.
             </Text>
           </View>
-          <Button label={`Open ${spots} spot${spots === 1 ? '' : 's'}`} onPress={open} loading={create.isPending} />
+          <PhoneConsent role="host" checked={sharePhone} onChange={setSharePhone} />
+          <Button label={`Open ${spots} spot${spots === 1 ? '' : 's'}`} onPress={open} loading={create.isPending} disabled={!sharePhone} />
         </View>
       ) : null}
     </Sheet>
@@ -411,6 +447,9 @@ const styles = createStyles(() => ({
   sheetHead: { gap: space[1], marginBottom: space[1] },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   note: { flexDirection: 'row', gap: space[2], alignItems: 'flex-start', paddingVertical: space[1] },
+  consent: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2] },
+  consentOn: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
+  consentBody: { marginTop: 2 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   stepValue: { minWidth: 28, textAlign: 'center' },
 }));

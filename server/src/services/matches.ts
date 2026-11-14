@@ -187,7 +187,12 @@ export async function getMatch(viewerId: string | null, id: string) {
   if (m.my !== 'paid') return m;
   const { getBooking } = await import('./bookings'); // lazy: bookings imports this module
   const t = await getBooking(r.user_id, r.booking_id).catch(() => null);
-  return { ...m, pass: t ? { code: t.code, passToken: t.passToken } : null };
+  // …and the organiser's number (they agreed when opening spots). Never other players' numbers.
+  const host = await one<{ name: string; phone: string }>(
+    `select u.name, u.phone from player_requests r join users u on u.id = r.user_id where r.id = $1 and r.phone_consent_at is not null`,
+    [id],
+  );
+  return { ...m, pass: t ? { code: t.code, passToken: t.passToken } : null, ...(host ? { host: { name: host.name, phone: host.phone } } : {}) };
 }
 
 /** Spots paid for or held right now (inside a transaction that has locked the match row). */
@@ -243,7 +248,7 @@ export async function joined(userId: string) {
 // ── Organiser ──────────────────────────────────────────────────────────────
 
 /** Open spots on one of your confirmed bookings. Idempotent: a booking has one live match. */
-export async function createMatch(userId: string, input: { bookingId: string; title?: string; level: Level; openSpots: number }) {
+export async function createMatch(userId: string, input: { bookingId: string; title?: string; level: Level; openSpots: number; sharePhone?: true }) {
   const b = await one<{ id: string; venue_id: string; day: string; start_min: number; total: number; status: string }>(
     'select id, venue_id, day::text, start_min, total, status from bookings where id = $1 and user_id = $2',
     [input.bookingId, userId],
@@ -261,9 +266,9 @@ export async function createMatch(userId: string, input: { bookingId: string; ti
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Late night';
   const title = (input.title?.trim() || `${part} ${format}`).slice(0, 60);
   const created = await one<{ id: string }>(
-    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total)
-     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8)
-     on conflict (booking_id) where status <> 'cancelled' do update set updated_at = now()
+    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total, phone_consent_at)
+     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8, now())
+     on conflict (booking_id) where status <> 'cancelled' do update set updated_at = now(), phone_consent_at = coalesce(player_requests.phone_consent_at, now())
      returning id`,
     [b.id, userId, input.openSpots, fairShare(b.total, players), title, input.level, format, players],
   );
@@ -279,8 +284,10 @@ async function ownMatch(userId: string, id: string) {
 /** The organiser's view: the match plus everyone who asked and everyone in. */
 export async function manage(userId: string, id: string) {
   const r = await ownMatch(userId, id);
-  const people = await q<{ user_id: string; name: string; avatar_key: string | null; position: string | null; level: string | null; status: string; pay_by: Date | null; holding: boolean; spots: number; games: number }>(
+  const people = await q<{ user_id: string; name: string; avatar_key: string | null; position: string | null; level: string | null; status: string; pay_by: Date | null; holding: boolean; spots: number; games: number; phone: string | null }>(
     `select m.user_id, u.name, u.avatar_key, m.position, m.level, m.status, m.pay_by, ${HOLDING} holding, m.spots,
+            -- The organiser sees a player's number only once they've paid (and agreed when asking).
+            case when m.status = 'paid' and m.phone_consent_at is not null then u.phone end phone,
             ((select count(*) from bookings x where x.user_id = m.user_id and x.status in ('checked_in','completed','confirmed') and x.day < (now() at time zone 'Asia/Dhaka')::date)
              + (select count(*) from player_request_members y join player_requests z on z.id = y.request_id join bookings w on w.id = z.booking_id
                  where y.user_id = m.user_id and y.status = 'paid' and w.day < (now() at time zone 'Asia/Dhaka')::date))::int games
@@ -305,7 +312,12 @@ export async function manage(userId: string, id: string) {
     requests: people.filter((x) => x.status === 'pending').map(person),
     squad: people
       .filter((x) => x.status === 'paid' || x.holding)
-      .map((x) => ({ ...person(x), paid: x.status === 'paid', payBy: x.status === 'accepted' && x.pay_by ? new Date(x.pay_by).getTime() : null })),
+      .map((x) => ({
+        ...person(x),
+        paid: x.status === 'paid',
+        payBy: x.status === 'accepted' && x.pay_by ? new Date(x.pay_by).getTime() : null,
+        ...(x.phone ? { phone: x.phone } : {}),
+      })),
   };
 }
 
@@ -358,7 +370,7 @@ export async function decide(userId: string, id: string, memberId: string, accep
 
 // ── Player ─────────────────────────────────────────────────────────────────
 
-export async function requestToJoin(userId: string, id: string, input: { position: Position; level: Level; spots?: number }) {
+export async function requestToJoin(userId: string, id: string, input: { position: Position; level: Level; spots?: number; sharePhone?: true }) {
   const spots = Math.max(1, Math.floor(input.spots ?? 1));
   await tx(async (c) => {
     const r = (
@@ -379,8 +391,9 @@ export async function requestToJoin(userId: string, id: string, input: { positio
     if (free <= 0) throw new ApiError('conflict', 'This game is full.');
     if (spots > free) throw new ApiError('conflict', `Only ${free} ${free === 1 ? 'spot is' : 'spots are'} left. Lower the number and try again.`);
     await c.query(
-      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at) values ($1,$2,'pending',$3,$4,$5, now())
-       on conflict (request_id, user_id) do update set status = 'pending', position = $3, level = $4, spots = $5, created_at = now(), decided_at = null, pay_by = null`,
+      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at, phone_consent_at) values ($1,$2,'pending',$3,$4,$5, now(), now())
+       on conflict (request_id, user_id) do update set status = 'pending', position = $3, level = $4, spots = $5, created_at = now(), decided_at = null, pay_by = null,
+         phone_consent_at = now()`,
       [id, userId, input.position, input.level, spots],
     );
     const who = (await c.query<{ name: string }>('select name from users where id = $1', [userId])).rows[0]?.name ?? 'A player';

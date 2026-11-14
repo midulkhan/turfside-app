@@ -64,7 +64,7 @@ d('find players', () => {
     // Before: the paid booking is offered as one that can take players.
     const before = (await call('GET', '/v1/matches/mine', undefined, org.accessToken)).json;
     expect(before.bookings.map((b: Json) => b.id)).toContain(bookingId);
-    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side' }, org.accessToken);
+    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side', sharePhone: true }, org.accessToken);
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     matchId = r.json.id;
     expect(r.json.my).toBe('owner');
@@ -78,7 +78,7 @@ d('find players', () => {
     expect(after.bookings.map((b: Json) => b.id)).not.toContain(bookingId);
     expect((await call('GET', '/v1/matches/mine', undefined, p1.accessToken)).json.matches).toEqual([]);
     // Again: same match, not a second one.
-    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3 }, org.accessToken)).json.id).toBe(matchId);
+    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, sharePhone: true }, org.accessToken)).json.id).toBe(matchId);
     // The booked slot on the turf page now advertises the squad (and who is the host).
     const slotOf = async (token?: string) =>
       ((await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(6)}`, undefined, token)).json.slots as Json[]).find((x) => x.squad);
@@ -87,7 +87,7 @@ d('find players', () => {
     expect(seen!.squad.host).toBeUndefined();
     expect((await slotOf(org.accessToken))!.squad.host).toBe(true);
     // Someone else's booking can't be used.
-    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2 }, p1.accessToken)).status).toBe(404);
+    expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2, sharePhone: true }, p1.accessToken)).status).toBe(404);
   });
 
   it('players find it and ask to join; the organiser sees the requests', async () => {
@@ -101,12 +101,15 @@ d('find players', () => {
     expect(item.my).toBe('none');
     expect(item.spotsLeft).toBe(3);
     expect(item.faces[0].name).toBe('Organiser One');
+    // Asking without agreeing to share your number (after paying, with the organiser only): refused.
+    const noConsent = await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder' }, p1.accessToken);
+    expect(noConsent.status).toBe(400);
     // More spots than are open: refused, nothing recorded.
-    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 4 }, p1.accessToken)).status).toBe(409);
-    const asked = (await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual', spots: 2 }, p1.accessToken)).json;
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 4, sharePhone: true }, p1.accessToken)).status).toBe(409);
+    const asked = (await call('POST', `/v1/matches/${matchId}/join`, { position: 'midfielder', level: 'casual', spots: 2, sharePhone: true }, p1.accessToken)).json;
     expect(asked).toMatchObject({ my: 'pending', mySpots: 2 });
-    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular' }, p2.accessToken)).json.my).toBe('pending');
-    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, org.accessToken)).status).toBe(403); // own match
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular', sharePhone: true }, p2.accessToken)).json.my).toBe('pending');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true }, org.accessToken)).status).toBe(403); // own match
     // Each request reached the organiser's phone as a push, with what the app needs to open it.
     const pushes = (await call('GET', '/v1/test/pushes')).json.sent as Json[];
     const mine = pushes.filter((p) => p.to === pushToken);
@@ -157,6 +160,19 @@ d('find players', () => {
     expect(after.pass.passToken).toMatch(/^TSP2\./);
     expect((await call('GET', `/v1/matches/${matchId}`, undefined, p2.accessToken)).json.pass).toBeUndefined();
     expect((await call('GET', `/v1/matches/${matchId}`)).json.pass).toBeUndefined();
+    // Phone numbers: the paid player gets the organiser's; the organiser gets paid players' only;
+    // nobody else gets any, and no player ever sees another player's number.
+    expect(after.host).toEqual({ name: 'Organiser One', phone: org.user.phone });
+    for (const viewer of [p2, p3]) {
+      const seen = (await call('GET', `/v1/matches/${matchId}`, undefined, viewer.accessToken)).json;
+      expect(seen.host).toBeUndefined();
+      expect(JSON.stringify(seen)).not.toContain(org.user.phone);
+      expect(JSON.stringify(seen)).not.toContain(p1.user.phone);
+    }
+    expect(JSON.stringify(after)).not.toContain(p2.user.phone);
+    const managed = (await call('GET', `/v1/matches/${matchId}/manage`, undefined, org.accessToken)).json;
+    expect(managed.squad.find((x: Json) => x.userId === p1.user.id).phone).toBe(p1.user.phone);
+    expect(JSON.stringify(managed.requests)).not.toContain(p2.user.phone); // asked, not paid: hidden
     expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
   });
 
@@ -164,16 +180,16 @@ d('find players', () => {
     expect((await call('POST', `/v1/matches/${matchId}/requests/${p2.user.id}/decline`, undefined, org.accessToken)).status).toBe(200);
     expect((await call('GET', `/v1/matches/${matchId}`, undefined, p2.accessToken)).json.my).toBe('declined');
     // A no isn't final: they can ask again (only for what's left).
-    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 2 }, p2.accessToken)).status).toBe(409);
-    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 1 }, p2.accessToken)).json).toMatchObject({ my: 'pending', mySpots: 1 });
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 2, sharePhone: true }, p2.accessToken)).status).toBe(409);
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 1, sharePhone: true }, p2.accessToken)).json).toMatchObject({ my: 'pending', mySpots: 1 });
     const paused = await call('PATCH', `/v1/matches/${matchId}`, { paused: true }, org.accessToken);
     expect(paused.json.status).toBe('paused');
     // Paused: the slot shows plain "Booked" again.
     const pausedSlots = (await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(6)}`)).json.slots as Json[];
     expect(pausedSlots.some((x) => x.squad)).toBe(false);
-    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).status).toBe(403);
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true }, p3.accessToken)).status).toBe(403);
     expect((await call('PATCH', `/v1/matches/${matchId}`, { paused: false }, org.accessToken)).json.status).toBe('open');
-    expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).json.my).toBe('pending');
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true }, p3.accessToken)).json.my).toBe('pending');
     expect((await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken)).json.my).toBe('withdrawn');
   });
 
@@ -202,7 +218,7 @@ d('find players', () => {
     expect((await call('PUT', '/v1/me/settings', { notifications: false }, org.accessToken)).status).toBe(200);
     const listed = async () => ((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).length;
     const inApp = await listed();
-    const rejoin = await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual' }, p3.accessToken);
+    const rejoin = await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual', sharePhone: true }, p3.accessToken);
     expect(rejoin.status, JSON.stringify(rejoin.json)).toBe(200);
     expect(await listed()).toBe(inApp + 1); // the news is there in the app…
     expect(await count()).toBe(before); // …but no push went out
@@ -210,7 +226,7 @@ d('find players', () => {
     // Removing the token (sign-out on that phone) stops pushes to it.
     expect((await call('DELETE', '/v1/me/push-token', { token: pushToken }, org.accessToken)).status).toBe(200);
     await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken);
-    await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual' }, p3.accessToken);
+    await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual', sharePhone: true }, p3.accessToken);
     expect(await count()).toBe(before);
   });
 

@@ -176,8 +176,9 @@ export const getMatches = (p: MatchFeedParams, cursor: number, signal?: AbortSig
     query: { lat: p.lat, lng: p.lng, nearby: p.nearby ? 'true' : undefined, day: p.day, cursor, limit: PAGE },
   });
 export const getMatch = (id: string, signal?: AbortSignal) => request<Match>('GET', `/v1/matches/${enc(id)}`, { auth: 'optional', signal });
+/** The UI only allows this after the organiser agrees to share their number (sharePhone). */
 export const createMatch = (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number }) =>
-  request<Match>('POST', '/v1/matches', { auth: 'required', body: b });
+  request<Match>('POST', '/v1/matches', { auth: 'required', body: { ...b, sharePhone: true } });
 export const getMatchManage = (id: string, signal?: AbortSignal) =>
   request<MatchManage>('GET', `/v1/matches/${enc(id)}/manage`, { auth: 'required', signal });
 export const updateMatch = (id: string, patch: { title?: string; paused?: boolean }) =>
@@ -186,8 +187,9 @@ export const decideRequest = (id: string, userId: string, accept: boolean) =>
   request<MatchManage>('POST', `/v1/matches/${enc(id)}/requests/${enc(userId)}/${accept ? 'accept' : 'decline'}`, { auth: 'required' });
 export const getJoinedMatches = (signal?: AbortSignal) => request<Match[]>('GET', '/v1/matches/joined', { auth: 'required', signal });
 export const getMyMatches = (signal?: AbortSignal) => request<MyMatches>('GET', '/v1/matches/mine', { auth: 'required', signal });
+/** The UI only allows this after the player agrees to share their number (sharePhone). */
 export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number }) =>
-  request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: b });
+  request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: { ...b, sharePhone: true } });
 export const leaveMatch = (id: string) => request<Match>('DELETE', `/v1/matches/${enc(id)}/join`, { auth: 'required' });
 /** Pay your share of a match you were accepted into (bKash, like a booking). */
 export const startSharePayment = (id: string, idempotencyKey: string, returnUrl?: string) =>

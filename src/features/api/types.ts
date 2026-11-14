@@ -158,12 +158,15 @@ export type Match = {
   reservedUntil?: number | null;
   /** Paid players only: the organiser's entry pass (same code and QR as their ticket). */
   pass?: { code: string; passToken: string } | null;
+  /** Paid players only: the organiser's contact (they agreed when opening spots). */
+  host?: { name: string; phone: string };
 };
 export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number; spots?: number };
 export type MatchManage = Match & {
   booking: { id: string; code: string };
   requests: MatchPerson[];
-  squad: (MatchPerson & { paid: boolean; payBy: number | null })[];
+  /** `phone`: only for players who have paid (and agreed to share it); never shown to other players. */
+  squad: (MatchPerson & { paid: boolean; payBy: number | null; phone?: string })[];
 };
 /** Find players (organiser): your matches, and paid bookings that could still take players. */
 export type MyMatches = {

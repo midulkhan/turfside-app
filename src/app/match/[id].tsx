@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
-import { CalendarDays, CircleCheck, Info, MapPin, Pause, Pencil, Play, Share2, UsersRound } from 'lucide-react-native';
+import { CalendarDays, CircleCheck, Info, MapPin, Pause, Pencil, Phone, Play, Share2, UsersRound } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
@@ -23,6 +23,7 @@ import type { MatchManage, MatchPerson } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
+import { formatPhone } from '@/components/match/contact-row';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
@@ -258,10 +259,26 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
                 </View>
                 <SpotsTag n={p.spots} always />
               </View>
-              <View style={[styles.state, styles.memberState, p.paid ? styles.statePaid : styles.stateWaiting]}>
-                <Text variant="caption" color={p.paid ? colors.limeText : colors.warningText}>
-                  {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying now'}
-                </Text>
+              <View style={styles.memberFoot}>
+                <View style={[styles.state, p.paid ? styles.statePaid : styles.stateWaiting]}>
+                  <Text variant="caption" color={p.paid ? colors.limeText : colors.warningText}>
+                    {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying now'}
+                  </Text>
+                </View>
+                {/* Their number appears once they've paid (they agreed when asking). Only you see it. */}
+                {p.phone ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Call ${p.name}`}
+                    hitSlop={8}
+                    onPress={() => Linking.openURL(`tel:${p.phone}`)}
+                    style={({ pressed }) => [styles.call, pressed && styles.callPressed]}>
+                    <Phone size={14} color={colors.ink} strokeWidth={2} />
+                    <Text variant="label" numberOfLines={1}>
+                      {formatPhone(p.phone)}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             </Card>
           ))}
@@ -341,7 +358,19 @@ const styles = createStyles(() => ({
   person: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   member: { gap: space[3] },
   // Lines up with the name (avatar 44 + gap).
-  memberState: { alignSelf: 'flex-start', marginLeft: 44 + space[3] },
+  memberFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[2], marginLeft: 44 + space[3] },
+  call: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: space[3],
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexShrink: 1,
+  },
+  callPressed: { backgroundColor: colors.surfaceMuted },
   request: { gap: space[3] },
   decide: { flexDirection: 'row', gap: space[3] },
   emptyCard: { flexDirection: 'row', alignItems: 'center', gap: space[3] },

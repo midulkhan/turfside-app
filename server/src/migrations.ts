@@ -16,6 +16,7 @@ import m011 from '../db/migrations/011_phone_change.sql';
 import m012 from '../db/migrations/012_login_otp.sql';
 import m013 from '../db/migrations/013_squad_slot_signal.sql';
 import m014 from '../db/migrations/014_push.sql';
+import m015 from '../db/migrations/015_phone_consent.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -32,6 +33,7 @@ const MIGRATIONS: [string, string][] = [
   ['012_login_otp', m012],
   ['013_squad_slot_signal', m013],
   ['014_push', m014],
+  ['015_phone_consent', m015],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */
