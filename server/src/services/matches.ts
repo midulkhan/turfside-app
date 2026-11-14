@@ -189,7 +189,7 @@ export async function getMatch(viewerId: string | null, id: string) {
   const t = await getBooking(r.user_id, r.booking_id).catch(() => null);
   // …and the organiser's number (they agreed when opening spots). Never other players' numbers.
   const host = await one<{ name: string; phone: string }>(
-    `select u.name, u.phone from player_requests r join users u on u.id = r.user_id where r.id = $1 and r.phone_consent_at is not null`,
+    `select u.name, coalesce(r.contact_phone, u.phone) phone from player_requests r join users u on u.id = r.user_id where r.id = $1 and r.phone_consent_at is not null`,
     [id],
   );
   return { ...m, pass: t ? { code: t.code, passToken: t.passToken } : null, ...(host ? { host: { name: host.name, phone: host.phone } } : {}) };
@@ -248,7 +248,7 @@ export async function joined(userId: string) {
 // ── Organiser ──────────────────────────────────────────────────────────────
 
 /** Open spots on one of your confirmed bookings. Idempotent: a booking has one live match. */
-export async function createMatch(userId: string, input: { bookingId: string; title?: string; level: Level; openSpots: number; sharePhone?: true }) {
+export async function createMatch(userId: string, input: { bookingId: string; title?: string; level: Level; openSpots: number; sharePhone?: true; contactPhone?: string }) {
   const b = await one<{ id: string; venue_id: string; day: string; start_min: number; total: number; status: string }>(
     'select id, venue_id, day::text, start_min, total, status from bookings where id = $1 and user_id = $2',
     [input.bookingId, userId],
@@ -266,11 +266,12 @@ export async function createMatch(userId: string, input: { bookingId: string; ti
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Late night';
   const title = (input.title?.trim() || `${part} ${format}`).slice(0, 60);
   const created = await one<{ id: string }>(
-    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total, phone_consent_at)
-     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8, now())
+    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total, phone_consent_at, contact_phone)
+     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8, now(), $9)
      on conflict (booking_id) where status <> 'cancelled' do update set updated_at = now(), phone_consent_at = coalesce(player_requests.phone_consent_at, now())
      returning id`,
-    [b.id, userId, input.openSpots, fairShare(b.total, players), title, input.level, format, players],
+    // A different number for this squad (10 national digits, already validated) — stored like account numbers.
+    [b.id, userId, input.openSpots, fairShare(b.total, players), title, input.level, format, players, input.contactPhone ? `+880${input.contactPhone}` : null],
   );
   return getMatch(userId, created!.id);
 }

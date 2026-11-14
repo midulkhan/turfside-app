@@ -181,7 +181,7 @@ export const getMatches = (p: MatchFeedParams, cursor: number, signal?: AbortSig
   });
 export const getMatch = (id: string, signal?: AbortSignal) => request<Match>('GET', `/v1/matches/${enc(id)}`, { auth: 'optional', signal });
 /** The UI only allows this after the organiser agrees to share their number (sharePhone). */
-export const createMatch = (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number }) =>
+export const createMatch = (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number; contactPhone?: string }) =>
   request<Match>('POST', '/v1/matches', { auth: 'required', body: { ...b, sharePhone: true } });
 export const getMatchManage = (id: string, signal?: AbortSignal) =>
   request<MatchManage>('GET', `/v1/matches/${enc(id)}/manage`, { auth: 'required', signal });

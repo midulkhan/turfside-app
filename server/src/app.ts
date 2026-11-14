@@ -551,7 +551,7 @@ export async function buildApp() {
   app.post('/v1/matches', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
     matches.createMatch(
       req.user!.userId,
-      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29), sharePhone }), req.body),
+      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29), sharePhone, contactPhone: phone10.optional() }), req.body),
     ),
   );
   app.get('/v1/matches/joined', { preHandler: requireUser }, async (req) => matches.joined(req.user!.userId));

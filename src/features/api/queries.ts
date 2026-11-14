@@ -403,7 +403,7 @@ export function useUpdateMatch(id: string) {
 export function useCreateMatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number }) => api.createMatch(b),
+    mutationFn: (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number; contactPhone?: string }) => api.createMatch(b),
     onSuccess: (m, b) => {
       touchMatches(qc, m.id);
       void qc.invalidateQueries({ queryKey: qk.booking(b.bookingId) });

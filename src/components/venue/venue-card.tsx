@@ -56,9 +56,11 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
                 </Text>
               </View>
               <View style={styles.price}>
-                <Text variant="bodyStrong">{formatTaka(venue.hourlyFrom)}</Text>
-                <Text variant="caption" color={colors.textMuted}>
-                  / hour
+                <Text variant="bodyStrong" numberOfLines={1}>
+                  {formatTaka(venue.hourlyFrom)}
+                  <Text variant="caption" color={colors.textMuted}>
+                    {' '}/hrs
+                  </Text>
                 </Text>
               </View>
             </View>
@@ -152,7 +154,7 @@ const styles = createStyles(() => ({
   body: { paddingHorizontal: space[3], paddingTop: space[3], paddingBottom: space[2], gap: space[3] },
   titleRow: { flexDirection: 'row', gap: space[3] },
   flex: { flex: 1, gap: 2 },
-  price: { alignItems: 'flex-end' },
+  price: { alignItems: 'flex-end', flexShrink: 0 },
   name: { fontFamily: font.medium, fontSize: 15.5, lineHeight: 20 },
   meta: { fontSize: 13, lineHeight: 17 },
   tagText: { fontSize: 12.5, lineHeight: 16 },

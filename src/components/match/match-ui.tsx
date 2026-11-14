@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2 } from 'lucide-react-native';
-import { memo, useState } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Alert } from '@/components/ui/dialog';
@@ -10,12 +10,14 @@ import { Card, Divider } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Chip } from '@/components/ui/chip';
 import { IconButton } from '@/components/ui/icon-button';
-import { Input } from '@/components/ui/input';
+import { Input, PhoneInput } from '@/components/ui/input';
+import { formatPhone } from '@/components/match/contact-row';
 import { Photo } from '@/components/ui/photo';
 import { Sheet } from '@/components/ui/sheet';
 import { Text } from '@/components/ui/text';
 import { useCreateMatch, useJoinMatch, useLeaveMatch } from '@/features/api/queries';
 import type { Match, MatchLevel, MatchPosition } from '@/features/api/types';
+import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
 import { dhakaToday, formatClock, formatDay, formatRange, type DayKey } from '@/lib/time';
@@ -299,7 +301,17 @@ export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; 
  * Agreement to share your phone number inside a squad. Organiser ⇄ paid players only:
  * players never see each other's numbers. Required before opening spots or asking to join.
  */
-function PhoneConsent({ checked, onChange, role }: { checked: boolean; onChange: (v: boolean) => void; role: 'host' | 'player' }) {
+function PhoneConsent({
+  checked,
+  onChange,
+  role,
+  children,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  role: 'host' | 'player';
+  children?: ReactNode;
+}) {
   return (
     <View style={[styles.consent, checked && styles.consentOn]}>
       <Checkbox checked={checked} onChange={onChange}>
@@ -310,6 +322,7 @@ function PhoneConsent({ checked, onChange, role }: { checked: boolean; onChange:
             : 'Once you’ve paid, the organiser sees your number and you see theirs. Other players in the squad never see it.'}
         </Text>
       </Checkbox>
+      {checked ? children : null}
     </View>
   );
 }
@@ -338,6 +351,11 @@ export function CreateMatchSheet({
   const [level, setLevel] = useState<MatchLevel>('casual');
   const [spots, setSpots] = useState(1);
   const [sharePhone, setSharePhone] = useState(false);
+  // Which number players see: the account's, or another one just for this squad.
+  const { user } = useSession();
+  const [otherNumber, setOtherNumber] = useState(false);
+  const [contactPhone, setContactPhone] = useState('');
+  const contactValid = /^1[3-9]\d{8}$/.test(contactPhone);
   // Each time the sheet opens for a booking, start fresh: one open spot, no name, casual.
   const [openFor, setOpenFor] = useState<string | null>(null);
   if ((booking?.id ?? null) !== openFor) {
@@ -347,14 +365,17 @@ export function CreateMatchSheet({
       setTitle('');
       setLevel('casual');
       setSharePhone(false);
+      setOtherNumber(false);
+      setContactPhone('');
     }
   }
   const create = useCreateMatch();
+  const canOpen = sharePhone && (!otherNumber || contactValid);
   const share = booking ? Math.ceil(booking.amountPaid / players / 100) * 100 : 0;
   const open = () => {
-    if (!booking || !sharePhone) return;
+    if (!booking || !canOpen) return;
     create.mutate(
-      { bookingId: booking.id, title: title.trim() || undefined, level, openSpots: spots },
+      { bookingId: booking.id, title: title.trim() || undefined, level, openSpots: spots, contactPhone: otherNumber ? contactPhone : undefined },
       {
         onSuccess: (m) => {
           haptic.success();
@@ -404,8 +425,27 @@ export function CreateMatchSheet({
               Each player pays {formatTaka(share)}, the booking split {players} ways. Nobody pays more than their share.
             </Text>
           </View>
-          <PhoneConsent role="host" checked={sharePhone} onChange={setSharePhone} />
-          <Button label={`Open ${spots} spot${spots === 1 ? '' : 's'}`} onPress={open} loading={create.isPending} disabled={!sharePhone} />
+          <PhoneConsent role="host" checked={sharePhone} onChange={setSharePhone}>
+            <View style={styles.numberPick}>
+              <View style={styles.choices}>
+                <Chip label="My number" small active={!otherNumber} tone="dark" onPress={() => setOtherNumber(false)} />
+                <Chip label="Different number" small active={otherNumber} tone="dark" onPress={() => setOtherNumber(true)} />
+              </View>
+              {otherNumber ? (
+                <PhoneInput
+                  value={contactPhone}
+                  onChangeText={setContactPhone}
+                  error={contactPhone.length === 10 && !contactValid ? 'Enter a valid Bangladesh mobile number.' : undefined}
+                  hint="Only for this squad. Your account number stays private."
+                />
+              ) : user?.phone ? (
+                <Text variant="label" color={colors.textMuted}>
+                  Players will see {formatPhone(user.phone)}
+                </Text>
+              ) : null}
+            </View>
+          </PhoneConsent>
+          <Button label={`Open ${spots} spot${spots === 1 ? '' : 's'}`} onPress={open} loading={create.isPending} disabled={!canOpen} />
         </View>
       ) : null}
     </Sheet>
@@ -450,6 +490,7 @@ const styles = createStyles(() => ({
   consent: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2] },
   consentOn: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
   consentBody: { marginTop: 2 },
+  numberPick: { gap: space[2], marginTop: space[3], marginBottom: space[1] },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   stepValue: { minWidth: 28, textAlign: 'center' },
 }));

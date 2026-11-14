@@ -18,6 +18,7 @@ import m013 from '../db/migrations/013_squad_slot_signal.sql';
 import m014 from '../db/migrations/014_push.sql';
 import m015 from '../db/migrations/015_phone_consent.sql';
 import m016 from '../db/migrations/016_reviews.sql';
+import m018 from '../db/migrations/018_contact_phone.sql';
 import m017 from '../db/migrations/017_two_factor.sql';
 
 const MIGRATIONS: [string, string][] = [
@@ -38,6 +39,7 @@ const MIGRATIONS: [string, string][] = [
   ['015_phone_consent', m015],
   ['016_reviews', m016],
   ['017_two_factor', m017],
+  ['018_contact_phone', m018],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

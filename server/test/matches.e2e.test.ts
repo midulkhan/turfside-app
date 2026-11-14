@@ -64,7 +64,10 @@ d('find players', () => {
     // Before: the paid booking is offered as one that can take players.
     const before = (await call('GET', '/v1/matches/mine', undefined, org.accessToken)).json;
     expect(before.bookings.map((b: Json) => b.id)).toContain(bookingId);
-    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side', sharePhone: true }, org.accessToken);
+    // The organiser may share a different number for this squad; it must be a valid mobile number.
+    const bad = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, sharePhone: true, contactPhone: '12345' }, org.accessToken);
+    expect(bad.status).toBe(400);
+    const r = await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3, title: 'Evening five-a-side', sharePhone: true, contactPhone: '01799000111' }, org.accessToken);
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     matchId = r.json.id;
     expect(r.json.my).toBe('owner');
@@ -162,7 +165,9 @@ d('find players', () => {
     expect((await call('GET', `/v1/matches/${matchId}`)).json.pass).toBeUndefined();
     // Phone numbers: the paid player gets the organiser's; the organiser gets paid players' only;
     // nobody else gets any, and no player ever sees another player's number.
-    expect(after.host).toEqual({ name: 'Organiser One', phone: org.user.phone });
+    // …the squad number they chose, not their account number.
+    expect(after.host).toEqual({ name: 'Organiser One', phone: '+8801799000111' });
+    expect(JSON.stringify(after)).not.toContain(org.user.phone);
     for (const viewer of [p2, p3]) {
       const seen = (await call('GET', `/v1/matches/${matchId}`, undefined, viewer.accessToken)).json;
       expect(seen.host).toBeUndefined();
