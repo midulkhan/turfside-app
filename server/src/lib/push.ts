@@ -36,6 +36,7 @@ export function kickPush() {
         again = false;
         await flush();
       } while (again);
+      lastRun = { ...lastRun, at: new Date().toISOString(), error: null }; // healthy (even if nothing to send)
     } catch (e) {
       lastRun = { ...lastRun, at: new Date().toISOString(), error: String((e as Error).message ?? e).slice(0, 200) };
     } finally {
@@ -99,7 +100,7 @@ async function flush() {
     const dead = tickets.flatMap((t, k) => (t.status === 'error' && t.details?.error === 'DeviceNotRegistered' ? [chunk[k]!.to] : []));
     if (dead.length) await q('delete from push_tokens where token = any($1)', [dead]);
   }
-  lastRun = { at: new Date().toISOString(), sent: lastRun.sent + sent, error: null };
+  lastRun = { ...lastRun, sent: lastRun.sent + sent };
 }
 
 async function send(messages: unknown[]): Promise<Ticket[]> {
