@@ -1,4 +1,12 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+import { withEntitlementsPlist, type ConfigPlugin } from 'expo/config-plugins';
+
+/** Free signing: drop the push entitlement (expo-notifications adds it even when not listed). */
+const withoutPush: ConfigPlugin = (c) =>
+  withEntitlementsPlist(c, (m) => {
+    delete m.modResults['aps-environment'];
+    return m;
+  });
 
 /**
  * Extends app.json with values that must not be committed, plus one build switch.
@@ -19,7 +27,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(key ? { config: { ...config.android?.config, googleMaps: { apiKey: key } } } : {}),
     },
     ...(freeSigning
-      ? { plugins: (config.plugins ?? []).filter((p) => (Array.isArray(p) ? p[0] : p) !== 'expo-notifications') }
+      ? { plugins: [...(config.plugins ?? []).filter((p) => (Array.isArray(p) ? p[0] : p) !== 'expo-notifications'), withoutPush] }
       : {}),
   } as ExpoConfig;
 };
