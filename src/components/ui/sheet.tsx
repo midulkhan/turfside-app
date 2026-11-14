@@ -118,6 +118,12 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
   }, [mounted, side, screenH]);
 
   const vertical = side === 'bottom';
+  // Runs on the JS thread: the gesture worklet can't touch `Keyboard` itself (it's undefined
+  // on the UI thread), so it hands this one function over instead.
+  const closeFromDrag = () => {
+    Keyboard.dismiss();
+    onClose();
+  };
   const pan = usePanGesture({
     activeOffsetY: vertical ? 10 : undefined,
     failOffsetX: vertical ? [-24, 24] : undefined,
@@ -131,8 +137,7 @@ export function Sheet({ visible, onClose, onClosed, side = 'bottom', width = 320
       'worklet';
       const v = side === 'bottom' ? e.velocityY : -e.velocityX;
       if (drag.get() > extent.get() * 0.3 || v > 900) {
-        scheduleOnRN(Keyboard.dismiss);
-        scheduleOnRN(onClose);
+        scheduleOnRN(closeFromDrag);
       }
       else drag.set(withSpring(0, { damping: 24, stiffness: 300 }));
     },
