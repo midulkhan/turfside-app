@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ArrowUpRight, Heart, Lightbulb, Star, UsersRound } from 'lucide-react-native';
+import { ArrowUpRight, Heart, Star, UsersRound } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
 import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
@@ -69,17 +69,6 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
                   {venue.formats[0]}
                 </Text>
               </View>
-              {venue.floodlit ? (
-                <>
-                  <View style={styles.dot} />
-                  <View style={styles.tag}>
-                    <Lightbulb size={14} color={colors.textMuted} strokeWidth={1.6} />
-                    <Text variant="body" color={colors.textMuted} style={styles.tagText}>
-                      Floodlights
-                    </Text>
-                  </View>
-                </>
-              ) : null}
             </View>
             <Divider />
             <View style={styles.footer}>
@@ -170,7 +159,6 @@ const styles = createStyles(() => ({
   ctaText: { fontSize: 13, lineHeight: 16 },
   tags: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   avail: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#A8D52B', borderWidth: 2, borderColor: colors.limeTint },
   availOff: { backgroundColor: colors.borderStrong, borderColor: colors.surfaceMuted },

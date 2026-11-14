@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
 import { Wordmark } from '@/components/brand/logo';
-import { Divider } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';
 import { Sheet } from '@/components/ui/sheet';
 import { Text } from '@/components/ui/text';
@@ -42,15 +41,19 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
       accessibilityRole="button"
       onPress={() => go(() => router.push(item.href))}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-      <View style={styles.rowIcon}>
-        <item.icon size={20} color={colors.ink} strokeWidth={1.9} />
-      </View>
+      <item.icon size={22} color={colors.ink} strokeWidth={1.7} />
       <Text variant="bodyStrong" style={styles.flex}>
         {item.label}
       </Text>
-      <ChevronRight size={18} color={colors.textSubtle} />
+      <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.8} />
     </Pressable>
   );
+
+  const askLogout = () =>
+    Alert.alert('Log out?', 'You can sign back in any time.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: () => go(() => signOut()) },
+    ]);
 
   return (
     <Sheet
@@ -64,57 +67,71 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
         pending.current = null;
         fn?.();
       }}>
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + space[3], paddingBottom: insets.bottom + space[5] }]}
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.head}>
-          <Wordmark height={24} />
-          <IconButton icon={X} label="Close menu" size={40} onPress={onClose} />
-        </View>
-
-        <View style={styles.group}>
-          {ITEMS.map((it) => (
-            <Row key={it.label} item={it} />
-          ))}
-        </View>
-        <Divider />
-        <Pressable
-          accessibilityRole="button"
-          onPress={() =>
-            Alert.alert('Log out?', 'You can sign back in any time.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Logout', style: 'destructive', onPress: () => go(() => signOut()) },
-            ])
-          }
-          style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-          <View style={[styles.rowIcon, styles.logoutIcon]}>
-            <LogOut size={20} color={colors.ink} strokeWidth={1.9} />
+      <View style={styles.flex}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + space[3] }]}
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.head}>
+            <Wordmark height={24} />
+            <IconButton icon={X} label="Close menu" size={40} onPress={onClose} />
           </View>
-          <Text variant="bodyStrong" color={colors.ink} style={styles.flex}>
-            Logout
-          </Text>
-        </Pressable>
-      </ScrollView>
+          <View style={styles.group}>
+            {ITEMS.map((it) => (
+              <Row key={it.label} item={it} />
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Pinned to the bottom, set apart by a hairline. */}
+        <View style={[styles.footer, { paddingBottom: insets.bottom + space[4] }]}>
+          <Pressable accessibilityRole="button" onPress={askLogout} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+            <View style={styles.logoutIcon}>
+              <LogOut size={17} color="#FFFFFF" strokeWidth={2} />
+            </View>
+            <Text variant="bodyStrong" style={styles.flex}>
+              Logout
+            </Text>
+          </Pressable>
+        </View>
+      </View>
     </Sheet>
   );
 }
 
+const ROW_PAD = space[2];
+
 const styles = createStyles(() => ({
   /** Darker than cards in dark mode, so the drawer reads as its own layer. */
   panelDark: { backgroundColor: colors.deep },
-  content: { paddingHorizontal: gutter, gap: space[4] },
+  content: { paddingHorizontal: gutter, gap: space[6] },
   flex: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   group: { gap: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 52, borderRadius: radius.md, paddingHorizontal: space[2] },
-  pressed: { backgroundColor: colors.bg },
-  rowIcon: {
-    width: 36,
-    height: 36,
+  // Icons line up with the logo's left edge; the pressed highlight reaches a little past it.
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[4],
+    minHeight: 54,
+    borderRadius: radius.md,
+    paddingHorizontal: ROW_PAD,
+    marginHorizontal: -ROW_PAD,
+  },
+  pressed: { backgroundColor: colors.surfaceMuted },
+  footer: {
+    paddingHorizontal: gutter,
+    paddingTop: space[3],
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  logoutIcon: {
+    width: 32,
+    height: 32,
     borderRadius: radius.pill,
-    backgroundColor: colors.limeSoft,
+    backgroundColor: colors.inverse, // dark in both themes, still visible on the dark drawer
     alignItems: 'center',
     justifyContent: 'center',
+    marginHorizontal: -5, // wider than a 22px icon: centred on the icon column, label stays aligned
   },
-  logoutIcon: { backgroundColor: colors.surfaceMuted },
 }));
