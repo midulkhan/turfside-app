@@ -23,6 +23,7 @@ import { OverlayProvider } from '@/components/ui/overlay-host';
 import { installDeviceLabel } from '@/lib/device-label';
 import { installNavGuard } from '@/lib/nav-guard';
 import { DialogHost } from '@/components/ui/dialog';
+import { PushManager } from '@/features/notifications/push';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors } from '@/theme/tokens';
@@ -98,6 +99,7 @@ function RootNavigator() {
         </Stack>
       ) : null}
       {appReady ? <OfflineBanner key={scheme} /> : null}
+      {appReady && user ? <PushManager /> : null}
       {!splashDone ? <VideoSplash appReady={appReady} onDone={finishSplash} /> : null}
     </>
   );

@@ -224,6 +224,7 @@ export async function refresh(token: string, meta: { ip: string; ua?: string; de
 
 export async function logout(sessionId: string) {
   await q('update sessions set revoked_at = now() where id = $1', [sessionId]);
+  await q('delete from push_tokens where session_id = $1', [sessionId]); // no pushes to a signed-out phone
   return { ok: true };
 }
 

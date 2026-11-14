@@ -2,6 +2,7 @@ import { config, missingConfig } from './config';
 import { buildApp } from './app';
 import { closeDb } from './db';
 import { ensureCronJobs } from './jobs';
+import { startPushLoop } from './lib/push';
 import { migrate, schema } from './migrations';
 import { reconcile } from './services/payments';
 import { invalidateVenue } from './services/venues';
@@ -19,6 +20,7 @@ async function main() {
   }
 
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
+  if (config.DATABASE_URL) startPushLoop(); // news made outside a request (expiries, jobs)
 
   // Migrate after listening, and keep retrying: if the database is unreachable at
   // start-up (e.g. a firewall), the tables still get created as soon as it's reachable.

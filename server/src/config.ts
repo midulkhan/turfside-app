@@ -46,6 +46,10 @@ const schema = z.object({
   /** Email (verification codes) through Sender (sender.net). The token lives only in the host's env. */
   SENDER_API_TOKEN: z.string().optional(),
   /** SMTP (e.g. the noreply@ mailbox on the hosting server). Used instead of Sender when set. */
+  /** Optional: Expo access token, only if "Enhanced push security" is on in the EAS project. */
+  EXPO_ACCESS_TOKEN: z.string().optional(),
+  /** Test servers: record pushes instead of sending them. */
+  PUSH_DRY_RUN: bool,
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().default(465),
   SMTP_USER: z.string().optional(),

@@ -113,7 +113,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await api.logout().catch(() => {}); // revoke the refresh token server-side (best effort)
+    await api.logout().catch(() => {}); // revoke the refresh token server-side (best effort); also drops this phone's push token
+    await prefs.remove('ts.pushToken').catch(() => {});
     await tokens.clear();
     await clearUserData();
     setUser(null);

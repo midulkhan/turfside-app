@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "889093416005",
+    "project_id": "turfsides",
+    "storage_bucket": "turfsides.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889093416005:android:2a37d93c3b8c2131f86f2c",
+        "android_client_info": {
+          "package_name": "app.turfsides"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBeHHiU4PFOvI7CxlkvKXL5U--83V6HdP8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

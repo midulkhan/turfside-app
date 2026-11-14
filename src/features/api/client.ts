@@ -69,6 +69,10 @@ export const resetStart = (phone: string) => request<CodeSent>('POST', '/v1/auth
 export const resetVerify = (phone: string, code: string, newPassword: string) =>
   request<AuthResult>('POST', '/v1/auth/password/reset/verify', { body: { phone, code, newPassword } });
 
+/** This phone's Expo push token (server sends booking/squad news to it). */
+export const registerPushToken = (token: string, platform: 'ios' | 'android') =>
+  request<{ ok: true }>('PUT', '/v1/me/push-token', { auth: 'required', body: { token, platform } });
+
 export const logout = () => request<{ ok: true }>('POST', '/v1/auth/logout', { auth: 'required', timeoutMs: 5000 });
 
 export const me = (signal?: AbortSignal) => request<User>('GET', '/v1/me', { auth: 'required', signal });

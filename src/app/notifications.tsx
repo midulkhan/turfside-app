@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { BellRing, CreditCard, Megaphone, UsersRound } from 'lucide-react-native';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,26 +11,14 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useNotifications } from '@/features/api/queries';
 import type { NotificationItem } from '@/features/api/types';
+import { notificationTarget } from '@/features/notifications/open';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 const ICON = { booking: BellRing, payment: CreditCard, promo: Megaphone, match: UsersRound };
 
-/** Where a notification leads: accepted → pay your share; a request → manage; other match news → find players. */
-function target(n: NotificationItem): (() => void) | null {
-  const id = n.data?.matchId;
-  if (!id) return null;
-  switch (n.data?.type) {
-    case 'match_accepted':
-      return () => router.push({ pathname: '/checkout', params: { match: id } });
-    case 'match_request':
-    case 'match_member_paid':
-      return () => router.push({ pathname: '/match/[id]', params: { id } });
-    default:
-      return () => router.push('/join');
-  }
-}
+const target = (n: NotificationItem) => notificationTarget(n.data);
 
 function ago(t: number) {
   const m = Math.round((Date.now() - t) / 60000);

@@ -17,6 +17,7 @@ import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
 import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
 import { emailState, lastEmailSend } from './lib/email';
+import { isExpoToken, kickPush, pushStatus, sentForTests } from './lib/push';
 import { verifyAccess, verifyAnyPass } from './lib/tokens';
 import * as account from './services/account';
 import * as auth from './services/auth';
@@ -114,6 +115,12 @@ export async function buildApp() {
       reply.header('x-db-queries', String((req as unknown as { db?: { n: number } }).db?.n ?? 0));
     });
 
+  // Anything that changed data may have written a notification: push it out right away.
+  if (config.DATABASE_URL)
+    app.addHook('onResponse', async (req, reply) => {
+      if (req.method !== 'GET' && reply.statusCode < 400) void kickPush();
+    });
+
   await app.register(helmet, {
     contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // images are loaded by the app
@@ -165,6 +172,7 @@ export async function buildApp() {
       realtime: db === 'ok' ? await realtimeState() : 'unknown',
       email: await emailState(), // sender:ok once SENDER_API_TOKEN is set and accepted
       emailLastSend: lastEmailSend(),
+      push: pushStatus(), // last outbox run: when, how many sent, last error
       missing: missingConfig(),
       startedAt: STARTED_AT, // changes on every restart: shows whether new settings were picked up
       time: new Date().toISOString(),
@@ -481,6 +489,29 @@ export async function buildApp() {
     // Without `limit`: the old full list (older app builds).
     return p.limit ? bookings.pageBookings(req.user!.userId, p.filter, p.cursor ?? 0, p.limit) : bookings.listBookings(req.user!.userId);
   });
+  // ── Push: this phone's Expo push token (one per device, tied to this login) ──
+  app.put('/v1/me/push-token', { preHandler: requireUser }, async (req) => {
+    const b = parse(z.object({ token: z.string().max(200).refine(isExpoToken, 'Not a push token.'), platform: z.enum(['ios', 'android']) }), req.body);
+    await q(
+      `insert into push_tokens (token, user_id, session_id, platform) values ($1, $2, $3, $4)
+       on conflict (token) do update set user_id = excluded.user_id, session_id = excluded.session_id,
+         platform = excluded.platform, updated_at = now()`,
+      [b.token, req.user!.userId, req.user!.sessionId, b.platform],
+    );
+    return { ok: true };
+  });
+  app.delete('/v1/me/push-token', { preHandler: requireUser }, async (req) => {
+    const b = parse(z.object({ token: z.string().max(200) }), req.body ?? {});
+    await q('delete from push_tokens where token = $1 and user_id = $2', [b.token, req.user!.userId]);
+    return { ok: true };
+  });
+  if (config.PUSH_DRY_RUN && config.NODE_ENV !== 'production') {
+    app.get('/v1/test/pushes', async () => {
+      await kickPush();
+      return { sent: sentForTests };
+    });
+  }
+
   app.get('/v1/me/notifications', { preHandler: requireUser }, async (req) => {
     const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date; data: Record<string, unknown> | null }>(
       'select id, kind, title, body, read_at, created_at, data from notifications where user_id = $1 order by created_at desc limit 50',
@@ -694,7 +725,9 @@ export async function buildApp() {
   app.post('/internal/reconcile', async (req) => {
     const secret = req.headers['x-cron-secret'];
     if (!config.CRON_SECRET || typeof secret !== 'string' || !safeEqual(secret, config.CRON_SECRET)) throw new ApiError('unauthorized', 'Unauthorized.');
-    return payments.reconcile();
+    const out = await payments.reconcile();
+    await kickPush(); // anything that piled up while the process was asleep
+    return out;
   });
 
   app.get('/v1/config', async () => ({

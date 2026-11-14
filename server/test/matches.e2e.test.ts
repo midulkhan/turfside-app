@@ -54,6 +54,7 @@ d('find players', () => {
   let p3: Awaited<ReturnType<typeof newUser>>;
   let bookingId = '';
   let matchId = '';
+  let pushToken = '';
   beforeAll(async () => {
     [org, p1, p2, p3] = await Promise.all([newUser('Organiser One'), newUser('Tanvir Ahmed'), newUser('Rafi Islam'), newUser('Sami Khan')]);
     bookingId = await paidBooking(org.accessToken, 'v_kickoff_uttara', 6);
@@ -90,6 +91,11 @@ d('find players', () => {
   });
 
   it('players find it and ask to join; the organiser sees the requests', async () => {
+    // The organiser's phone is registered for push; junk tokens are refused.
+    const orgToken = `ExponentPushToken[org-${randomUUID().slice(0, 12)}]`;
+    expect((await call('PUT', '/v1/me/push-token', { token: 'not-a-token', platform: 'ios' }, org.accessToken)).status).toBe(400);
+    expect((await call('PUT', '/v1/me/push-token', { token: orgToken, platform: 'android' }, org.accessToken)).status).toBe(200);
+    pushToken = orgToken;
     const feed = (await call('GET', '/v1/matches?lat=23.87&lng=90.40', undefined, p1.accessToken)).json;
     const item = feed.items.find((m: Json) => m.id === matchId);
     expect(item.my).toBe('none');
@@ -101,6 +107,12 @@ d('find players', () => {
     expect(asked).toMatchObject({ my: 'pending', mySpots: 2 });
     expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'goalkeeper', level: 'regular' }, p2.accessToken)).json.my).toBe('pending');
     expect((await call('POST', `/v1/matches/${matchId}/join`, {}, org.accessToken)).status).toBe(403); // own match
+    // Each request reached the organiser's phone as a push, with what the app needs to open it.
+    const pushes = (await call('GET', '/v1/test/pushes')).json.sent as Json[];
+    const mine = pushes.filter((p) => p.to === pushToken);
+    expect(mine.length).toBeGreaterThanOrEqual(2);
+    expect(mine[0]).toMatchObject({ title: 'New request to join', channelId: 'default', data: { type: 'match_request', matchId } });
+    expect(new Set(mine.map((p) => p.data.notificationId)).size).toBe(mine.length); // each notification pushed once
     const m = (await call('GET', `/v1/matches/${matchId}/manage`, undefined, org.accessToken)).json;
     expect(m.requests.map((x: Json) => x.name).sort()).toEqual(['Rafi Islam', 'Tanvir Ahmed']);
     expect((await call('GET', `/v1/matches/${matchId}/manage`, undefined, p1.accessToken)).status).toBe(404); // not theirs
@@ -181,6 +193,25 @@ d('find players', () => {
     expect(bk.items[0].id).toBe(bookingId);
     expect(bk.next.id).toBe(bookingId);
     expect(Array.isArray((await call('GET', '/v1/me/bookings', undefined, org.accessToken)).json)).toBe(true);
+  });
+
+  it('push respects the notifications switch and stops at logout', async () => {
+    const count = async () => ((await call('GET', '/v1/test/pushes')).json.sent as Json[]).filter((p) => p.to === pushToken).length;
+    const before = await count();
+    // Switched off: news is still listed in the app, but the phone isn't buzzed.
+    expect((await call('PUT', '/v1/me/settings', { notifications: false }, org.accessToken)).status).toBe(200);
+    const listed = async () => ((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).length;
+    const inApp = await listed();
+    const rejoin = await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual' }, p3.accessToken);
+    expect(rejoin.status, JSON.stringify(rejoin.json)).toBe(200);
+    expect(await listed()).toBe(inApp + 1); // the news is there in the app…
+    expect(await count()).toBe(before); // …but no push went out
+    expect((await call('PUT', '/v1/me/settings', { notifications: true }, org.accessToken)).status).toBe(200);
+    // Removing the token (sign-out on that phone) stops pushes to it.
+    expect((await call('DELETE', '/v1/me/push-token', { token: pushToken }, org.accessToken)).status).toBe(200);
+    await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken);
+    await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual' }, p3.accessToken);
+    expect(await count()).toBe(before);
   });
 
   it('cancelling the booking cancels the match and flags the paid share for refund', async () => {
