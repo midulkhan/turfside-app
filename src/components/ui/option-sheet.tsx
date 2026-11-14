@@ -29,7 +29,7 @@ export function OptionSheet<T extends string>({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={onClose} scroll={false}>
       <View style={[styles.body, { paddingBottom: insets.bottom + space[4] }]}>
         <Text variant="h3" style={styles.title}>
           {title}

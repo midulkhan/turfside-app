@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight, CalendarDays, Check, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2 } from 'lucide-react-native';
 import { memo, useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { Keyboard, Pressable, View } from 'react-native';
 
 import { Alert } from '@/components/ui/dialog';
 import { Avatar } from '@/components/ui/avatar';
@@ -364,8 +364,13 @@ function NumberChoice({ choice, audience }: { choice: ReturnType<typeof useNumbe
       </View>
       {choice.other ? (
         <PhoneInput
+          autoFocus
           value={choice.phone}
-          onChangeText={choice.setPhone}
+          onChangeText={(v) => {
+            choice.setPhone(v);
+            // A full, valid number: put the keyboard away so the button is right there.
+            if (/^1[3-9]\d{8}$/.test(v)) Keyboard.dismiss();
+          }}
           error={choice.phone.length === 10 && !choice.valid ? 'Enter a valid Bangladesh mobile number.' : undefined}
           hint="Only for this squad. Your account number stays private."
         />
