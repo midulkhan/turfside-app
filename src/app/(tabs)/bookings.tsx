@@ -9,6 +9,7 @@ import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Chip } from '@/components/ui/chip';
+import { Segmented } from '@/components/ui/segmented';
 import { END_THRESHOLD, ListLoader } from '@/components/ui/list-loader';
 import { Overline } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -145,11 +146,13 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
 }
 
 export default function Bookings() {
-  const listRef = useRef<FlashListRef<Booking>>(null);
+  const listRef = useRef<FlashListRef<Booking | Match>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const scrolled = useScrolled();
   const bottom = useTabBarSpace();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>('open'); // upcoming first
+  // Your own bookings and the squads you paid into live in separate tabs.
+  const [tab, setTab] = useState<'bookings' | 'squads'>('bookings');
   // 10 at a time, filtered on the server; the first page also says which game is next.
   const { data, isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useBookingPages(filter);
   const joined = useJoinedMatches();
@@ -177,9 +180,10 @@ export default function Bookings() {
     return { next: nextB, list: items.filter((b) => b.id !== nextB?.id || filter === 'closed') };
   }, [data, filter]);
 
+  const showNext = tab === 'bookings' && !!next && (filter === 'all' || filter === 'open');
   const header = (
     <View style={[styles.header, { paddingTop: space[4] }]}>
-      {next && (filter === 'all' || filter === 'open') ? (
+      {showNext && next ? (
         <PressableScale scaleTo={0.985} onPress={() => router.push({ pathname: '/booking/[id]', params: { id: next.id } })}>
           <Card tone="dark" padded={false} style={styles.next}>
             <Photo source={next.venue.photo} style={styles.nextPhoto} />
@@ -213,23 +217,31 @@ export default function Bookings() {
           </Card>
         </PressableScale>
       ) : null}
-      {squads.length ? (
-        <View style={styles.squads}>
-          <Overline>Squads you joined</Overline>
-          {squads.map((m) => (
-            <SquadRow key={m.id} m={m} today={today} />
-          ))}
-        </View>
-      ) : null}
-      {list.length ? <Overline>{filter === 'all' ? 'All bookings' : FILTERS.find((f) => f.key === filter)!.label}</Overline> : null}
+      {tab === 'bookings' && list.length && showNext ? <Overline>{filter === 'open' ? 'Coming up' : 'All bookings'}</Overline> : null}
     </View>
   );
+
+  const rows: (Booking | Match)[] = tab === 'bookings' ? list : squads;
+  const loading = tab === 'bookings' ? isPending : joined.isPending;
+  const failed = tab === 'bookings' ? isError : joined.isError;
 
   return (
     <View style={styles.root}>
       <StickyHeader progress={scrolled.progress}>
         <View style={styles.sticky}>
           <Text variant="pageTitle">My bookings</Text>
+          <Segmented
+            accessibilityLabel="Show"
+            value={tab}
+            onChange={(t) => {
+              setTab(t);
+              listRef.current?.scrollToOffset({ offset: 0, animated: false });
+            }}
+            options={[
+              { value: 'bookings', label: 'Bookings' },
+              { value: 'squads', label: joined.data?.length ? `Squads joined · ${joined.data.length}` : 'Squads joined' },
+            ]}
+          />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
             {FILTERS.map((f) => (
               <Chip key={f.key} label={f.label} active={filter === f.key} tone="dark" onPress={() => setFilter(f.key)} />
@@ -242,35 +254,44 @@ export default function Bookings() {
         scrollEventThrottle={16}
         maintainVisibleContentPosition={NO_ANCHOR}
         ref={listRef}
-        data={list}
-        keyExtractor={(b) => b.id}
+        data={rows}
+        keyExtractor={(r) => `${tab}:${r.id}`}
+        getItemType={() => tab}
         renderItem={({ item }) => (
           <View style={styles.item}>
-            <BookingRow b={item} today={today} />
+            {tab === 'bookings' ? <BookingRow b={item as Booking} today={today} /> : <SquadRow m={item as Match} today={today} />}
           </View>
         )}
         ListHeaderComponent={header}
-        ListFooterComponent={list.length ? <ListLoader loading={isFetchingNextPage} /> : null}
-        onEndReached={() => hasNextPage && !isFetchingNextPage && fetchNextPage()}
+        ListFooterComponent={tab === 'bookings' && list.length ? <ListLoader loading={isFetchingNextPage} /> : null}
+        onEndReached={() => tab === 'bookings' && hasNextPage && !isFetchingNextPage && fetchNextPage()}
         onEndReachedThreshold={END_THRESHOLD}
         contentContainerStyle={{ paddingBottom: bottom }}
         refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
         ListEmptyComponent={
-          isPending ? (
+          loading ? (
             <View style={styles.item}>
-              <Skeleton height={190} r={radius.lg} />
+              {tab === 'bookings' ? <Skeleton height={190} r={radius.lg} /> : null}
               <View style={{ height: space[3] }} />
               <Skeleton height={96} r={radius.lg} />
             </View>
-          ) : isError ? (
-            <ErrorState message={error.message} onRetry={refetch} />
-          ) : (next && (filter === 'all' || filter === 'open')) || squads.length ? null : (
+          ) : failed ? (
+            <ErrorState message={(tab === 'bookings' ? error?.message : joined.error?.message) ?? 'Something went wrong.'} onRetry={tab === 'bookings' ? refetch : joined.refetch} />
+          ) : showNext ? null : tab === 'bookings' ? (
             <EmptyState
               icon={CalendarDays}
-              title="Nothing here yet"
+              title={filter === 'closed' ? 'No past bookings' : filter === 'open' ? 'No upcoming bookings' : 'Nothing here yet'}
               body="Your games will show up here once you book a slot."
               action="Find a turf"
               onAction={() => router.navigate('/explore')}
+            />
+          ) : (
+            <EmptyState
+              icon={UsersRound}
+              title={filter === 'closed' ? 'No past squads' : 'No squads yet'}
+              body="Squads you pay to join show up here, with your entry pass."
+              action="Join a squad"
+              onAction={() => router.push('/join')}
             />
           )
         }
@@ -293,7 +314,6 @@ const styles = createStyles(() => ({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   nextBtn: { alignSelf: 'flex-start', marginTop: space[2] },
   item: { paddingHorizontal: gutter, paddingBottom: space[3] },
-  squads: { gap: space[3] },
   row: { flexDirection: 'row', gap: space[3], padding: space[2] },
   thumb: { width: 88, height: 88 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: space[2], marginTop: space[1] },
