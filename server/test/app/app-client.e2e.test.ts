@@ -144,9 +144,8 @@ d('mobile app client ↔ live API', () => {
     const auth = await api.resetVerify(phone, sent.devCode!, 'brand new pass 2');
     await tokens.set(auth.accessToken, auth.refreshToken);
     await expect(api.login(phone, 'app password 1')).rejects.toMatchObject({ code: 'unauthorized' });
-    const step1 = await api.login(`0${phone}`, 'brand new pass 2');
-    expect(step1.otpRequired).toBe(true);
-    const again = await api.loginVerify(step1.challenge, step1.devCode!);
+    // Two-step sign-in is off by default: the new password signs straight in.
+    const again = (await api.login(`0${phone}`, 'brand new pass 2')) as unknown as Awaited<ReturnType<typeof api.loginVerify>>;
     expect(again.user.phone).toBe(phone);
     await tokens.set(again.accessToken, again.refreshToken);
   });

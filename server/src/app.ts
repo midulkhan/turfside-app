@@ -337,7 +337,7 @@ export async function buildApp() {
   // ── Account: settings, devices, password, deletion ──────────────────────
   app.get('/v1/me/settings', { preHandler: requireUser }, async (req) => account.getSettings(req.user!.userId));
   app.put('/v1/me/settings', { preHandler: requireUser }, async (req) =>
-    account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional() }).strict(), req.body)),
+    account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional(), twoFactor: z.boolean().optional() }).strict(), req.body)),
   );
   app.get('/v1/me/sessions', { preHandler: requireLiveUser }, async (req) => account.listSessions(req.user!.userId, req.user!.sessionId));
   app.delete('/v1/me/sessions/:id', { preHandler: requireLiveUser }, async (req) => {

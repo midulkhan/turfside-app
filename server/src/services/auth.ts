@@ -157,11 +157,16 @@ export async function signupVerify(phone: string, code: string, meta: { ip: stri
 // ── Sign in ─────────────────────────────────────────────────────────────────
 export async function login(identifier: { kind: 'phone' | 'email'; value: string }, password: string, meta: { ip: string; ua?: string; device?: string }) {
   if ((await hit(`login:${identifier.value}`, 900)) > 10) throw new ApiError('rate_limited', 'Too many attempts. Try again in 15 minutes.');
-  const u = await one<UserRow>(`select id, name, phone, email, roles, password_hash, avatar_key from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`, [identifier.value]);
+  const u = await one<UserRow & { two_factor: boolean }>(
+    `select id, name, phone, email, roles, password_hash, avatar_key, two_factor from users where ${identifier.kind === 'phone' ? 'phone' : 'email'} = $1`,
+    [identifier.value],
+  );
   const ok = await verifyPassword(password, u?.password_hash ?? (await getDummyHash()));
   if (!u || !ok) throw new ApiError('unauthorized', 'Mobile number, email or password is incorrect.');
-  // Two-step sign-in: the password is right, now a code goes to the account's email. The app
-  // gets a short-lived signed challenge (never the phone or user id) to verify it with.
+  // Two-step sign-in is the player's choice (Settings, off by default). Off: the password is enough.
+  if (!u.two_factor || !u.email) return createSession(u, meta);
+  // On: the password is right, now a code goes to the account's email. The app gets a
+  // short-lived signed challenge (never the phone or user id) to verify it with.
   const sent = await issueOtp(u.phone, 'login', { userId: u.id }, meta.ip, { email: u.email, name: u.name });
   return { otpRequired: true as const, challenge: loginChallenge(u.phone), ...sent };
 }

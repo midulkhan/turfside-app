@@ -13,7 +13,7 @@ type Json = Record<string, any>;
 /** Two-step sign-in: password, then the emailed code (returned as devCode by the test server). */
 async function signIn(identifier: string, password: string, headers: Record<string, string> = {}) {
   const step1 = await call('POST', '/v1/auth/login', { identifier, password }, undefined, headers);
-  if (step1.status !== 200) return step1;
+  if (step1.status !== 200 || step1.json.accessToken) return step1; // two-step off: signed in already
   return call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode }, undefined, headers);
 }
 
@@ -67,7 +67,16 @@ d('TurfSides API', () => {
     expect(r.json.db).toBe('ok');
   });
 
-  it('auth: sign-in needs the emailed code after the password', async () => {
+  it('auth: two-step sign-in is off by default, and needs the emailed code when switched on', async () => {
+    // Off (default): the password alone signs you in.
+    const settings = (await call('GET', '/v1/me/settings', undefined, a.accessToken)).json;
+    expect(settings).toMatchObject({ twoFactor: false, hasEmail: true });
+    const plain = await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'correct horse 1' });
+    expect(plain.status).toBe(200);
+    expect(plain.json.accessToken).toBeTruthy();
+    expect(plain.json.otpRequired).toBeUndefined();
+    // On: a code is needed after the password.
+    expect((await call('PUT', '/v1/me/settings', { twoFactor: true }, a.accessToken)).json.twoFactor).toBe(true);
     const step1 = await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'correct horse 1' });
     expect(step1.status).toBe(200);
     expect(step1.json).toMatchObject({ otpRequired: true });
@@ -82,6 +91,9 @@ d('TurfSides API', () => {
     expect(ok.json.accessToken).toBeTruthy();
     // A code works once.
     expect((await call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode })).status).toBe(400);
+    // Switched off again: back to password only.
+    expect((await call('PUT', '/v1/me/settings', { twoFactor: false }, ok.json.accessToken)).json.twoFactor).toBe(false);
+    expect((await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'correct horse 1' })).json.accessToken).toBeTruthy();
   });
 
   it('auth: login, wrong password, refresh rotation with reuse detection', async () => {
@@ -439,8 +451,8 @@ d('account: settings, devices, password, deletion', () => {
 
   it('toggles the notification setting', async () => {
     const a = await newUser('Settings');
-    expect((await call('GET', '/v1/me/settings', undefined, a.accessToken)).json).toEqual({ notifications: true });
-    expect((await call('PUT', '/v1/me/settings', { notifications: false }, a.accessToken)).json).toEqual({ notifications: false });
+    expect((await call('GET', '/v1/me/settings', undefined, a.accessToken)).json).toEqual({ notifications: true, twoFactor: false, hasEmail: true });
+    expect((await call('PUT', '/v1/me/settings', { notifications: false }, a.accessToken)).json).toEqual({ notifications: false, twoFactor: false, hasEmail: true });
     expect((await call('PUT', '/v1/me/settings', { other: 1 }, a.accessToken)).status).toBe(400);
   });
 

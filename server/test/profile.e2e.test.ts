@@ -10,7 +10,7 @@ type Json = Record<string, any>;
 
 async function signIn(identifier: string, password: string) {
   const step1 = await call('POST', '/v1/auth/login', { identifier, password });
-  return step1.status !== 200 ? step1 : call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode });
+  return step1.status !== 200 || step1.json.accessToken ? step1 : call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode });
 }
 
 async function call(method: string, path: string, body?: unknown, token?: string) {

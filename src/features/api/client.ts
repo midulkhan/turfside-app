@@ -230,7 +230,8 @@ export const deletePlace = (id: string) => request<{ ok: true }>('DELETE', `/v1/
 export type ExploreLike = ExploreResult;
 
 // ── Account: settings, devices, password, deletion ──────────────────────
-export type Settings = { notifications: boolean };
+/** `twoFactor`: two-step sign-in (an emailed code after the password), off by default. */
+export type Settings = { notifications: boolean; twoFactor?: boolean; hasEmail?: boolean };
 export type DeviceSession = { id: string; device: string; lastActive: number; current: boolean };
 export const getSettings = (signal?: AbortSignal) => request<Settings>('GET', '/v1/me/settings', { auth: 'required', signal });
 export const updateSettings = (patch: Partial<Settings>) => request<Settings>('PUT', '/v1/me/settings', { auth: 'required', body: patch });

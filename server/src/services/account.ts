@@ -18,14 +18,25 @@ export async function assertLiveSession(sessionId: string) {
 
 // ── Settings ────────────────────────────────────────────────────────────────
 export async function getSettings(userId: string) {
-  const u = await one<{ notify_enabled: boolean }>('select notify_enabled from users where id = $1 and deleted_at is null', [userId]);
+  const u = await one<{ notify_enabled: boolean; two_factor: boolean; email: string | null }>(
+    'select notify_enabled, two_factor, email from users where id = $1 and deleted_at is null',
+    [userId],
+  );
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
-  return { notifications: u.notify_enabled };
+  return { notifications: u.notify_enabled, twoFactor: u.two_factor, hasEmail: !!u.email };
 }
 
-export async function updateSettings(userId: string, patch: { notifications?: boolean }) {
+export async function updateSettings(userId: string, patch: { notifications?: boolean; twoFactor?: boolean }) {
   if (patch.notifications !== undefined)
     await q('update users set notify_enabled = $2, updated_at = now() where id = $1 and deleted_at is null', [userId, patch.notifications]);
+  if (patch.twoFactor !== undefined) {
+    if (patch.twoFactor) {
+      // Codes go by email: there must be an address to send them to.
+      const u = await one<{ email: string | null }>('select email from users where id = $1 and deleted_at is null', [userId]);
+      if (!u?.email) throw new ApiError('invalid', 'Add an email address to your account first. Sign-in codes are sent there.');
+    }
+    await q('update users set two_factor = $2, updated_at = now() where id = $1 and deleted_at is null', [userId, patch.twoFactor]);
+  }
   return getSettings(userId);
 }
 

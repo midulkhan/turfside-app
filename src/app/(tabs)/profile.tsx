@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleHelp,
   FileText,
+  KeyRound,
   LogOut,
   MapPin,
   Moon,
@@ -204,6 +205,31 @@ export default function Profile() {
                   updateSettings.mutate(
                     { notifications: v },
                     { onError: (e) => Alert.alert('Couldn’t change notifications', errorMessage(e)) },
+                  )
+                }
+              />
+            }
+          />
+          <Divider />
+          <Row
+            icon={KeyRound}
+            label="Two-step sign-in"
+            detail="Email me a code when I sign in"
+            right={
+              <Switch
+                value={!!settings.data?.twoFactor}
+                disabled={settings.isPending || updateSettings.isPending}
+                accessibilityLabel="Two-step sign-in"
+                onValueChange={(v) =>
+                  updateSettings.mutate(
+                    { twoFactor: v },
+                    {
+                      onSuccess: () =>
+                        v
+                          ? Alert.alert('Two-step sign-in is on', 'Next time you sign in, we’ll email you a 6-digit code to finish.')
+                          : undefined,
+                      onError: (e) => Alert.alert('Couldn’t change two-step sign-in', errorMessage(e)),
+                    },
                   )
                 }
               />
