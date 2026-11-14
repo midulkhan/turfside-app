@@ -6,7 +6,6 @@ import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PinDrop } from '@/components/icons/pin-drop';
-import { Alert } from '@/components/ui/dialog';
 import { CreateMatchSheet } from '@/components/match/match-ui';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { QRCode, QRPopup } from '@/components/ticket/qr-code';
@@ -20,12 +19,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
-import { useBooking, useCancelBooking } from '@/features/api/queries';
+import { useBooking } from '@/features/api/queries';
 import type { OtherTicket } from '@/features/api/types';
-import { errorMessage } from '@/features/session/pending-signup';
 import { haptic } from '@/lib/haptics';
 import { formatTaka } from '@/lib/money';
-import { dhakaInstant, formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
+import { formatDuration, formatRange, weekday, dayOfMonth } from '@/lib/time';
 import { colors, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
@@ -70,10 +68,8 @@ export default function BookingTicket() {
   const scrolled = useScrolled();
   const { data: b, isError, error, refetch } = useBooking(id);
   const justBooked = fresh === '1';
-  const cancel = useCancelBooking();
   const [finding, setFinding] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
-  const [openedAt] = useState(() => Date.now()); // fixed per visit; the server re-checks the 24 h rule
 
   const close = () => (justBooked ? router.dismissTo('/bookings') : router.back());
 
@@ -90,27 +86,6 @@ export default function BookingTicket() {
     Share.share({
       message: `Game on! ${b.venue.name}, ${weekday(b.day)} ${dayOfMonth(b.day)} · ${formatRange(b.start, b.end)}. Booking ${b.code} on TurfSides.`,
     });
-  const canCancel = !!b && b.status === 'confirmed' && dhakaInstant(b.day, b.start) - openedAt > 24 * 3600_000;
-  const askCancel = () =>
-    b &&
-    Alert.alert('Cancel this booking?', `The slot is released and ${formatTaka(b.amountPaid)} is refunded to your bKash account.`, [
-      { text: 'Keep booking', style: 'cancel' },
-      {
-        text: 'Cancel booking',
-        style: 'destructive',
-        onPress: () =>
-          cancel.mutate(
-            { id: b.id, venueId: b.venue.id, day: b.day },
-            {
-              onSuccess: () => haptic.success(),
-              onError: (e) => {
-                haptic.error();
-                Alert.alert('Couldn’t cancel', errorMessage(e));
-              },
-            },
-          ),
-      },
-    ]);
   const directions = () =>
     b && Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${b.venue.latitude},${b.venue.longitude}`);
 
@@ -277,13 +252,6 @@ export default function BookingTicket() {
               Back to explore
             </Text>
           </Pressable>
-          {canCancel ? (
-            <Pressable accessibilityRole="button" onPress={askCancel} disabled={cancel.isPending} style={styles.back}>
-              <Text variant="label" color={colors.danger}>
-                {cancel.isPending ? 'Cancelling…' : 'Cancel booking'}
-              </Text>
-            </Pressable>
-          ) : null}
           </Animated.View>
         ) : (
           <TicketSkeleton />

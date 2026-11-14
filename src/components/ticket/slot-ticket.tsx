@@ -1,7 +1,19 @@
-import { Check } from 'lucide-react-native';
-import { memo } from 'react';
+import { Check, UsersRound } from 'lucide-react-native';
+import { memo, useEffect } from 'react';
 import { View } from 'react-native';
-import Animated, { Extrapolation, interpolate, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  cancelAnimation,
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
@@ -41,7 +53,15 @@ const TONES = () => ({
     sub: colors.warningText,
     dash: colors.warningLine,
   },
-  // Your own hold (back from checkout): pick it again to continue to checkout.
+  // Booked, and the organiser is recruiting: dark ticket, lime edge, tap to join.
+  squad: {
+    fill: colors.inverse,
+    stroke: colors.lime,
+    sw: 1.25,
+    fg: colors.textOnDark,
+    sub: colors.textOnDarkMuted,
+    dash: colors.borderOnDark,
+  },
   blocked: {
     fill: colors.surfaceMuted,
     stroke: colors.border,
@@ -85,9 +105,20 @@ export const SlotTicket = memo(function SlotTicket({
     return { opacity: t, transform: [{ translateY: (1 - t) * 5 }] };
   });
   const barPulse = useAnimatedStyle(() => ({ opacity: pulse ? 0.55 + pulse.get() * 0.45 : 1 }));
-  const disabled = loading || slot.status === 'booked' || slot.status === 'blocked' || slot.status === 'held';
+  const squad = !loading && slot.status === 'booked' && slot.squad && slot.squad.spotsLeft > 0 ? slot.squad : null;
+  const disabled = loading || (slot.status === 'booked' && !squad) || slot.status === 'blocked' || slot.status === 'held';
   // A slot held for you (e.g. while you're at checkout) is just yours: selected, or free-looking.
-  const kind = loading ? 'available' : slot.status === 'mine' ? (selected ? 'selected' : 'available') : selected ? 'selected' : slot.status;
+  const kind = loading
+    ? 'available'
+    : squad
+      ? 'squad'
+      : slot.status === 'mine'
+        ? selected
+          ? 'selected'
+          : 'available'
+        : selected
+          ? 'selected'
+          : slot.status;
   const tone = TONES()[kind];
   const range = formatRangeSpaced(slot.start, slot.end);
   // Size by length so long ranges ("11:00 PM – 12:00 AM") fit identically on iOS, Android and web.
@@ -97,6 +128,7 @@ export const SlotTicket = memo(function SlotTicket({
     {
       selected: 'Selected',
       booked: 'Booked',
+      squad: 'Booked',
       blocked: 'Unavailable',
       held: 'Being booked',
       available: `${minutes} min`,
@@ -112,7 +144,7 @@ export const SlotTicket = memo(function SlotTicket({
         onPress?.(slot);
       }}
       accessibilityRole="button"
-      accessibilityLabel={`${range}, ${status}`}
+      accessibilityLabel={squad ? `${range}, booked, squad recruiting: ${spotsLabel(squad.spotsLeft)}. Tap to view.` : `${range}, ${status}`}
       accessibilityState={{ disabled, selected: !!selected }}>
       <TicketSurface
         fill={tone.fill}
@@ -120,7 +152,7 @@ export const SlotTicket = memo(function SlotTicket({
         strokeWidth={tone.sw}
         radius={radius.sm}
         notch={8}
-        hatch={!loading && (slot.status === 'booked' || slot.status === 'blocked')}
+        hatch={!loading && !squad && (slot.status === 'booked' || slot.status === 'blocked')}
         style={styles.base}>
         {loading ? <Animated.View style={[styles.bar, styles.barTime, barPulse]} /> : null}
         <Animated.View style={textIn}>
@@ -137,6 +169,11 @@ export const SlotTicket = memo(function SlotTicket({
         </Animated.View>
         <TicketDivider inset={space[3] + 2} gap={7} dashColor={tone.dash} />
         {loading ? <Animated.View style={[styles.bar, styles.barSub, barPulse]} /> : null}
+        {squad ? (
+          <Animated.View style={textIn}>
+            <SquadFlip spots={squad.spotsLeft} sub={tone.sub} />
+          </Animated.View>
+        ) : (
         <Animated.View style={[styles.row, textIn]}>
           {kind === 'selected' ? (
             <View style={[styles.check, styles.checkOnLime]}>
@@ -147,12 +184,77 @@ export const SlotTicket = memo(function SlotTicket({
             {status}
           </Text>
         </Animated.View>
+        )}
       </TicketSurface>
     </PressableScale>
   );
 });
 
+const StyleSheetAbsolute = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+const spotsLabel = (n: number) => (n === 1 ? '1 open spot' : `${n} open spots`);
+
+/**
+ * "Booked" ⇄ "Open spots · 2": the status line turns over like a departures board every few
+ * seconds. With reduced motion it just shows the open spots.
+ */
+function SquadFlip({ spots, sub }: { spots: number; sub: string }) {
+  const reduce = useReducedMotion();
+  const p = useSharedValue(0);
+  useEffect(() => {
+    if (reduce) return;
+    const turn = { duration: 520 };
+    p.set(
+      withRepeat(
+        withSequence(withDelay(1600, withTiming(1, turn)), withDelay(2600, withTiming(2, turn)), withTiming(0, { duration: 0 })),
+        -1,
+      ),
+    );
+    return () => cancelAnimation(p);
+  }, [p, reduce]);
+  // Face A (Booked) tips away as face B (open spots) tips in, and back again.
+  const a = useAnimatedStyle(() => {
+    const v = p.get();
+    return {
+      opacity: interpolate(v, [0, 0.49, 0.5, 1.5, 1.51, 2], [1, 1, 0, 0, 1, 1], Extrapolation.CLAMP),
+      transform: [{ perspective: 300 }, { rotateX: `${interpolate(v, [0, 0.5, 0.5001, 1.5, 2], [0, 90, -90, -90, 0], Extrapolation.CLAMP)}deg` }],
+    };
+  });
+  const b = useAnimatedStyle(() => {
+    const v = p.get();
+    return {
+      opacity: interpolate(v, [0, 0.5, 0.51, 1.49, 1.5, 2], [0, 0, 1, 1, 0, 0], Extrapolation.CLAMP),
+      transform: [{ perspective: 300 }, { rotateX: `${interpolate(v, [0, 0.5, 1, 1.5, 2], [-90, -90, 0, 90, 90], Extrapolation.CLAMP)}deg` }],
+    };
+  });
+  const open = (
+    <View style={styles.row}>
+      <View style={styles.live} />
+      <UsersRound size={13} color={colors.lime} strokeWidth={2.2} />
+      <Text variant="labelStrong" color={colors.lime} numberOfLines={1}>
+        {spots === 1 ? '1 spot open' : `${spots} spots open`}
+      </Text>
+    </View>
+  );
+  if (reduce) return open;
+  return (
+    <View style={styles.flip}>
+      <Animated.View style={[styles.face, a]}>
+        <View style={styles.row}>
+          <Check size={12} color={sub} strokeWidth={3} />
+          <Text variant="label" color={sub} numberOfLines={1}>
+            Booked
+          </Text>
+        </View>
+      </Animated.View>
+      <Animated.View style={[styles.face, b]}>{open}</Animated.View>
+    </View>
+  );
+}
+
 const styles = createStyles(() => ({
+  flip: { height: 20, justifyContent: 'center' },
+  face: { ...StyleSheetAbsolute, justifyContent: 'center', backfaceVisibility: 'hidden' },
+  live: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.lime },
   // Placeholder bars sit exactly where the text lines are; the text stays (invisible) to hold the size.
   bar: { position: 'absolute', alignSelf: 'center', borderRadius: 4, backgroundColor: colors.surfaceMuted },
   barTime: { top: space[3] + 3, width: '62%', height: 12 },

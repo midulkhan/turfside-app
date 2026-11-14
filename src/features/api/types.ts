@@ -43,7 +43,9 @@ export type ReviewSummary = { average: number; count: number; histogram: Record<
 
 /** held = another player is checking out (up to 5 min); mine = your own hold, resumable via holdId. */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
-export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string };
+/** A booked slot whose organiser is recruiting players: `spotsLeft` free to request. */
+export type SlotSquad = { id: string; spotsLeft: number; host?: boolean };
+export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string; squad?: SlotSquad };
 export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number };
 
 export type QuoteLine = { label: string; detail?: string; amount: Poisha };

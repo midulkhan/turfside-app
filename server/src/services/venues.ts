@@ -112,7 +112,9 @@ export async function invalidateVenue(_id?: string) {
  * mine = the signed-in player's own hold, which they can resume (holdId).
  */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
-export type SlotOut = { id: string; start: number; end: number; price: number; status: SlotStatus; holdId?: string };
+/** `squad`: a booked slot whose organiser is recruiting: tapping it opens the squad. */
+export type SlotSquad = { id: string; spotsLeft: number; host?: boolean };
+export type SlotOut = { id: string; start: number; end: number; price: number; status: SlotStatus; holdId?: string; squad?: SlotSquad };
 
 // ── Availability: what is booked / held / blocked, per pitch per day ─────────────────────
 /**
@@ -121,7 +123,7 @@ export type SlotOut = { id: string; start: number; end: number; price: number; s
  * request, on every server process. The exclusion constraint still makes double booking
  * impossible regardless.
  */
-type Taken = { s: number; e: number; kind: string; id: string | null; userId: string | null; until: number | null };
+type Taken = { s: number; e: number; kind: string; id: string | null; userId: string | null; until: number | null; sq?: { id: string; left: number; host: string } | null };
 
 /** Is committed transaction `xid` visible in snapshot "xmin:xmax:xip,…"? (kept for tests/tools) */
 export function snapshotIncludes(snap: string, xid: bigint) {
@@ -134,17 +136,24 @@ export function snapshotIncludes(snap: string, xid: bigint) {
 
 /** One query: live bookings + blocks overlapping the day, for some pitches (or all). */
 async function queryTaken(day: string, pitchIds: string[] | null, closeMin: number) {
-  const row = await one<{ rows: { p: string; s: string; e: string; kind: string; id: string | null; u: string | null; h: string | null }[] }>(
+  const { HOLDING } = await import('./matches'); // lazy: matches imports this module
+  type Sq = { id: string; left: number; host: string } | null;
+  const row = await one<{ rows: { p: string; s: string; e: string; kind: string; id: string | null; u: string | null; h: string | null; sq: Sq }[] }>(
     `select coalesce((select json_agg(t) from (
-              select pitch_id p, lower(during) s, upper(during) e,
-                     case when status in ('held','pending') then 'held' else 'booked' end kind,
-                     coalesce(order_id, id) id, user_id u, hold_expires_at h
-                from bookings
-               where ($1::uuid[] is null or pitch_id = any($1)) and during && tstzrange($2, $3)
-                 and status in ('held','pending','confirmed','checked_in')
-                 and not (status in ('held','pending') and hold_expires_at < now())
+              select bk.pitch_id p, lower(bk.during) s, upper(bk.during) e,
+                     case when bk.status in ('held','pending') then 'held' else 'booked' end kind,
+                     coalesce(bk.order_id, bk.id) id, bk.user_id u, bk.hold_expires_at h,
+                     -- A squad recruiting on this booking: spots still free to request.
+                     (select json_build_object('id', r.id, 'host', r.user_id, 'left', greatest(0, r.spots_total
+                              - (select coalesce(sum(m.spots), 0) from player_request_members m where m.request_id = r.id and m.status = 'paid')
+                              - (select coalesce(sum(m.spots), 0) from player_request_members m where m.request_id = r.id and ${HOLDING})))
+                        from player_requests r where r.booking_id = bk.id and r.status = 'open' limit 1) sq
+                from bookings bk
+               where ($1::uuid[] is null or bk.pitch_id = any($1)) and bk.during && tstzrange($2, $3)
+                 and bk.status in ('held','pending','confirmed','checked_in')
+                 and not (bk.status in ('held','pending') and bk.hold_expires_at < now())
               union all
-              select pitch_id, lower(during), upper(during), 'blocked', null, null, null
+              select pitch_id, lower(during), upper(during), 'blocked', null, null, null, null
                 from venue_blocks where ($1::uuid[] is null or pitch_id = any($1)) and during && tstzrange($2, $3)
             ) t), '[]'::json) rows`,
     [pitchIds, instant(day, 0), instant(day, closeMin + 60)],
@@ -152,8 +161,19 @@ async function queryTaken(day: string, pitchIds: string[] | null, closeMin: numb
   const byPitch = new Map<string, Taken[]>();
   for (const r of row!.rows) {
     const list = byPitch.get(r.p) ?? [];
-    list.push({ s: Date.parse(r.s), e: Date.parse(r.e), kind: r.kind, id: r.id, userId: r.u, until: r.h ? Date.parse(r.h) : null });
+    list.push({ s: Date.parse(r.s), e: Date.parse(r.e), kind: r.kind, id: r.id, userId: r.u, until: r.h ? Date.parse(r.h) : null, sq: r.sq });
     byPitch.set(r.p, list);
+  }
+  // A squad belongs to a whole ticket: back-to-back slots of the same order share it.
+  for (const list of byPitch.values()) {
+    const booked = list.filter((t) => t.kind === 'booked' && t.id).sort((a, b) => a.s - b.s);
+    for (let i = 0; i < booked.length; i++) {
+      let j = i;
+      while (j + 1 < booked.length && booked[j + 1]!.id === booked[i]!.id && booked[j + 1]!.s === booked[j]!.e) j++;
+      const sq = booked.slice(i, j + 1).find((t) => t.sq)?.sq;
+      if (sq) for (let k = i; k <= j; k++) booked[k]!.sq = sq;
+      i = j;
+    }
   }
   return byPitch;
 }
@@ -188,6 +208,12 @@ function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string)
       const base = { id: `${v.id}:${day}:${start}`, start, end, price: sessionPrice(hourly, v.session_min) };
       if (!clash) return { ...base, status: 'available' as const };
       if (clash.kind === 'held' && viewerId && clash.userId === viewerId) return { ...base, status: 'mine' as const, holdId: clash.id! };
+      if (clash.kind === 'booked' && clash.sq && clash.sq.left > 0)
+        return {
+          ...base,
+          status: 'booked' as const,
+          squad: { id: clash.sq.id, spotsLeft: clash.sq.left, ...(viewerId && clash.sq.host === viewerId ? { host: true } : {}) },
+        };
       return { ...base, status: clash.kind as SlotStatus };
     });
 }

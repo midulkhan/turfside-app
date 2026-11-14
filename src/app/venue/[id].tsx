@@ -223,7 +223,12 @@ export default function VenueScreen() {
   const chosenIds = useMemo(() => new Set(chosen.map((p) => p.id)), [chosen]);
   // Stable identity: tickets are memoised, so a tab tap or a pick never re-renders the whole grid.
   const togglePick = useCallback(
-    (s: Slot) =>
+    (s: Slot) => {
+      // A booked slot with a squad recruiting opens that squad (the organiser gets Manage).
+      if (s.status === 'booked' && s.squad) {
+        router.push(s.squad.host ? `/match/${s.squad.id}` : `/game/${s.squad.id}`);
+        return;
+      }
       setPicked((cur) => {
         if (cur.some((p) => p.id === s.id)) return cur.filter((p) => p.id !== s.id);
         if (cur.length >= MAX_SLOTS) {
@@ -233,7 +238,8 @@ export default function VenueScreen() {
         }
         // The slot's own id carries its date (`venue:YYYY-MM-DD:start`), never the date strip's state.
         return [...cur, { ...s, day: (s.id.split(':')[1] as DayKey) ?? day }];
-      }),
+      });
+    },
     [day],
   );
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';

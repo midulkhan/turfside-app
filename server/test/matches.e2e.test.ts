@@ -78,6 +78,13 @@ d('find players', () => {
     expect((await call('GET', '/v1/matches/mine', undefined, p1.accessToken)).json.matches).toEqual([]);
     // Again: same match, not a second one.
     expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 3 }, org.accessToken)).json.id).toBe(matchId);
+    // The booked slot on the turf page now advertises the squad (and who is the host).
+    const slotOf = async (token?: string) =>
+      ((await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(6)}`, undefined, token)).json.slots as Json[]).find((x) => x.squad);
+    const seen = await slotOf();
+    expect(seen).toMatchObject({ status: 'booked', squad: { id: matchId, spotsLeft: 3 } });
+    expect(seen!.squad.host).toBeUndefined();
+    expect((await slotOf(org.accessToken))!.squad.host).toBe(true);
     // Someone else's booking can't be used.
     expect((await call('POST', '/v1/matches', { bookingId, level: 'casual', openSpots: 2 }, p1.accessToken)).status).toBe(404);
   });
@@ -149,6 +156,9 @@ d('find players', () => {
     expect((await call('POST', `/v1/matches/${matchId}/join`, { spots: 1 }, p2.accessToken)).json).toMatchObject({ my: 'pending', mySpots: 1 });
     const paused = await call('PATCH', `/v1/matches/${matchId}`, { paused: true }, org.accessToken);
     expect(paused.json.status).toBe('paused');
+    // Paused: the slot shows plain "Booked" again.
+    const pausedSlots = (await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(6)}`)).json.slots as Json[];
+    expect(pausedSlots.some((x) => x.squad)).toBe(false);
     expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).status).toBe(403);
     expect((await call('PATCH', `/v1/matches/${matchId}`, { paused: false }, org.accessToken)).json.status).toBe('open');
     expect((await call('POST', `/v1/matches/${matchId}/join`, {}, p3.accessToken)).json.my).toBe('pending');
