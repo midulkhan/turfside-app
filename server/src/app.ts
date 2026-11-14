@@ -318,6 +318,7 @@ export async function buildApp() {
   });
 
   // Public reviews, plus (signed in) whether you can review this turf and your own review.
+  // A review is posted once and is final (no edit or delete).
   app.get('/v1/venues/:id/reviews', { preHandler: optionalUser }, async (req) => {
     const { id } = req.params as { id: string };
     await getVenueRow(id); // 404 for unknown turfs
@@ -329,10 +330,6 @@ export async function buildApp() {
     await getVenueRow(id);
     const b = parse(z.object({ rating: z.number().int().min(1).max(5), text: z.string().trim().max(1000).default('') }), req.body);
     return reviews.saveReview(req.user!.userId, id, b);
-  });
-  app.delete('/v1/venues/:id/reviews/mine', { preHandler: requireUser }, async (req) => {
-    const { id } = req.params as { id: string };
-    return reviews.deleteReview(req.user!.userId, id);
   });
 
   // ── Me ────────────────────────────────────────────────────────────────────

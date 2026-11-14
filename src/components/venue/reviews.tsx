@@ -1,4 +1,4 @@
-import { MessageSquareText, PenLine, Star } from 'lucide-react-native';
+import { MessageSquareText, Star } from 'lucide-react-native';
 import { memo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -40,7 +40,7 @@ function Stars({ value, size = 14 }: { value: number; size?: number }) {
 
 /**
  * The turf's Reviews tab: real ratings only (from players who booked and played), a prompt to
- * rate it if you've played there, your own review (editable), and everyone's reviews.
+ * rate it if you've played there, your own review (final once posted), and everyone's reviews.
  */
 export const ReviewsTab = memo(function ReviewsTab({
   venueId,
@@ -97,15 +97,7 @@ export const ReviewsTab = memo(function ReviewsTab({
 
       {data.mine ? (
         <Card style={styles.mine}>
-          <View style={styles.row}>
-            <Text variant="labelStrong" style={styles.flex}>
-              Your review
-            </Text>
-            <Pressable accessibilityRole="button" onPress={() => setWriting(true)} hitSlop={8} style={styles.edit}>
-              <PenLine size={14} color={colors.ink} strokeWidth={2} />
-              <Text variant="labelStrong">Edit</Text>
-            </Pressable>
-          </View>
+          <Text variant="labelStrong">Your review</Text>
           <Stars value={data.mine.rating} size={16} />
           {data.mine.text ? (
             <Text variant="label" color={colors.textMuted}>
@@ -145,37 +137,27 @@ export const ReviewsTab = memo(function ReviewsTab({
         </Card>
       ))}
 
-      {!data.canReview && data.count > 0 ? (
+      {!data.canReview && !data.mine && data.count > 0 ? (
         <Text variant="caption" color={colors.textMuted} align="center">
           Only players who booked and played here can leave a review.
         </Text>
       ) : null}
 
-      <ReviewSheet venueId={venueId} visible={writing} mine={data.mine ?? null} onClose={() => setWriting(false)} />
+      <ReviewSheet venueId={venueId} visible={writing} onClose={() => setWriting(false)} />
     </View>
   );
 });
 
-function ReviewSheet({
-  venueId,
-  visible,
-  mine,
-  onClose,
-}: {
-  venueId: string;
-  visible: boolean;
-  mine: ReviewSummary['mine'];
-  onClose: () => void;
-}) {
+function ReviewSheet({ venueId, visible, onClose }: { venueId: string; visible: boolean; onClose: () => void }) {
   const [rating, setRating] = useState(0);
   const [text, setText] = useState('');
-  // Each time it opens: start from your review (editing) or blank.
+  // Each time it opens: blank.
   const [openedFor, setOpenedFor] = useState(false);
   if (visible !== openedFor) {
     setOpenedFor(visible);
     if (visible) {
-      setRating(mine?.rating ?? 0);
-      setText(mine?.text ?? '');
+      setRating(0);
+      setText('');
     }
   }
   const save = useSaveReview(venueId);
@@ -189,27 +171,18 @@ function ReviewSheet({
         },
         onError: (e) => {
           haptic.error();
-          Alert.alert('Review not saved', e.message);
+          Alert.alert('Review not posted', e.message);
         },
       },
     );
-  const remove = () =>
-    Alert.alert('Delete your review?', 'It is removed from this turf straight away.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => save.mutate(null, { onSuccess: onClose, onError: (e) => Alert.alert('Not deleted', e.message) }),
-      },
-    ]);
 
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.sheet}>
         <View style={styles.sheetHead}>
-          <Text variant="h2">{mine ? 'Edit your review' : 'Rate this turf'}</Text>
+          <Text variant="h2">Rate this turf</Text>
           <Text variant="label" color={colors.textMuted}>
-            Your first name and initial are shown with it.
+            Shown with your first name and initial. Once posted, a review can’t be changed.
           </Text>
         </View>
         <View style={styles.pick} accessibilityRole="adjustable" accessibilityLabel={`Rating, ${rating} of 5`}>
@@ -238,14 +211,7 @@ function ReviewSheet({
           multiline
           maxLength={1000}
         />
-        <Button label={mine ? 'Save changes' : 'Post review'} onPress={submit} loading={save.isPending} disabled={!rating} />
-        {mine ? (
-          <Pressable accessibilityRole="button" onPress={remove} style={styles.delete}>
-            <Text variant="label" color={colors.danger}>
-              Delete my review
-            </Text>
-          </Pressable>
-        ) : null}
+        <Button label="Post review" onPress={submit} loading={save.isPending} disabled={!rating} />
       </View>
     </Sheet>
   );
@@ -275,10 +241,8 @@ const styles = createStyles(() => ({
   },
   prompt: { flexDirection: 'row', alignItems: 'center', gap: space[3], borderColor: colors.lime, backgroundColor: colors.limeSoft },
   mine: { gap: space[2], borderColor: colors.lime },
-  edit: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   item: { gap: space[2] },
   sheet: { padding: space[5], gap: space[3] },
   sheetHead: { gap: space[1], marginBottom: space[1] },
   pick: { flexDirection: 'row', justifyContent: 'center', gap: space[3], paddingTop: space[2] },
-  delete: { alignSelf: 'center', paddingVertical: space[2] },
 }));

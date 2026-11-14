@@ -186,13 +186,12 @@ export function useReviews(venueId: string, enabled = true) {
   });
 }
 
-/** Write, edit or remove your review; the list and the turf's rating refresh. */
+/** Post your review (once); the list and the turf's rating refresh. */
 export function useSaveReview(venueId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (b: { rating: number; text: string } | null): Promise<void> => {
-      if (b) await api.saveReview(venueId, b);
-      else await api.deleteReview(venueId);
+    mutationFn: async (b: { rating: number; text: string }): Promise<void> => {
+      await api.saveReview(venueId, b);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.reviews(venueId) });

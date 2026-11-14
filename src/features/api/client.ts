@@ -114,10 +114,9 @@ export const getSlots = (venueId: string, day: DayKey, signal?: AbortSignal, aft
 
 export const getReviews = (venueId: string, signal?: AbortSignal) =>
   request<ReviewSummary>('GET', `/v1/venues/${enc(venueId)}/reviews`, { auth: 'optional', signal });
-/** Write or edit your review (only after you've played there). */
+/** Post your review, once (only after you've played there). */
 export const saveReview = (venueId: string, b: { rating: number; text: string }) =>
   request<{ canReview: boolean; mine: MyReview | null }>('PUT', `/v1/venues/${enc(venueId)}/reviews/mine`, { auth: 'required', body: b });
-export const deleteReview = (venueId: string) => request<{ ok: true }>('DELETE', `/v1/venues/${enc(venueId)}/reviews/mine`, { auth: 'required' });
 
 export const getSaved = (signal?: AbortSignal) => request<VenueSummary[]>('GET', '/v1/me/saved', { auth: 'required', signal });
 

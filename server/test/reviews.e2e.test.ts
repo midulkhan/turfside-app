@@ -87,20 +87,22 @@ d('reviews', () => {
     const saved = await call('PUT', `/v1/venues/${venue}/reviews/mine`, { rating: 5, text: '  Great surface, friendly staff.  ' }, player.accessToken);
     expect(saved.status, JSON.stringify(saved.json)).toBe(200);
     expect(saved.json.mine).toMatchObject({ rating: 5, text: 'Great surface, friendly staff.' });
+    // Reloading the tab (as the app does) shows it as yours, and it can't be posted again.
+    const reload = (await call('GET', `/v1/venues/${venue}/reviews`, undefined, player.accessToken)).json;
+    expect(reload.mine, JSON.stringify(reload)).toMatchObject({ rating: 5 });
+    expect(reload.canReview).toBe(false);
 
     const pub = (await call('GET', `/v1/venues/${venue}/reviews`)).json;
     expect(pub).toMatchObject({ count: 1, average: 5, histogram: { 5: 1 } });
     expect(pub.items[0]).toMatchObject({ author: 'Tanvir A.', rating: 5 }); // first name + initial only
     expect((await call('GET', `/v1/venues/${venue}`)).json).toMatchObject({ rating: 5, reviewCount: 1 });
 
-    // Writing again edits the same review (one per player per turf).
-    await call('PUT', `/v1/venues/${venue}/reviews/mine`, { rating: 3, text: 'Lights were dim.' }, player.accessToken);
-    expect((await call('GET', `/v1/venues/${venue}/reviews`)).json).toMatchObject({ count: 1, average: 3, histogram: { 3: 1, 5: 0 } });
+    // Final once posted: a second review, an edit or a delete are all refused; nothing changes.
+    expect((await call('PUT', `/v1/venues/${venue}/reviews/mine`, { rating: 1, text: 'Changed my mind' }, player.accessToken)).status).toBe(409);
+    expect((await call('DELETE', `/v1/venues/${venue}/reviews/mine`, undefined, player.accessToken)).status).toBe(404);
+    expect((await call('GET', `/v1/venues/${venue}/reviews`)).json).toMatchObject({ count: 1, average: 5 });
 
     // Never played here: refused.
     expect((await call('PUT', `/v1/venues/${venue}/reviews/mine`, { rating: 1, text: 'x' }, stranger.accessToken)).status).toBe(403);
-
-    expect((await call('DELETE', `/v1/venues/${venue}/reviews/mine`, undefined, player.accessToken)).status).toBe(200);
-    expect((await call('GET', `/v1/venues/${venue}`)).json).toMatchObject({ rating: 0, reviewCount: 0 });
   });
 });

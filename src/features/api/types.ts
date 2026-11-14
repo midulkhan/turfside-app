@@ -39,7 +39,7 @@ export type VenueDetail = VenueSummary & {
 };
 
 export type Review = { id: string; author: string; rating: number; at: number; text: string };
-/** `canReview`: signed in and played here (or already reviewed). `mine`: your own review, editable. */
+/** `canReview`: signed in, played here, not reviewed yet. `mine`: your own review (final once posted). */
 export type MyReview = { id: string; rating: number; text: string; at: number };
 export type ReviewSummary = {
   average: number;

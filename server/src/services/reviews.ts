@@ -5,8 +5,8 @@ import { invalidateVenue } from './venues';
 
 /**
  * Reviews: only from players who booked (or paid into a squad at) the turf and whose game
- * has finished. One per player per turf; writing again edits it. The turf's rating and
- * count are recalculated in the database on every change (migration 016).
+ * has finished. One per player per turf, and final once posted (no editing or deleting).
+ * The turf's rating and count are recalculated in the database on every change (migration 016).
  */
 type Item = { id: string; author: string; rating: number; at: number; text: string };
 
@@ -47,45 +47,35 @@ async function playedBooking(userId: string, venueId: string) {
   );
 }
 
-/** For the signed-in player: can they review, and their own review if they wrote one. */
+/** For the signed-in player: can they review (played here, not reviewed yet), and their review if posted. */
 export async function myReviewState(userId: string, venueId: string) {
   const [mine, played] = await Promise.all([
     one<{ id: string; rating: number; body: string; updated_at: Date }>('select id, rating, body, updated_at from reviews where venue_id = $1 and user_id = $2', [venueId, userId]),
     playedBooking(userId, venueId),
   ]);
   return {
-    canReview: !!played || !!mine,
+    canReview: !!played && !mine,
     mine: mine ? { id: mine.id, rating: mine.rating, text: mine.body, at: new Date(mine.updated_at).getTime() } : null,
   };
 }
 
-/** Write or edit your review. */
+/** Post your review (once). */
 export async function saveReview(userId: string, venueId: string, input: { rating: number; text: string }) {
   const existing = await one<{ id: string }>('select id from reviews where venue_id = $1 and user_id = $2', [venueId, userId]);
-  const played = existing ? null : await playedBooking(userId, venueId);
-  if (!existing && !played) throw new ApiError('forbidden', 'You can review a turf after you’ve played there.');
+  if (existing) throw new ApiError('conflict', 'You’ve already reviewed this turf.');
+  const played = await playedBooking(userId, venueId);
+  if (!played) throw new ApiError('forbidden', 'You can review a turf after you’ve played there.');
   const u = await one<{ name: string }>('select name from users where id = $1 and deleted_at is null', [userId]);
   if (!u) throw new ApiError('unauthorized', 'Sign in again.');
   // First name + initial: friendly, and not a full name on a public page.
   const parts = u.name.trim().split(/\s+/);
   const author = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]![0]!.toUpperCase()}.` : parts[0]!;
-  if (existing) {
-    await q('update reviews set rating = $2, body = $3, author_name = $4, updated_at = now() where id = $1', [existing.id, input.rating, input.text, author]);
-  } else {
-    await q(
-      `insert into reviews (venue_id, user_id, booking_id, author_name, rating, body) values ($1, $2, $3, $4, $5, $6)
-       on conflict (venue_id, user_id) where user_id is not null
-       do update set rating = excluded.rating, body = excluded.body, author_name = excluded.author_name, updated_at = now()`,
-      [venueId, userId, played!.id, author, input.rating, input.text],
-    );
-  }
+  const ins = await q(
+    `insert into reviews (venue_id, user_id, booking_id, author_name, rating, body) values ($1, $2, $3, $4, $5, $6)
+     on conflict (venue_id, user_id) where user_id is not null do nothing returning id`,
+    [venueId, userId, played.id, author, input.rating, input.text],
+  );
+  if (!ins.length) throw new ApiError('conflict', 'You’ve already reviewed this turf.'); // two taps at once
   await Promise.all([cacheDel(publicKey(venueId)), invalidateVenue(venueId)]); // list + turf rating
   return myReviewState(userId, venueId);
-}
-
-/** Remove your review. */
-export async function deleteReview(userId: string, venueId: string) {
-  await q('delete from reviews where venue_id = $1 and user_id = $2', [venueId, userId]);
-  await Promise.all([cacheDel(publicKey(venueId)), invalidateVenue(venueId)]);
-  return { ok: true };
 }
