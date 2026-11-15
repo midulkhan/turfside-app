@@ -2,7 +2,7 @@ import { cacheGet, cacheIncr, cacheSet, sharedReadable, singleflight } from '../
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
-import { addDays, dhakaToday, generateSessions, hourlyFor, instant, minutesNowInDhaka, sessionPrice, type PriceRules } from '../lib/time';
+import { addDays, dhakaToday, hourlyFor, instant, minutesNowInDhaka, priceFor, sessionsFor, type CustomSlot, type PriceBand, type PriceRules, type SlotRules } from '../lib/time';
 
 export type VenueRow = {
   id: string;
@@ -27,6 +27,10 @@ export type VenueRow = {
   standard_hourly: number;
   weekday_hourly: Record<string, number>;
   special_dates: Record<string, number>;
+  /** Owner dashboard settings (migration 020). Missing on rows cached before it: treated as the defaults. */
+  slot_mode?: string | null;
+  custom_slots?: CustomSlot[] | null;
+  bands?: PriceBand[] | null;
   photos: string[] | null;
   pitch_id: string;
 };
@@ -36,6 +40,7 @@ const VENUE_SELECT = `
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
          p.standard_hourly, p.weekday_hourly, p.special_dates,
+         s.slot_mode, s.custom_slots, p.bands,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
   from venues v
@@ -44,7 +49,28 @@ const VENUE_SELECT = `
   where v.status = 'published'`;
 
 export const photoUrl = (u: string) => (u.startsWith('/') ? `${config.PUBLIC_URL}${u}` : u);
-export const rules = (v: VenueRow): PriceRules => ({ standardHourly: v.standard_hourly, weekdayHourly: v.weekday_hourly, specialDates: v.special_dates });
+export const rules = (v: VenueRow): PriceRules & { bands: PriceBand[] } => ({
+  standardHourly: v.standard_hourly,
+  weekdayHourly: v.weekday_hourly,
+  specialDates: v.special_dates,
+  bands: v.bands ?? [],
+});
+/** The venue's sessions for any day (fixed lengths or the owner's custom list). */
+export const slotRules = (v: VenueRow): SlotRules => ({
+  openMin: v.open_min,
+  closeMin: v.close_min,
+  lengthMin: v.session_min,
+  breakMin: v.break_min,
+  mode: v.slot_mode,
+  custom: v.custom_slots,
+});
+/** Lowest price per hour on `day`, for "from ৳…/hr" on cards. */
+export function hourlyFromFor(v: VenueRow, day: string) {
+  const r = rules(v);
+  if (!r.bands.length && v.slot_mode !== 'custom') return hourlyFor(r, day);
+  const per = sessionsFor(slotRules(v)).map((s) => Math.round((priceFor(r, day, s) * 60) / Math.max(1, s.end - s.start)));
+  return per.length ? Math.min(...per) : hourlyFor(r, day);
+}
 
 // ── Catalog: every published venue, the source for explore, search and turf pages ──────────
 /**
@@ -98,6 +124,16 @@ export async function getVenueRow(id: string) {
 export async function getVenueRowExact(id: string) {
   const v = await one<VenueRow>(`${VENUE_SELECT} and v.id = $1`, [id]);
   if (!v) throw new ApiError('not_found', 'This turf is no longer listed.');
+  return v;
+}
+
+/** Owner side: any of the owner's own turfs, including drafts (never suspended ones). */
+export async function getOwnedVenueRow(ownerId: string, id: string) {
+  const v = await one<VenueRow & { status: string }>(
+    `${VENUE_SELECT.replace("where v.status = 'published'", "where v.status <> 'suspended'").replace('select v.id,', 'select v.status, v.id,')} and v.id = $1 and v.owner_id = $2`,
+    [id, ownerId],
+  );
+  if (!v) throw new ApiError('not_found', 'Turf not found.');
   return v;
 }
 
@@ -195,17 +231,18 @@ function inBookingWindow(day: string) {
 /** Pure: the day's sessions with their status, from the venue and what is taken. */
 function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string): SlotOut[] {
   const today = dhakaToday();
-  const hourly = hourlyFor(rules(v), day);
+  const prices = rules(v);
   const nowMin = minutesNowInDhaka();
   const now = Date.now();
-  return generateSessions({ openMin: v.open_min, closeMin: v.close_min, lengthMin: v.session_min, breakMin: v.break_min })
+  return sessionsFor(slotRules(v))
     .filter(({ start }) => day !== today || start > nowMin)
-    .map(({ start, end }) => {
+    .map((session) => {
+      const { start, end } = session;
       const s = instant(day, start).getTime();
       const e = instant(day, end).getTime();
       // A hold that has run out since the copy was made is free again.
       const clash = taken.find((t) => t.s < e && t.e > s && !(t.kind === 'held' && t.until !== null && t.until < now));
-      const base = { id: `${v.id}:${day}:${start}`, start, end, price: sessionPrice(hourly, v.session_min) };
+      const base = { id: `${v.id}:${day}:${start}`, start, end, price: priceFor(prices, day, session) };
       if (!clash) return { ...base, status: 'available' as const };
       if (clash.kind === 'held' && viewerId && clash.userId === viewerId) return { ...base, status: 'mine' as const, holdId: clash.id! };
       if (clash.kind === 'booked' && clash.sq && clash.sq.left > 0)
@@ -259,7 +296,7 @@ export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?:
     reviewCount: v.review_count,
     formats: v.formats,
     floodlit: v.floodlit,
-    hourlyFrom: hourlyFor(rules(v), day),
+    hourlyFrom: hourlyFromFor(v, day),
     availableToday: opts.availableToday ?? true,
     photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null,
     isSaved: !!opts.saved,

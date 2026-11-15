@@ -45,3 +45,36 @@ export function hourlyFor(r: PriceRules, day: string) {
 }
 
 export const sessionPrice = (hourly: number, lengthMin: number) => Math.round((hourly * lengthMin) / 60);
+
+// ── Flexible slots and time-band prices (owner dashboard) ────────────────────────────────
+/**
+ * A venue's sessions are either `fixed` (back-to-back sessions of one length from opening to
+ * closing, the original model) or `custom` (the owner's own list, e.g. 07:00–08:30, 08:30–10:00,
+ * 18:00–19:00), each optionally with its own price. Venues without these settings behave exactly
+ * as before.
+ */
+export type CustomSlot = { start: number; end: number; price?: number | null };
+export type SlotRules = SessionRule & { mode?: string | null; custom?: CustomSlot[] | null };
+
+/** Prices for a time of day: `hourly` poisha for sessions starting in [from, to), optionally only on some weekdays (0 = Sunday). */
+export type PriceBand = { from: number; to: number; hourly: number; days?: number[] | null };
+
+export function sessionsFor(r: SlotRules): CustomSlot[] {
+  if (r.mode === 'custom' && r.custom?.length) return [...r.custom].sort((a, b) => a.start - b.start).map((s) => ({ start: s.start, end: s.end, price: s.price ?? null }));
+  return generateSessions(r);
+}
+
+/**
+ * The price of one session on `day`. Precedence: special date → the slot's own price →
+ * a time band covering its start → weekday rate → standard rate. Integer poisha.
+ */
+export function priceFor(r: PriceRules & { bands?: PriceBand[] | null }, day: string, s: CustomSlot) {
+  const len = s.end - s.start;
+  const special = r.specialDates[day];
+  if (special != null) return sessionPrice(special, len);
+  if (s.price != null) return s.price;
+  const dow = dayOfWeek(day);
+  const band = (r.bands ?? []).find((b) => s.start >= b.from && s.start < b.to && (!b.days?.length || b.days.includes(dow)));
+  if (band) return sessionPrice(band.hourly, len);
+  return sessionPrice(hourlyFor(r, day), len);
+}

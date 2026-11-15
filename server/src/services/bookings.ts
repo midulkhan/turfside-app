@@ -5,11 +5,11 @@ import type { PoolClient } from 'pg';
 import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
-import { addDays, dhakaToday, generateSessions, hourlyFor, instant, isDayKey, minutesNowInDhaka, sessionPrice } from '../lib/time';
+import { addDays, dhakaToday, instant, isDayKey, minutesNowInDhaka, priceFor, sessionsFor } from '../lib/time';
 import { signPass, signPass2 } from '../lib/tokens';
 
 import { onBookingCancelled } from './matches';
-import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules } from './venues';
+import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules, slotRules } from './venues';
 
 const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id,
   (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
@@ -213,7 +213,7 @@ export async function createHold(userId: string, slotIds: string[]) {
   const today = dhakaToday();
   // From Postgres, not the cache: this sets the price and checks the schedule.
   const v = await getVenueRowExact(venueId);
-  const sessions = generateSessions({ openMin: v.open_min, closeMin: v.close_min, lengthMin: v.session_min, breakMin: v.break_min });
+  const sessions = sessionsFor(slotRules(v));
   const picks = parsed
     .map((p) => {
       if (p.day < today || p.day > addDays(today, config.BOOKING_HORIZON_DAYS)) throw new ApiError('invalid', 'That date can’t be booked.');
@@ -221,7 +221,7 @@ export async function createHold(userId: string, slotIds: string[]) {
       const session = sessions.find((s) => s.start === p.start);
       if (!session) throw new ApiError('invalid', 'Unknown slot.');
       // Price is computed here, never taken from the app.
-      const price = sessionPrice(hourlyFor(rules(v), p.day), v.session_min);
+      const price = priceFor(rules(v), p.day, session);
       return { day: p.day, start: session.start, end: session.end, price, from: instant(p.day, session.start), to: instant(p.day, session.end) };
     })
     .sort((a, b) => a.from.getTime() - b.from.getTime());
@@ -253,6 +253,11 @@ export async function createHold(userId: string, slotIds: string[]) {
     // Lazily release stale holds on these ranges so they never block a new booking.
     for (const p of picks)
       await c.query("update bookings set status = 'expired' where pitch_id = $1 and status = 'held' and hold_expires_at < now() and during && tstzrange($2, $3)", [v.pitch_id, p.from, p.to]);
+    // The owner closed this time (maintenance, tournament, walk-in…): it can't be booked.
+    for (const p of picks) {
+      const blocked = await c.query('select 1 from venue_blocks where pitch_id = $1 and during && tstzrange($2, $3) limit 1', [v.pitch_id, p.from, p.to]);
+      if (blocked.rowCount) throw new ApiError('slot_taken', 'That time is not available any more. Pick another time.');
+    }
 
     const order = (
       await c.query<OrderRow>(

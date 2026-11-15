@@ -50,8 +50,55 @@ export const venueInput = z.object({
   }),
   photos: z.array(photo).max(10).default([]),
   status: z.enum(['draft', 'published']).default('published'),
+  /**
+   * Optional (owner dashboard). `fixed` = sessions of `schedule.sessionMinutes` (60, 90, any length);
+   * `custom` = exactly these sessions, each optionally with its own price. Times before `opens` are
+   * after midnight. Left out = unchanged.
+   */
+  slots: z
+    .object({
+      mode: z.enum(['fixed', 'custom']),
+      custom: z.array(z.object({ start: hhmm, end: hhmm, price: taka.nullable().optional() })).max(48).default([]),
+    })
+    .optional(),
+  /** Optional time-of-day prices, e.g. [{ from: "07:00", to: "10:00", hourly: 1500 }]. Left out = unchanged. */
+  priceBands: z.array(z.object({ from: hhmm, to: hhmm, hourly: taka, days: z.array(z.enum(DAYS)).max(7).default([]) })).max(24).optional(),
 });
 export type VenueInput = z.infer<typeof venueInput>;
+
+/** Minutes after the venue day's midnight: a time earlier than opening is after midnight. */
+const dayMin = (t: string, open: number) => (toMin(t) < open ? toMin(t) + 1440 : toMin(t));
+
+function customSlots(v: VenueInput) {
+  const open = toMin(v.schedule.opens);
+  const list = (v.slots?.custom ?? [])
+    .map((x) => {
+      const start = dayMin(x.start, open);
+      let end = toMin(x.end);
+      while (end <= start) end += 1440;
+      return { start, end, price: x.price == null ? null : x.price * 100 };
+    })
+    .sort((a, b) => a.start - b.start);
+  if (!list.length) throw new ApiError('invalid', 'slots.custom: Add at least one session.');
+  for (const [i, x] of list.entries()) {
+    if (x.end - x.start < 15 || x.end - x.start > 360) throw new ApiError('invalid', `slots.custom: Sessions must be 15 minutes to 6 hours (${fromMin(x.start)}–${fromMin(x.end)}).`);
+    if (x.end > 2880) throw new ApiError('invalid', 'slots.custom: Sessions can run at most until the next day.');
+    const prev = list[i - 1];
+    if (prev && x.start < prev.end) throw new ApiError('invalid', `slots.custom: ${fromMin(prev.start)}–${fromMin(prev.end)} overlaps ${fromMin(x.start)}–${fromMin(x.end)}.`);
+  }
+  if (list[0]!.start >= 1440) throw new ApiError('invalid', 'slots.custom: The first session must start on the day itself (set "opens" to it).');
+  return list;
+}
+
+function bandsJson(v: VenueInput) {
+  const open = toMin(v.schedule.opens);
+  return (v.priceBands ?? []).map((b) => {
+    const from = dayMin(b.from, open);
+    let to = toMin(b.to);
+    while (to <= from) to += 1440;
+    return { from, to, hourly: b.hourly * 100, days: b.days.map((d) => DAYS.indexOf(d)) };
+  });
+}
 
 function scheduleMinutes(s: VenueInput['schedule']) {
   const open = toMin(s.opens);
@@ -89,6 +136,9 @@ type OwnerRow = {
   standard_hourly: number;
   weekday_hourly: Record<string, number>;
   special_dates: Record<string, number>;
+  slot_mode: string;
+  custom_slots: { start: number; end: number; price: number | null }[] | null;
+  bands: { from: number; to: number; hourly: number; days: number[] | null }[] | null;
   photos: string[] | null;
 };
 
@@ -96,6 +146,7 @@ const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates,
+         s.slot_mode, s.custom_slots, p.bands,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
 
@@ -124,6 +175,11 @@ function shape(r: OwnerRow) {
       specialDates: Object.fromEntries(Object.entries(r.special_dates).map(([d, v]) => [d, v / 100])),
     },
     photos: (r.photos ?? []).map(photoUrl),
+    slots: {
+      mode: r.slot_mode === 'custom' ? ('custom' as const) : ('fixed' as const),
+      custom: (r.custom_slots ?? []).map((x) => ({ start: fromMin(x.start), end: fromMin(x.end), price: x.price == null ? null : x.price / 100 })),
+    },
+    priceBands: (r.bands ?? []).map((b) => ({ from: fromMin(b.from), to: fromMin(b.to), hourly: b.hourly / 100, days: (b.days ?? []).map((d) => DAYS[d]) })),
   };
 }
 
@@ -141,17 +197,30 @@ export async function getOwnerVenue(ownerId: string, id: string) {
 const storedPhoto = (u: string) => u;
 
 async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInput) {
-  const { open, close } = scheduleMinutes(v.schedule);
+  let { open, close } = scheduleMinutes(v.schedule);
+  let session = v.schedule.sessionMinutes;
+  let brk = v.schedule.breakMinutes;
+  const custom = v.slots?.mode === 'custom' ? customSlots(v) : null;
+  if (custom) {
+    // Opening hours follow the sessions; the most common length is shown as "N min each".
+    open = custom[0]!.start;
+    close = custom.at(-1)!.end;
+    const lens = custom.map((x) => x.end - x.start);
+    session = Math.min(360, Math.max(15, lens.sort((a, b) => lens.filter((y) => y === b).length - lens.filter((y) => y === a).length)[0]!));
+    brk = 0;
+  }
   await c.query(
     `insert into venue_schedule (venue_id, open_min, close_min, session_min, break_min) values ($1,$2,$3,$4,$5)
        on conflict (venue_id) do update set open_min = excluded.open_min, close_min = excluded.close_min, session_min = excluded.session_min, break_min = excluded.break_min`,
-    [id, open, close, v.schedule.sessionMinutes, v.schedule.breakMinutes],
+    [id, open, close, session, brk],
   );
+  if (v.slots) await c.query('update venue_schedule set slot_mode = $2, custom_slots = $3 where venue_id = $1', [id, v.slots.mode, custom ? JSON.stringify(custom) : null]);
   await c.query(
     `insert into venue_pricing (venue_id, standard_hourly, weekday_hourly, special_dates) values ($1,$2,$3,$4)
        on conflict (venue_id) do update set standard_hourly = excluded.standard_hourly, weekday_hourly = excluded.weekday_hourly, special_dates = excluded.special_dates`,
     [id, v.pricing.hourly * 100, JSON.stringify(weekdayJson(v.pricing.byWeekday)), JSON.stringify(specialJson(v.pricing.specialDates))],
   );
+  if (v.priceBands) await c.query('update venue_pricing set bands = $2 where venue_id = $1', [id, JSON.stringify(bandsJson(v))]);
   await c.query('delete from venue_photos where venue_id = $1', [id]);
   for (const [i, u] of v.photos.entries()) await c.query('insert into venue_photos (venue_id, url, position) values ($1,$2,$3)', [id, storedPhoto(u), i]);
 }
