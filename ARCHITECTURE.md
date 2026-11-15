@@ -131,7 +131,7 @@ Key facts:
 - `users.roles` includes `player` and/or `owner`. `venues.owner_id` links a turf to its owner.
   `venues.status`: draft | pending | published | suspended.
 - `bookings.status`: held → pending → confirmed → checked_in → completed (or cancelled/expired).
-  Holds expire automatically (pg_cron). A unique constraint prevents double-booking a slot.
+  Holds expire automatically (pg_cron). An exclusion constraint (`bookings_no_overlap`) makes the database refuse overlapping active bookings on a pitch.
 - **Money is a ledger**: `payments` + `ledger_entries` (`charge`, `service_fee`, `owner_payable`,
   `refund`). Rows are appended, never edited. Owner revenue = sum of `owner_payable`.
 - `idempotency_keys`: every money-moving POST takes an `Idempotency-Key` header.
