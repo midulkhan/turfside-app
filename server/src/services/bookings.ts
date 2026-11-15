@@ -213,12 +213,13 @@ export async function createHold(userId: string, slotIds: string[]) {
   const today = dhakaToday();
   // From Postgres, not the cache: this sets the price and checks the schedule.
   const v = await getVenueRowExact(venueId);
-  const sessions = sessionsFor(slotRules(v));
+  if (v.booking_paused) throw new ApiError('slot_taken', v.booking_notice || 'This turf is not taking new bookings right now.');
+  const slotRulesV = slotRules(v);
   const picks = parsed
     .map((p) => {
       if (p.day < today || p.day > addDays(today, config.BOOKING_HORIZON_DAYS)) throw new ApiError('invalid', 'That date can’t be booked.');
       if (p.day === today && p.start <= minutesNowInDhaka()) throw new ApiError('slot_taken', 'That session has already started.');
-      const session = sessions.find((s) => s.start === p.start);
+      const session = sessionsFor(slotRulesV, p.day).find((s) => s.start === p.start);
       if (!session) throw new ApiError('invalid', 'Unknown slot.');
       // Price is computed here, never taken from the app.
       const price = priceFor(rules(v), p.day, session);

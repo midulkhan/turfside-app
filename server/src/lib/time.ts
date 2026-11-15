@@ -54,13 +54,28 @@ export const sessionPrice = (hourly: number, lengthMin: number) => Math.round((h
  * as before.
  */
 export type CustomSlot = { start: number; end: number; price?: number | null };
-export type SlotRules = SessionRule & { mode?: string | null; custom?: CustomSlot[] | null };
+/** A saved session set (minutes, poisha). `days` 0 = Sunday; empty = every day no other live set covers. */
+export type SessionSetRow = { id: string; name: string; live: boolean; days?: number[] | null; slots: CustomSlot[] };
+export type SlotRules = SessionRule & { mode?: string | null; custom?: CustomSlot[] | null; sets?: SessionSetRow[] | null };
 
 /** Prices for a time of day: `hourly` poisha for sessions starting in [from, to), optionally only on some weekdays (0 = Sunday). */
 export type PriceBand = { from: number; to: number; hourly: number; days?: number[] | null };
 
-export function sessionsFor(r: SlotRules): CustomSlot[] {
-  if (r.mode === 'custom' && r.custom?.length) return [...r.custom].sort((a, b) => a.start - b.start).map((s) => ({ start: s.start, end: s.end, price: s.price ?? null }));
+/**
+ * Sessions on `day`. Custom mode with session sets: the live set for that weekday, else the live
+ * set without days ("all other days"), else none (closed that day). Without sets: `custom`.
+ */
+export function sessionsFor(r: SlotRules, day?: string): CustomSlot[] {
+  const norm = (l: CustomSlot[]) => [...l].sort((a, b) => a.start - b.start).map((s) => ({ start: s.start, end: s.end, price: s.price ?? null }));
+  if (r.mode === 'custom') {
+    const live = (r.sets ?? []).filter((x) => x.live);
+    if (day && live.length) {
+      const dow = dayOfWeek(day);
+      const set = live.find((x) => x.days?.includes(dow)) ?? live.find((x) => !x.days?.length);
+      return set ? norm(set.slots) : [];
+    }
+    if (r.custom?.length) return norm(r.custom);
+  }
   return generateSessions(r);
 }
 

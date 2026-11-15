@@ -61,6 +61,23 @@ export const venueInput = z.object({
       custom: z.array(z.object({ start: hhmm, end: hhmm, price: taka.nullable().optional() })).max(48).default([]),
     })
     .optional(),
+  /**
+   * Optional named session sets (custom mode). Several can be live when their days don't overlap;
+   * at most one live set has no days ("all other days"). Left out = unchanged.
+   */
+  sessionSets: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(40),
+        name: z.string().trim().min(1).max(40),
+        live: z.boolean().default(false),
+        /** Weekdays this set runs on; empty = every day no other live set covers. */
+        days: z.array(z.enum(DAYS)).max(7).default([]),
+        slots: z.array(z.object({ start: hhmm, end: hhmm, price: taka.nullable().optional() })).min(1).max(48),
+      }),
+    )
+    .max(8)
+    .optional(),
   /** Optional time-of-day prices, e.g. [{ from: "07:00", to: "10:00", hourly: 1500 }]. Left out = unchanged. */
   priceBands: z.array(z.object({ from: hhmm, to: hhmm, hourly: taka, days: z.array(z.enum(DAYS)).max(7).default([]) })).max(24).optional(),
 });
@@ -69,9 +86,11 @@ export type VenueInput = z.infer<typeof venueInput>;
 /** Minutes after the venue day's midnight: a time earlier than opening is after midnight. */
 const dayMin = (t: string, open: number) => (toMin(t) < open ? toMin(t) + 1440 : toMin(t));
 
-function customSlots(v: VenueInput) {
+type SlotIn = { start: string; end: string; price?: number | null };
+
+function customSlots(v: VenueInput, input: SlotIn[] = v.slots?.custom ?? [], label = 'slots.custom') {
   const open = toMin(v.schedule.opens);
-  const list = (v.slots?.custom ?? [])
+  const list = input
     .map((x) => {
       const start = dayMin(x.start, open);
       let end = toMin(x.end);
@@ -79,15 +98,38 @@ function customSlots(v: VenueInput) {
       return { start, end, price: x.price == null ? null : x.price * 100 };
     })
     .sort((a, b) => a.start - b.start);
-  if (!list.length) throw new ApiError('invalid', 'slots.custom: Add at least one session.');
+  if (!list.length) throw new ApiError('invalid', `${label}: Add at least one session.`);
   for (const [i, x] of list.entries()) {
-    if (x.end - x.start < 15 || x.end - x.start > 360) throw new ApiError('invalid', `slots.custom: Sessions must be 15 minutes to 6 hours (${fromMin(x.start)}–${fromMin(x.end)}).`);
-    if (x.end > 2880) throw new ApiError('invalid', 'slots.custom: Sessions can run at most until the next day.');
+    if (x.end - x.start < 15 || x.end - x.start > 360) throw new ApiError('invalid', `${label}: Sessions must be 15 minutes to 6 hours (${fromMin(x.start)}–${fromMin(x.end)}).`);
+    if (x.end > 2880) throw new ApiError('invalid', `${label}: Sessions can run at most until the next day.`);
     const prev = list[i - 1];
-    if (prev && x.start < prev.end) throw new ApiError('invalid', `slots.custom: ${fromMin(prev.start)}–${fromMin(prev.end)} overlaps ${fromMin(x.start)}–${fromMin(x.end)}.`);
+    if (prev && x.start < prev.end) throw new ApiError('invalid', `${label}: ${fromMin(prev.start)}–${fromMin(prev.end)} overlaps ${fromMin(x.start)}–${fromMin(x.end)}.`);
   }
-  if (list[0]!.start >= 1440) throw new ApiError('invalid', 'slots.custom: The first session must start on the day itself (set "opens" to it).');
+  if (list[0]!.start >= 1440) throw new ApiError('invalid', `${label}: The first session must start on the day itself (set "opens" to it).`);
   return list;
+}
+
+/** Validated session sets (minutes, poisha) and the live one's sessions. */
+function sessionSetsJson(v: VenueInput) {
+  const sets = v.sessionSets ?? [];
+  if (new Set(sets.map((x) => x.id)).size !== sets.length) throw new ApiError('invalid', 'sessionSets: Each set needs its own id.');
+  const live = sets.filter((x) => x.live);
+  if (live.filter((x) => !x.days.length).length > 1)
+    throw new ApiError('invalid', 'Only one live session set can run on all other days. Pick days for the others.');
+  const seen = new Map<string, string>();
+  for (const x of live)
+    for (const d of x.days) {
+      const other = seen.get(d);
+      if (other) throw new ApiError('invalid', `"${x.name}" and "${other}" are both live on ${d[0]!.toUpperCase()}${d.slice(1)}. Each day can have one live set.`);
+      seen.set(d, x.name);
+    }
+  return sets.map((x) => ({
+    id: x.id,
+    name: x.name,
+    live: x.live,
+    days: [...new Set(x.days)].map((d) => DAYS.indexOf(d)).sort(),
+    slots: customSlots(v, x.slots, `Session set "${x.name}"`),
+  }));
 }
 
 function bandsJson(v: VenueInput) {
@@ -139,6 +181,9 @@ type OwnerRow = {
   slot_mode: string;
   custom_slots: { start: number; end: number; price: number | null }[] | null;
   bands: { from: number; to: number; hourly: number; days: number[] | null }[] | null;
+  slot_sets: { id: string; name: string; live: boolean; days?: number[] | null; slots: { start: number; end: number; price: number | null }[] }[] | null;
+  booking_paused: boolean;
+  booking_notice: string | null;
   photos: string[] | null;
 };
 
@@ -146,7 +191,7 @@ const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, p.bands,
+         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
 
@@ -180,6 +225,15 @@ function shape(r: OwnerRow) {
       custom: (r.custom_slots ?? []).map((x) => ({ start: fromMin(x.start), end: fromMin(x.end), price: x.price == null ? null : x.price / 100 })),
     },
     priceBands: (r.bands ?? []).map((b) => ({ from: fromMin(b.from), to: fromMin(b.to), hourly: b.hourly / 100, days: (b.days ?? []).map((d) => DAYS[d]) })),
+    sessionSets: (r.slot_sets ?? []).map((x) => ({
+      id: x.id,
+      name: x.name,
+      live: x.live,
+      days: (x.days ?? []).map((d) => DAYS[d]),
+      slots: x.slots.map((y) => ({ start: fromMin(y.start), end: fromMin(y.end), price: y.price == null ? null : y.price / 100 })),
+    })),
+    bookingPaused: r.booking_paused,
+    bookingNotice: r.booking_notice,
   };
 }
 
@@ -200,7 +254,11 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
   let { open, close } = scheduleMinutes(v.schedule);
   let session = v.schedule.sessionMinutes;
   let brk = v.schedule.breakMinutes;
-  const custom = v.slots?.mode === 'custom' ? customSlots(v) : null;
+  const sets = v.sessionSets ? sessionSetsJson(v) : null;
+  // With session sets, live sets are what players book (per weekday). custom_slots keeps the
+  // "all other days" set (or the first live one) for anything that doesn't ask for a day.
+  const live = sets?.find((x) => x.live && !x.days.length) ?? sets?.find((x) => x.live);
+  const custom = v.slots?.mode === 'custom' ? (live ? live.slots : customSlots(v)) : null;
   if (custom) {
     // Opening hours follow the sessions; the most common length is shown as "N min each".
     open = custom[0]!.start;
@@ -215,6 +273,7 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
     [id, open, close, session, brk],
   );
   if (v.slots) await c.query('update venue_schedule set slot_mode = $2, custom_slots = $3 where venue_id = $1', [id, v.slots.mode, custom ? JSON.stringify(custom) : null]);
+  if (sets) await c.query('update venue_schedule set slot_sets = $2 where venue_id = $1', [id, JSON.stringify(sets)]);
   await c.query(
     `insert into venue_pricing (venue_id, standard_hourly, weekday_hourly, special_dates) values ($1,$2,$3,$4)
        on conflict (venue_id) do update set standard_hourly = excluded.standard_hourly, weekday_hourly = excluded.weekday_hourly, special_dates = excluded.special_dates`,
@@ -253,6 +312,42 @@ export async function updateVenue(ownerId: string, id: string, v: VenueInput) {
     );
     if (!r.rowCount) throw new ApiError('not_found', 'Turf not found.');
     await writeDetails(c, id, v);
+  });
+  await invalidateVenue(id);
+  return getOwnerVenue(ownerId, id);
+}
+
+export const bookingPauseInput = z.object({
+  paused: z.boolean(),
+  notice: z.string().trim().max(200).optional(),
+});
+
+/**
+ * Pause or resume new bookings. Existing bookings stay; players see the notice and every
+ * session as unavailable. Touches the next days in slot_updates so open apps refresh at once.
+ */
+export async function setBookingPause(ownerId: string, id: string, b: z.infer<typeof bookingPauseInput>) {
+  await tx(async (c) => {
+    const r = await c.query(
+      'update venues set booking_paused = $3, booking_notice = coalesce($4, booking_notice) where id = $1 and owner_id = $2 and status <> \'suspended\'',
+      [id, ownerId, b.paused, b.notice === undefined ? null : b.notice || null],
+    );
+    if (!r.rowCount) throw new ApiError('not_found', 'Turf not found.');
+    if (b.notice === '') await c.query('update venues set booking_notice = null where id = $1', [id]);
+    await c.query(
+      `insert into slot_updates(venue_id, day, xid)
+         select $1, d::date, pg_current_xact_id()
+           from generate_series((now() at time zone 'Asia/Dhaka')::date - 1, (now() at time zone 'Asia/Dhaka')::date + $2::int, interval '1 day') d
+       on conflict (venue_id, day) do update set updated_at = now(), xid = excluded.xid`,
+      [id, config.BOOKING_HORIZON_DAYS],
+    );
+    await c.query('insert into audit_log(actor_id, action, entity, entity_id, data) values ($1,$2,$3,$4,$5)', [
+      ownerId,
+      b.paused ? 'venue.booking_pause' : 'venue.booking_resume',
+      'venue',
+      id,
+      JSON.stringify({ notice: b.notice ?? null }),
+    ]);
   });
   await invalidateVenue(id);
   return getOwnerVenue(ownerId, id);

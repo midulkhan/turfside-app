@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Bath,
   CalendarDays,
+  CirclePause,
   Car,
   ChevronDown,
   CircleCheck,
@@ -429,6 +430,23 @@ export default function VenueScreen() {
               <Skeleton width="80%" height={16} />
             </View>
           )}
+
+          {/* ── Owner paused bookings: say so before the slots ──── */}
+          {v?.bookingPaused || v?.bookingNotice ? (
+            <View style={styles.paused} accessibilityRole="alert">
+              <CirclePause size={18} color={colors.warningText} strokeWidth={2} />
+              <View style={styles.flex}>
+                <Text variant="bodyStrong" color={colors.warningText}>
+                  Not taking bookings right now
+                </Text>
+                {v.bookingNotice ? (
+                  <Text variant="body" color={colors.warningText} style={styles.pausedNote}>
+                    {v.bookingNotice}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
 
           {/* ── Amenities strip ─────────────────────────────────── */}
           {v ? <AmenityStrip v={v} /> : <Skeleton height={84} r={radius.lg} />}
@@ -1021,6 +1039,17 @@ const styles = createStyles(() => ({
   ratingNum: { fontSize: 15, lineHeight: 19 },
   fromPrice: { fontFamily: font.semibold, fontSize: 14.5, lineHeight: 18, color: colors.ink },
   meta: { gap: 6, marginTop: space[1] },
+  paused: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[3],
+    padding: space[4],
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.warningLine,
+    backgroundColor: colors.warningSoft,
+  },
+  pausedNote: { marginTop: 2, fontSize: 13.5, lineHeight: 19 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 22 },
   name: { fontFamily: font.semibold, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
   address: { fontSize: 13.5, lineHeight: 18 },
