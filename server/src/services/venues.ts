@@ -31,6 +31,9 @@ export type VenueRow = {
   slot_mode?: string | null;
   custom_slots?: CustomSlot[] | null;
   bands?: PriceBand[] | null;
+  /** Migration 021: the owner paused new bookings (missing on older cached rows = not paused). */
+  booking_paused?: boolean | null;
+  booking_notice?: string | null;
   photos: string[] | null;
   pitch_id: string;
 };
@@ -40,7 +43,7 @@ const VENUE_SELECT = `
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
          p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, p.bands,
+         s.slot_mode, s.custom_slots, p.bands, v.booking_paused, v.booking_notice,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
   from venues v
@@ -243,6 +246,9 @@ function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string)
       // A hold that has run out since the copy was made is free again.
       const clash = taken.find((t) => t.s < e && t.e > s && !(t.kind === 'held' && t.until !== null && t.until < now));
       const base = { id: `${v.id}:${day}:${start}`, start, end, price: priceFor(prices, day, session) };
+      // Paused by the owner: nothing new can be booked (older apps show these as unavailable too).
+      // A checkout already in progress can still finish.
+      if (v.booking_paused && !clash) return { ...base, status: 'blocked' as const };
       if (!clash) return { ...base, status: 'available' as const };
       if (clash.kind === 'held' && viewerId && clash.userId === viewerId) return { ...base, status: 'mine' as const, holdId: clash.id! };
       if (clash.kind === 'booked' && clash.sq && clash.sq.left > 0)
@@ -300,6 +306,7 @@ export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?:
     availableToday: opts.availableToday ?? true,
     photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null,
     isSaved: !!opts.saved,
+    bookingPaused: !!v.booking_paused,
   };
 }
 
@@ -322,5 +329,7 @@ export function detail(v: VenueRow, saved: boolean) {
     about: v.about,
     sessionLengthMin: v.session_min,
     cancellationPolicy: v.cancellation_policy,
+    /** Shown on the turf page while the owner has paused bookings. */
+    bookingNotice: v.booking_paused ? v.booking_notice || 'This turf is not taking new bookings right now.' : null,
   };
 }

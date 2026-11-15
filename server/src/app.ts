@@ -388,6 +388,9 @@ export async function buildApp() {
     owner.createVenue(req.user!.userId, parse(owner.venueInput, req.body)),
   );
   app.put('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.updateVenue(req.user!.userId, venueId(req), parse(owner.venueInput, req.body)));
+  app.put('/v1/owner/venues/:id/booking-pause', { preHandler: requireOwner }, async (req) =>
+    owner.setBookingPause(req.user!.userId, venueId(req), parse(owner.bookingPauseInput, req.body)),
+  );
   app.delete('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.removeVenue(req.user!.userId, venueId(req)));
   // Owner dashboard: bookings, day sheet, closures, stats, reviews, tournaments, inbox.
   registerOwnerRoutes(app, { requireOwner, parse });

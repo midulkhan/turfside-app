@@ -22,6 +22,8 @@ export type VenueSummary = {
   availableToday: boolean;
   photo: string | null; // absolute URL served by the API
   isSaved: boolean;
+  /** The owner paused new bookings (missing from older APIs = not paused). */
+  bookingPaused?: boolean;
 };
 
 export type VenueDetail = VenueSummary & {
@@ -36,6 +38,8 @@ export type VenueDetail = VenueSummary & {
   openingHours: string;
   sessionLengthMin: number;
   cancellationPolicy: string;
+  /** Set while the owner has paused bookings: why, in the owner's words. */
+  bookingNotice?: string | null;
 };
 
 export type Review = { id: string; author: string; rating: number; at: number; text: string };

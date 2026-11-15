@@ -213,6 +213,7 @@ export async function createHold(userId: string, slotIds: string[]) {
   const today = dhakaToday();
   // From Postgres, not the cache: this sets the price and checks the schedule.
   const v = await getVenueRowExact(venueId);
+  if (v.booking_paused) throw new ApiError('slot_taken', v.booking_notice || 'This turf is not taking new bookings right now.');
   const sessions = sessionsFor(slotRules(v));
   const picks = parsed
     .map((p) => {

@@ -342,4 +342,62 @@ d('owner dashboard', () => {
     expect((await call('GET', `/v1/owner/tournaments/${t.json.id}`, undefined, x.accessToken)).status).toBe(404);
     expect((await call('GET', '/v1/owner/tournaments', undefined, x.accessToken)).json).toEqual([]);
   });
+  it('session sets: one live set is what players book; pause stops new bookings and shows a notice', async () => {
+    const o = await newUser('owner');
+    const sets = [
+      { id: 'normal', name: 'Normal days', live: true, slots: [{ start: '07:00', end: '08:30', price: 1500 }, { start: '18:00', end: '19:30', price: 2500 }] },
+      { id: 'ramadan', name: 'Ramadan', live: false, slots: [{ start: '20:00', end: '21:30', price: 3000 }, { start: '22:00', end: '23:30' }] },
+    ];
+    const v = await call('POST', '/v1/owner/venues', { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: sets }, o.accessToken);
+    expect(v.status, JSON.stringify(v.json)).toBe(200);
+    expect(v.json.sessionSets.map((x: Json) => [x.id, x.live])).toEqual([['normal', true], ['ramadan', false]]);
+    expect(v.json.sessionSets[1].slots[1]).toEqual({ start: '22:00', end: '23:30', price: null });
+    expect(v.json.slots.custom.map((x: Json) => x.start)).toEqual(['07:00', '18:00']);
+    const day = dayIn(2);
+    let slots = (await call('GET', `/v1/venues/${v.json.id}/slots?day=${day}`)).json.slots as Json[];
+    expect(slots.map((x) => [x.start, x.price])).toEqual([[420, 150000], [1080, 250000]]);
+
+    // Switch the live set: players get the other sessions.
+    const flipped = sets.map((x) => ({ ...x, live: x.id === 'ramadan' }));
+    const r = await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: flipped }, o.accessToken);
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    slots = (await call('GET', `/v1/venues/${v.json.id}/slots?day=${day}`)).json.slots as Json[];
+    expect(slots.map((x) => [x.start, x.price])).toEqual([[1200, 300000], [1320, 180000]]);
+
+    // Two live sets are refused; a bad set names itself.
+    const two = await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: sets.map((x) => ({ ...x, live: true })) }, o.accessToken);
+    expect(two.status).toBe(400);
+    const bad = await call(
+      'PUT',
+      `/v1/owner/venues/${v.json.id}`,
+      { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: [{ id: 'x', name: 'Winter', live: true, slots: [{ start: '07:00', end: '09:00' }, { start: '08:00', end: '10:00' }] }] },
+      o.accessToken,
+    );
+    expect(bad.status).toBe(400);
+    expect(bad.json.error.message).toMatch(/Winter.*overlaps/);
+
+    // Pause: every free session is unavailable, a hold is refused with the notice, the turf page says why.
+    const p = await newUser('player');
+    const paused = await call('PUT', `/v1/owner/venues/${v.json.id}/booking-pause`, { paused: true, notice: 'Closed for pitch repairs until Friday.' }, o.accessToken);
+    expect(paused.status, JSON.stringify(paused.json)).toBe(200);
+    expect(paused.json).toMatchObject({ bookingPaused: true, bookingNotice: 'Closed for pitch repairs until Friday.' });
+    slots = (await call('GET', `/v1/venues/${v.json.id}/slots?day=${day}`)).json.slots as Json[];
+    expect(slots.every((x) => x.status === 'blocked')).toBe(true);
+    const hold = await call('POST', '/v1/holds', { slotIds: [slots[0].id] }, p.accessToken);
+    expect(hold.status).toBe(409);
+    expect(hold.json.error.message).toBe('Closed for pitch repairs until Friday.');
+    const detail = (await call('GET', `/v1/venues/${v.json.id}`)).json;
+    expect(detail).toMatchObject({ bookingPaused: true, bookingNotice: 'Closed for pitch repairs until Friday.' });
+    // Another owner can't touch it.
+    const other = await newUser('owner');
+    expect((await call('PUT', `/v1/owner/venues/${v.json.id}/booking-pause`, { paused: false }, other.accessToken)).status).toBe(404);
+
+    // Resume: bookable again, no notice.
+    const resumed = await call('PUT', `/v1/owner/venues/${v.json.id}/booking-pause`, { paused: false }, o.accessToken);
+    expect(resumed.json.bookingPaused).toBe(false);
+    slots = (await call('GET', `/v1/venues/${v.json.id}/slots?day=${day}`)).json.slots as Json[];
+    expect(slots.every((x) => x.status === 'available')).toBe(true);
+    expect((await call('GET', `/v1/venues/${v.json.id}`)).json.bookingNotice).toBeNull();
+    expect((await call('POST', '/v1/holds', { slotIds: [slots[0].id] }, p.accessToken)).status).toBe(200);
+  });
 });
