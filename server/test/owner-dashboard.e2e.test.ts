@@ -24,14 +24,15 @@ async function call(method: string, path: string, body?: unknown, token?: string
 }
 async function newUser(role: 'player' | 'owner') {
   const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-  const s = await call('POST', '/v1/auth/signup/start', {
+  const A = role === 'owner' ? '/v1/owner/auth' : '/v1/auth';
+  const s = await call('POST', `${A}/signup/start`, {
     name: `Dash ${role}`,
     phone,
     email: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`,
     password: 'owner pass 123',
     role,
   });
-  return (await call('POST', '/v1/auth/signup/verify', { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
+  return (await call('POST', `${A}/signup/verify`, { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
 }
 const dayIn = (n: number) => new Date(Date.now() + 6 * 3600_000 + n * 86400_000).toISOString().slice(0, 10);
 const dow = (day: string) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(`${day}T00:00:00Z`).getUTCDay()]!;
@@ -263,7 +264,7 @@ d('owner dashboard', () => {
     expect(
       (await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [600], guestName: 'Intruder' }, x.accessToken)).status,
     ).toBe(404);
-    expect((await call('GET', '/v1/owner/bookings', undefined, p.accessToken)).status).toBe(403);
+    expect((await call('GET', '/v1/owner/bookings', undefined, p.accessToken)).status).toBe(401);
   });
 
   it('tournaments close the turf while published and list for players', async () => {
@@ -430,26 +431,53 @@ d('owner dashboard', () => {
     expect((await call('GET', `/v1/venues/${v.json.id}`)).json.bookingNotice).toBeNull();
     expect((await call('POST', '/v1/holds', { slotIds: [slots[0].id] }, p.accessToken)).status).toBe(200);
   });
-  it('password reset by account email (dashboard) and by number (app)', async () => {
+  it('owner password reset by account email; player reset is separate', async () => {
     const o = await newUser('owner');
     const email = String(o.user.email);
+    const R = '/v1/owner/auth/password/reset';
     // Unknown email: same answer, nothing sent, no account discovery.
-    const ghost = await call('POST', '/v1/auth/password/reset/start', { email: 'nobody-here@test.turfsides.dev' });
+    const ghost = await call('POST', `${R}/start`, { email: 'nobody-here@test.turfsides.dev' });
     expect(ghost.status).toBe(200);
     expect(ghost.json.devCode).toBeUndefined();
+    // The owner's email is not a player account: the player reset knows nothing about it.
+    expect((await call('POST', '/v1/auth/password/reset/start', { email })).json.devCode).toBeUndefined();
     // By email, case-insensitive.
-    const s1 = await call('POST', '/v1/auth/password/reset/start', { email: email.toUpperCase() });
+    const s1 = await call('POST', `${R}/start`, { email: email.toUpperCase() });
     expect(s1.status, JSON.stringify(s1.json)).toBe(200);
     expect(s1.json.devCode).toMatch(/^\d{6}$/);
-    const wrong = await call('POST', '/v1/auth/password/reset/verify', { email, code: '000000', newPassword: 'new pass 4567' });
-    expect(wrong.status).toBe(400);
-    const ok = await call('POST', '/v1/auth/password/reset/verify', { email, code: s1.json.devCode, newPassword: 'new pass 4567' });
+    expect((await call('POST', `${R}/verify`, { email, code: '000000', newPassword: 'new pass 4567' })).status).toBe(400);
+    const ok = await call('POST', `${R}/verify`, { email, code: s1.json.devCode, newPassword: 'new pass 4567' });
     expect(ok.status, JSON.stringify(ok.json)).toBe(200);
-    expect(ok.json.accessToken).toBeTruthy();
-    expect((await call('POST', '/v1/auth/login', { identifier: email, password: 'new pass 4567' })).status).toBe(200);
-    // By number still works for the app.
-    const s2 = await call('POST', '/v1/auth/password/reset/start', { phone: String(o.user.phone) });
-    expect(s2.status, JSON.stringify(s2.json)).toBe(200);
+    expect((await call('POST', '/v1/owner/auth/login', { identifier: email, password: 'new pass 4567' })).status).toBe(200);
+    // By number too.
+    const s2 = await call('POST', `${R}/start`, { phone: String(o.user.phone) });
     expect(s2.json.devCode).toMatch(/^\d{6}$/);
+  });
+
+  it('owners and players are separate accounts: own sign-in, own tokens', async () => {
+    const o = await newUser('owner');
+    const p = await newUser('player');
+    expect(o.user.roles).toEqual(['owner']);
+    expect(p.user.roles).toEqual(['player']);
+    // A player token can't use owner endpoints; an owner token can't use player endpoints.
+    expect((await call('GET', '/v1/owner/venues', undefined, p.accessToken)).status).toBe(401);
+    expect((await call('GET', '/v1/me', undefined, o.accessToken)).status).toBe(401);
+    expect((await call('GET', '/v1/owner/me', undefined, o.accessToken)).json.id).toBe(o.user.id);
+    // The owner's credentials don't sign in to the player app, and the reverse.
+    expect((await call('POST', '/v1/auth/login', { identifier: String(o.user.email), password: 'owner pass 123' })).status).toBe(401);
+    expect((await call('POST', '/v1/owner/auth/login', { identifier: String(p.user.email), password: 'owner pass 123' })).status).toBe(401);
+    // The same person can have both: a player account with the owner's number and email.
+    const both = await call('POST', '/v1/auth/signup/start', { name: 'Same Person', phone: String(o.user.phone), email: String(o.user.email), password: 'player pass 123' });
+    expect(both.status, JSON.stringify(both.json)).toBe(200);
+    const made = await call('POST', '/v1/auth/signup/verify', { phone: String(o.user.phone), code: both.json.devCode });
+    expect(made.status, JSON.stringify(made.json)).toBe(200);
+    expect(made.json.user.id).not.toBe(o.user.id);
+    // Owner sessions refresh in their own table; a player refresh token is useless there.
+    const login = await call('POST', '/v1/owner/auth/login', { identifier: String(o.user.email), password: 'owner pass 123' });
+    expect((await call('POST', '/v1/owner/auth/refresh', { refreshToken: login.json.refreshToken })).status).toBe(200);
+    expect((await call('POST', '/v1/owner/auth/refresh', { refreshToken: made.json.refreshToken })).status).toBe(401);
+    // Owner account pages work.
+    expect((await call('GET', '/v1/owner/me/settings', undefined, o.accessToken)).status).toBe(200);
+    expect((await call('PATCH', '/v1/owner/me', { name: 'Owner Renamed' }, o.accessToken)).json.name).toBe('Owner Renamed');
   });
 });

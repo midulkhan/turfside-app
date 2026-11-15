@@ -14,22 +14,26 @@ function secret(name: 'JWT_SECRET' | 'PASS_SECRET') {
   return v;
 }
 
+/** Player tokens are for the player app; owner tokens for the owner dashboard. Never interchangeable. */
+const AUDIENCE = { player: 'turfsides-app', owner: 'turfsides-owner' } as const;
+export type TokenRealm = keyof typeof AUDIENCE;
+
 /** Short-lived access token. Refresh tokens are opaque and stored hashed in the DB. */
-export async function signAccess(userId: string, roles: string[], sessionId: string) {
+export async function signAccess(userId: string, roles: string[], sessionId: string, realm: TokenRealm = 'player') {
   return new SignJWT({ roles, sid: sessionId })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(userId)
     .setIssuer('turfsides')
-    .setAudience('turfsides-app')
+    .setAudience(AUDIENCE[realm])
     .setIssuedAt()
     .setExpirationTime(ACCESS_TTL)
     .sign(enc(secret('JWT_SECRET')));
 }
 
-export async function verifyAccess(token: string) {
+export async function verifyAccess(token: string, realm: TokenRealm = 'player') {
   try {
-    const { payload } = await jwtVerify(token, enc(secret('JWT_SECRET')), { issuer: 'turfsides', audience: 'turfsides-app', algorithms: ['HS256'] });
-    return { userId: String(payload.sub), roles: (payload.roles as string[]) ?? [], sessionId: String(payload.sid) };
+    const { payload } = await jwtVerify(token, enc(secret('JWT_SECRET')), { issuer: 'turfsides', audience: AUDIENCE[realm], algorithms: ['HS256'] });
+    return { userId: String(payload.sub), roles: (payload.roles as string[]) ?? [], sessionId: String(payload.sid), realm };
   } catch {
     throw new ApiError('unauthorized', 'Please sign in again.');
   }

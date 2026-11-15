@@ -23,6 +23,7 @@ import m018 from '../db/migrations/018_contact_phone.sql';
 import m017 from '../db/migrations/017_two_factor.sql';
 import m020 from '../db/migrations/020_owner_dashboard.sql';
 import m021 from '../db/migrations/021_session_sets_pause.sql';
+import m022 from '../db/migrations/022_owner_accounts.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -46,6 +47,7 @@ const MIGRATIONS: [string, string][] = [
   ['019_member_contact_phone', m019],
   ['020_owner_dashboard', m020],
   ['021_session_sets_pause', m021],
+  ['022_owner_accounts', m022],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

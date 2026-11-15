@@ -21,6 +21,7 @@ import { isExpoToken, kickPush, pushStatus, sentForTests } from './lib/push';
 import { verifyAccess, verifyAnyPass } from './lib/tokens';
 import * as account from './services/account';
 import * as auth from './services/auth';
+import type { Realm } from './services/auth';
 import * as bookings from './services/bookings';
 import * as owner from './services/owner';
 import * as matches from './services/matches';
@@ -31,7 +32,7 @@ import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversine
 
 declare module 'fastify' {
   interface FastifyRequest {
-    user?: { userId: string; roles: string[]; sessionId: string };
+    user?: { userId: string; roles: string[]; sessionId: string; realm: Realm };
   }
 }
 
@@ -73,19 +74,38 @@ const deviceLabel = (h: unknown) => {
 const meta = (req: FastifyRequest) => ({ ip: req.ip, ua: req.headers['user-agent'], device: deviceLabel(req.headers['x-device']) });
 const idem = (req: FastifyRequest) => (typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined);
 
+/** A signed-in player (player app token). */
 async function requireUser(req: FastifyRequest) {
   const h = req.headers.authorization;
   if (!h?.startsWith('Bearer ')) throw new ApiError('unauthorized', 'Please sign in.');
-  req.user = await verifyAccess(h.slice(7));
+  req.user = await verifyAccess(h.slice(7), 'player');
 }
-/** For account-security actions: the session itself must still be signed in (not just a valid 15-min token). */
-async function requireLiveUser(req: FastifyRequest) {
-  await requireUser(req);
-  await account.assertLiveSession(req.user!.sessionId);
-}
+/** A signed-in turf owner (owner dashboard token; player tokens are refused). */
 async function requireOwner(req: FastifyRequest) {
-  await requireUser(req);
-  if (!req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'This needs a turf owner account.');
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) throw new ApiError('unauthorized', 'Please sign in.');
+  req.user = await verifyAccess(h.slice(7), 'owner').catch(() => {
+    throw new ApiError('unauthorized', 'Please sign in with your turf owner account.');
+  });
+}
+/** Either kind of account (photo uploads). */
+async function requireAnyUser(req: FastifyRequest) {
+  await requireUser(req).catch(() => requireOwner(req));
+}
+const signedIn = (realm: Realm) => (realm === 'owner' ? requireOwner : requireUser);
+/** For account-security actions: the session itself must still be signed in (not just a valid 15-min token). */
+const liveIn = (realm: Realm) => async (req: FastifyRequest) => {
+  await signedIn(realm)(req);
+  await account.assertLiveSession(req.user!.sessionId, realm);
+};
+const requireLiveUser = liveIn('player');
+/**
+ * Removes an old profile photo from storage unless an account still shows it (owners moved over
+ * from player accounts start out sharing the same photo).
+ */
+async function dropAvatar(key: string) {
+  const used = await one('select 1 from users where avatar_key = $1 union all select 1 from owners where avatar_key = $1 limit 1', [key]);
+  if (!used) await deleteObject(key).catch(() => {});
 }
 async function optionalUser(req: FastifyRequest) {
   if (req.headers.authorization?.startsWith('Bearer ')) await requireUser(req).catch(() => undefined);
@@ -203,46 +223,117 @@ export async function buildApp() {
     return reply.send(createReadStream(path));
   });
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth and account: players (/v1/auth, /v1/me) and turf owners (/v1/owner/auth, /v1/owner/me) ──
+  // Same flows, separate accounts: owners live in `owners`, players in `users` (see 022_owner_accounts).
   const authLimit = { config: { rateLimit: { max: config.AUTH_RATE_LIMIT, timeWindow: '1 minute' } } };
-  app.post('/v1/auth/signup/start', authLimit, async (req) => {
-    // Both a mobile number (sign-in, SMS codes, bKash) and an email (receipts, recovery) are required.
-    const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email, password, role: z.enum(['player', 'owner']).default('player') }), req.body);
-    return auth.signupStart(b, req.ip);
-  });
-  app.post('/v1/auth/signup/verify', authLimit, async (req) => {
-    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
-    return auth.signupVerify(b.phone, b.code, meta(req));
-  });
-  app.post('/v1/auth/login', authLimit, async (req) => {
-    const b = parse(z.object({ identifier: z.string().trim().min(3).max(254), password: z.string().min(1).max(128) }), req.body);
-    const isEmail = b.identifier.includes('@');
-    const ident = isEmail ? { kind: 'email' as const, value: parse(email, b.identifier) } : { kind: 'phone' as const, value: parse(phone10, b.identifier) };
-    return auth.login(ident, b.password, meta(req));
-  });
   const challenge = z.string().min(20).max(300);
-  app.post('/v1/auth/login/verify', authLimit, async (req) => {
-    const b = parse(z.object({ challenge, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
-    return auth.loginVerify(b.challenge, b.code, meta(req));
-  });
-  app.post('/v1/auth/login/resend', authLimit, async (req) => auth.loginResend(parse(z.object({ challenge }), req.body).challenge, req.ip));
-  app.post('/v1/auth/refresh', authLimit, async (req) => auth.refresh(parse(z.object({ refreshToken: z.string().min(20).max(200) }), req.body).refreshToken, meta(req)));
-  app.post('/v1/auth/logout', { preHandler: requireUser }, async (req) => auth.logout(req.user!.sessionId));
-  // Reset by account email (owner dashboard) or by mobile number (player app). The code is
-  // emailed either way; an unknown email or number gets the same answer (no account discovery).
-  const resetWho = z.union([z.object({ email }), z.object({ phone: phone10 })]);
-  app.post('/v1/auth/password/reset/start', authLimit, async (req) => {
-    const b = parse(resetWho, req.body);
-    const phone = 'email' in b ? await auth.phoneForEmail(b.email) : b.phone;
-    return phone ? auth.resetStart(phone, req.ip) : { sent: true };
-  });
-  app.post('/v1/auth/password/reset/verify', authLimit, async (req) => {
-    const b = parse(z.intersection(resetWho, z.object({ code: z.string().regex(/^\d{6}$/), newPassword: password })), req.body);
-    const phone = 'email' in b ? await auth.phoneForEmail(b.email) : b.phone;
-    if (!phone) throw new ApiError('invalid', 'That code is not right. Try again.');
-    return auth.resetVerify(phone, b.code, b.newPassword, meta(req));
-  });
+  const code6 = z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.');
+  const realms = [
+    { realm: 'player' as const, auth: '/v1/auth', me: '/v1/me' },
+    { realm: 'owner' as const, auth: '/v1/owner/auth', me: '/v1/owner/me' },
+  ];
+  for (const { realm, auth: A, me: M } of realms) {
+    const guard = signedIn(realm);
+    const live = liveIn(realm);
 
+    app.post(`${A}/signup/start`, authLimit, async (req) => {
+      // Both a mobile number (sign-in, SMS codes, bKash) and an email (receipts, recovery) are required.
+      // `role` is still accepted from older apps and ignored: the endpoint decides the kind of account.
+      const b = parse(z.object({ name: z.string().trim().min(2).max(80), phone: phone10, email, password, role: z.string().optional() }), req.body);
+      return auth.signupStart(b, req.ip, realm);
+    });
+    app.post(`${A}/signup/verify`, authLimit, async (req) => {
+      const b = parse(z.object({ phone: phone10, code: code6 }), req.body);
+      return auth.signupVerify(b.phone, b.code, meta(req), realm);
+    });
+    app.post(`${A}/login`, authLimit, async (req) => {
+      const b = parse(z.object({ identifier: z.string().trim().min(3).max(254), password: z.string().min(1).max(128) }), req.body);
+      const isEmail = b.identifier.includes('@');
+      const ident = isEmail ? { kind: 'email' as const, value: parse(email, b.identifier) } : { kind: 'phone' as const, value: parse(phone10, b.identifier) };
+      return auth.login(ident, b.password, meta(req), realm);
+    });
+    app.post(`${A}/login/verify`, authLimit, async (req) => {
+      const b = parse(z.object({ challenge, code: code6 }), req.body);
+      return auth.loginVerify(b.challenge, b.code, meta(req), realm);
+    });
+    app.post(`${A}/login/resend`, authLimit, async (req) => auth.loginResend(parse(z.object({ challenge }), req.body).challenge, req.ip, realm));
+    app.post(`${A}/refresh`, authLimit, async (req) =>
+      auth.refresh(parse(z.object({ refreshToken: z.string().min(20).max(200) }), req.body).refreshToken, meta(req), realm),
+    );
+    app.post(`${A}/logout`, { preHandler: guard }, async (req) => auth.logout(req.user!.sessionId, realm));
+    // Reset by account email (owner dashboard) or by mobile number (player app). The code is
+    // emailed either way; an unknown email or number gets the same answer (no account discovery).
+    const resetWho = z.union([z.object({ email }), z.object({ phone: phone10 })]);
+    app.post(`${A}/password/reset/start`, authLimit, async (req) => {
+      const b = parse(resetWho, req.body);
+      const phone = 'email' in b ? await auth.phoneForEmail(b.email, realm) : b.phone;
+      return phone ? auth.resetStart(phone, req.ip, realm) : { sent: true };
+    });
+    app.post(`${A}/password/reset/verify`, authLimit, async (req) => {
+      const b = parse(z.intersection(resetWho, z.object({ code: code6, newPassword: password })), req.body);
+      const phone = 'email' in b ? await auth.phoneForEmail(b.email, realm) : b.phone;
+      if (!phone) throw new ApiError('invalid', 'That code is not right. Try again.');
+      return auth.resetVerify(phone, b.code, b.newPassword, meta(req), realm);
+    });
+
+    // Me + account: settings, devices, password, name, phone, photo.
+    app.get(M, { preHandler: guard }, async (req) => auth.me(req.user!.userId, realm));
+    app.get(`${M}/settings`, { preHandler: guard }, async (req) => account.getSettings(req.user!.userId, realm));
+    app.put(`${M}/settings`, { preHandler: guard }, async (req) =>
+      account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional(), twoFactor: z.boolean().optional() }).strict(), req.body), realm),
+    );
+    app.get(`${M}/sessions`, { preHandler: live }, async (req) => account.listSessions(req.user!.userId, req.user!.sessionId, realm));
+    app.delete(`${M}/sessions/:id`, { preHandler: live }, async (req) => {
+      const id = (req.params as { id: string }).id;
+      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError('not_found', 'That device is already signed out.');
+      return account.revokeSession(req.user!.userId, id, realm);
+    });
+    app.post(`${M}/sessions/revoke-others`, { preHandler: live }, async (req) => account.revokeOtherSessions(req.user!.userId, req.user!.sessionId, realm));
+    const sensitive = { preHandler: live, config: { rateLimit: { max: 8, timeWindow: '15 minutes', keyGenerator: perSession } } };
+    app.post(`${M}/password`, sensitive, async (req) => {
+      const b = parse(z.object({ current: z.string().min(1).max(200), next: password }), req.body);
+      return account.changePassword(req.user!.userId, req.user!.sessionId, b.current, b.next, realm);
+    });
+    app.patch(M, { preHandler: live }, async (req) =>
+      auth.updateProfile(req.user!.userId, parse(z.object({ name: z.string().trim().min(2, 'Enter your name.').max(80) }), req.body), realm),
+    );
+    app.post(`${M}/phone/start`, sensitive, async (req) => {
+      const b = parse(z.object({ phone: phone10, password: z.string().min(1).max(200) }), req.body);
+      return auth.phoneChangeStart(req.user!.userId, b.phone, b.password, req.ip, realm);
+    });
+    app.post(`${M}/phone/verify`, sensitive, async (req) => {
+      const b = parse(z.object({ phone: phone10, code: code6 }), req.body);
+      return auth.phoneChangeVerify(req.user!.userId, b.phone, b.code, realm);
+    });
+    if (realm === 'player')
+      app.post(`${M}/delete`, sensitive, async (req) => account.deleteAccount(req.user!.userId, parse(z.object({ password: z.string().min(1).max(200) }), req.body).password));
+
+    // Profile photo: only keys we issued to this account, and only once the file is really in R2.
+    const avatarDir = (id: string) => (realm === 'owner' ? `owner-avatars/${id}/` : `avatars/${id}/`);
+    const T = auth.TABLES[realm].users;
+    app.put(`${M}/avatar`, { preHandler: guard }, async (req) => {
+      const { key } = parse(z.object({ key: z.string().max(200) }), req.body);
+      if (!key.startsWith(avatarDir(req.user!.userId))) throw new ApiError('forbidden', 'That photo doesn’t belong to you.');
+      const obj = await headObject(key);
+      if (!obj) throw new ApiError('invalid', 'The photo hasn’t finished uploading. Try again.');
+      if (obj.size > MAX_UPLOAD_BYTES || !obj.type.startsWith('image/')) {
+        await deleteObject(key).catch(() => {});
+        throw new ApiError('invalid', 'That file isn’t a valid photo.');
+      }
+      const prev = await one<{ avatar_key: string | null }>(`select avatar_key from ${T} where id = $1`, [req.user!.userId]);
+      await q(`update ${T} set avatar_key = $2, updated_at = now() where id = $1`, [req.user!.userId, key]);
+      if (prev?.avatar_key && prev.avatar_key !== key) await dropAvatar(prev.avatar_key);
+      return auth.me(req.user!.userId, realm);
+    });
+    app.delete(`${M}/avatar`, { preHandler: guard }, async (req) => {
+      const prev = await one<{ avatar_key: string | null }>(
+        `update ${T} u set avatar_key = null, updated_at = now() from (select avatar_key from ${T} where id = $1) old where u.id = $1 returning old.avatar_key`,
+        [req.user!.userId],
+      );
+      if (prev?.avatar_key) await dropAvatar(prev.avatar_key);
+      return auth.me(req.user!.userId, realm);
+    });
+  }
   // ── Venues (public; hearts filled in when signed in) ──────────────────────
   // Explore + search. The app debounces, narrows locally and caches, so a person typing sends a
   // handful of requests; 60/min per session only ever stops scripts or runaway loops.
@@ -342,37 +433,6 @@ export async function buildApp() {
     return reviews.saveReview(req.user!.userId, id, b);
   });
 
-  // ── Me ────────────────────────────────────────────────────────────────────
-  app.get('/v1/me', { preHandler: requireUser }, async (req) => auth.me(req.user!.userId));
-  // ── Account: settings, devices, password, deletion ──────────────────────
-  app.get('/v1/me/settings', { preHandler: requireUser }, async (req) => account.getSettings(req.user!.userId));
-  app.put('/v1/me/settings', { preHandler: requireUser }, async (req) =>
-    account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional(), twoFactor: z.boolean().optional() }).strict(), req.body)),
-  );
-  app.get('/v1/me/sessions', { preHandler: requireLiveUser }, async (req) => account.listSessions(req.user!.userId, req.user!.sessionId));
-  app.delete('/v1/me/sessions/:id', { preHandler: requireLiveUser }, async (req) => {
-    const id = (req.params as { id: string }).id;
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError('not_found', 'That device is already signed out.');
-    return account.revokeSession(req.user!.userId, id);
-  });
-  app.post('/v1/me/sessions/revoke-others', { preHandler: requireLiveUser }, async (req) => account.revokeOtherSessions(req.user!.userId, req.user!.sessionId));
-  const sensitive = { preHandler: requireLiveUser, config: { rateLimit: { max: 8, timeWindow: '15 minutes', keyGenerator: perSession } } };
-  app.post('/v1/me/password', sensitive, async (req) => {
-    const b = parse(z.object({ current: z.string().min(1).max(200), next: password }), req.body);
-    return account.changePassword(req.user!.userId, req.user!.sessionId, b.current, b.next);
-  });
-  app.patch('/v1/me', { preHandler: requireLiveUser }, async (req) =>
-    auth.updateProfile(req.user!.userId, parse(z.object({ name: z.string().trim().min(2, 'Enter your name.').max(80) }), req.body)),
-  );
-  app.post('/v1/me/phone/start', sensitive, async (req) => {
-    const b = parse(z.object({ phone: phone10, password: z.string().min(1).max(200) }), req.body);
-    return auth.phoneChangeStart(req.user!.userId, b.phone, b.password, req.ip);
-  });
-  app.post('/v1/me/phone/verify', sensitive, async (req) => {
-    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.') }), req.body);
-    return auth.phoneChangeVerify(req.user!.userId, b.phone, b.code);
-  });
-  app.post('/v1/me/delete', sensitive, async (req) => account.deleteAccount(req.user!.userId, parse(z.object({ password: z.string().min(1).max(200) }), req.body).password));
   app.get('/v1/me/saved', { preHandler: requireUser }, async (req) => {
     const ids = await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1 order by created_at desc', [req.user!.userId]);
     const rows = await allVenueRows();
@@ -405,7 +465,7 @@ export async function buildApp() {
   registerOwnerRoutes(app, { requireOwner, parse });
 
   // ── Photo uploads (Cloudflare R2, direct from the app) ──────────────────────
-  app.post('/v1/uploads', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/v1/uploads', { preHandler: requireAnyUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const b = parse(
       z.object({
         purpose: z.enum(['avatar', 'venue']),
@@ -415,32 +475,11 @@ export async function buildApp() {
       req.body,
     );
     // Turf photos are for owners only; each user uploads under their own prefix.
-    if (b.purpose === 'venue' && !req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'Only turf owners can upload turf photos.');
-    const key = newKey(`${b.purpose === 'venue' ? 'venues' : 'avatars'}/${req.user!.userId}`, b.contentType);
+    if (b.purpose === 'venue' && req.user!.realm !== 'owner') throw new ApiError('forbidden', 'Only turf owners can upload turf photos.');
+    const dir = b.purpose === 'venue' ? 'venues' : req.user!.realm === 'owner' ? 'owner-avatars' : 'avatars';
+    const key = newKey(`${dir}/${req.user!.userId}`, b.contentType);
     // publicUrl: where the photo will be served from (owner dashboards put it in the turf's photos).
     return { key, ...(await presignPut(key, b.contentType, b.size)), publicUrl: publicUrl(key) };
-  });
-
-  app.put('/v1/me/avatar', { preHandler: requireUser }, async (req) => {
-    const { key } = parse(z.object({ key: z.string().max(200) }), req.body);
-    // Only keys we issued to this user, and only once the file is really in R2.
-    if (!key.startsWith(`avatars/${req.user!.userId}/`)) throw new ApiError('forbidden', 'That photo doesn’t belong to you.');
-    const obj = await headObject(key);
-    if (!obj) throw new ApiError('invalid', 'The photo hasn’t finished uploading. Try again.');
-    if (obj.size > MAX_UPLOAD_BYTES || !obj.type.startsWith('image/')) {
-      await deleteObject(key).catch(() => {});
-      throw new ApiError('invalid', 'That file isn’t a valid photo.');
-    }
-    const prev = await one<{ avatar_key: string | null }>('select avatar_key from users where id = $1', [req.user!.userId]);
-    await q('update users set avatar_key = $2, updated_at = now() where id = $1', [req.user!.userId, key]);
-    if (prev?.avatar_key && prev.avatar_key !== key) await deleteObject(prev.avatar_key).catch(() => {});
-    return auth.me(req.user!.userId);
-  });
-
-  app.delete('/v1/me/avatar', { preHandler: requireUser }, async (req) => {
-    const prev = await one<{ avatar_key: string | null }>('update users u set avatar_key = null, updated_at = now() from (select avatar_key from users where id = $1) old where u.id = $1 returning old.avatar_key', [req.user!.userId]);
-    if (prev?.avatar_key) await deleteObject(prev.avatar_key).catch(() => {});
-    return auth.me(req.user!.userId);
   });
 
   // ── Saved locations ─────────────────────────────────────────────────────────
@@ -709,19 +748,15 @@ export async function buildApp() {
     paid: b.total,
     holder: { name: b.name, phone: b.phone },
   });
-  const ownerOnly = (roles: string[]) => {
-    if (!roles.includes('owner')) throw new ApiError('forbidden', 'Only venue owners can scan passes.');
-  };
   const tokenBody = z.object({ token: z.string().max(1200) });
 
-  app.post('/v1/passes/verify', { preHandler: requireUser }, async (req) => {
-    ownerOnly(req.user!.roles);
+  // Scanning passes at the gate: turf owners only (owner sign-in).
+  app.post('/v1/passes/verify', { preHandler: requireOwner }, async (req) => {
     const { b, ticket } = await passLookup(parse(tokenBody, req.body).token, req.user!.userId);
     return { ok: b.status === 'confirmed', booking: passView(b), ticket };
   });
 
-  app.post('/v1/passes/check-in', { preHandler: requireUser }, async (req) => {
-    ownerOnly(req.user!.roles);
+  app.post('/v1/passes/check-in', { preHandler: requireOwner }, async (req) => {
     const { b, ticket } = await passLookup(parse(tokenBody, req.body).token, req.user!.userId);
     // One pass admits its whole ticket: every back-to-back slot it covers (not other tickets).
     const ids = await bookings.ticketBookingIds(b.id);
