@@ -234,6 +234,12 @@ export async function logout(sessionId: string) {
 }
 
 // ── Password reset ──────────────────────────────────────────────────────────
+/** The sign-in number behind an account email (emails are stored lower-case and unique). */
+export async function phoneForEmail(email: string) {
+  const u = await one<{ phone: string }>('select phone from users where lower(email) = lower($1) and deleted_at is null', [email]);
+  return u?.phone ?? null;
+}
+
 export async function resetStart(phone: string, ip: string) {
   const u = await one<{ email: string | null; name: string }>('select email, name from users where phone = $1 and deleted_at is null', [phone]);
   if (!u) return { sent: true }; // no account discovery here

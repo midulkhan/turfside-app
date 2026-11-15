@@ -430,4 +430,26 @@ d('owner dashboard', () => {
     expect((await call('GET', `/v1/venues/${v.json.id}`)).json.bookingNotice).toBeNull();
     expect((await call('POST', '/v1/holds', { slotIds: [slots[0].id] }, p.accessToken)).status).toBe(200);
   });
+  it('password reset by account email (dashboard) and by number (app)', async () => {
+    const o = await newUser('owner');
+    const email = String(o.user.email);
+    // Unknown email: same answer, nothing sent, no account discovery.
+    const ghost = await call('POST', '/v1/auth/password/reset/start', { email: 'nobody-here@test.turfsides.dev' });
+    expect(ghost.status).toBe(200);
+    expect(ghost.json.devCode).toBeUndefined();
+    // By email, case-insensitive.
+    const s1 = await call('POST', '/v1/auth/password/reset/start', { email: email.toUpperCase() });
+    expect(s1.status, JSON.stringify(s1.json)).toBe(200);
+    expect(s1.json.devCode).toMatch(/^\d{6}$/);
+    const wrong = await call('POST', '/v1/auth/password/reset/verify', { email, code: '000000', newPassword: 'new pass 4567' });
+    expect(wrong.status).toBe(400);
+    const ok = await call('POST', '/v1/auth/password/reset/verify', { email, code: s1.json.devCode, newPassword: 'new pass 4567' });
+    expect(ok.status, JSON.stringify(ok.json)).toBe(200);
+    expect(ok.json.accessToken).toBeTruthy();
+    expect((await call('POST', '/v1/auth/login', { identifier: email, password: 'new pass 4567' })).status).toBe(200);
+    // By number still works for the app.
+    const s2 = await call('POST', '/v1/auth/password/reset/start', { phone: String(o.user.phone) });
+    expect(s2.status, JSON.stringify(s2.json)).toBe(200);
+    expect(s2.json.devCode).toMatch(/^\d{6}$/);
+  });
 });
