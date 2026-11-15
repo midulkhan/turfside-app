@@ -8,12 +8,12 @@ import {
   useFonts,
 } from '@expo-google-fonts/geist';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { Stack } from 'expo-router';
+import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { Platform } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -34,6 +34,8 @@ installNavGuard(); // one tap = one screen, even on a fast double tap
 installDeviceLabel();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+// Safety net: whatever happens at start-up, the native splash never stays up for good.
+setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 8000);
 
 // The intro plays once per launch, even when the screens re-mount for a theme switch.
 let splashPlayed = false;
@@ -53,7 +55,13 @@ function RootNavigator() {
     'Taka-Bold': require('@/assets/fonts/Taka-Bold.ttf'),
     'Taka-ExtraBold': require('@/assets/fonts/Taka-ExtraBold.ttf'),
   });
-  const appReady = ready && (fontsLoaded || !!fontError);
+  // Fonts never hold the app hostage: after a few seconds it opens with system fonts if needed.
+  const [fontWaitOver, setFontWaitOver] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setFontWaitOver(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
+  const appReady = ready && (fontsLoaded || !!fontError || fontWaitOver);
   const finishSplash = useCallback(() => {
     splashPlayed = true;
     setSplashDone(true);
@@ -108,6 +116,37 @@ function RootNavigator() {
 function ThemedStatusBar() {
   const { scheme } = useTheme();
   return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
+}
+
+/**
+ * If anything in the app's start-up throws, show what happened instead of a blank screen.
+ * Plain React Native only (no theme or providers), since those may be what failed.
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F4F5F0', paddingTop: 64, paddingHorizontal: 20 }}>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: '#161B1D' }}>Something went wrong</Text>
+      <Text style={{ marginTop: 8, fontSize: 15, color: '#5C6468' }}>
+        Please try again. If it keeps happening, send us a screenshot of this screen.
+      </Text>
+      <ScrollView style={{ marginTop: 16, flexGrow: 0, maxHeight: 360 }}>
+        <Text selectable style={{ fontSize: 12, color: '#161B1D' }}>
+          {String(error?.message ?? error)}
+          {'\n\n'}
+          {String(error?.stack ?? '').split('\n').slice(0, 12).join('\n')}
+        </Text>
+      </ScrollView>
+      <Pressable
+        onPress={retry}
+        accessibilityRole="button"
+        style={{ marginTop: 20, height: 52, borderRadius: 26, backgroundColor: '#161B1D', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>Try again</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export default function RootLayout() {
