@@ -233,7 +233,7 @@ d('owner dashboard', () => {
       hours: 4.5,
       occupancy: 30,
     });
-    expect(st.series).toEqual([{ key: day, revenue: 4800, bookings: 3 }]);
+    expect(st.series).toEqual([{ key: day, revenue: 4800, walkinRevenue: 3000, bookings: 3 }]);
     const cal = (await call('GET', `/v1/owner/calendar?month=${day.slice(0, 7)}`, undefined, o.accessToken)).json as Json[];
     expect(cal.find((c) => c.day === day)).toEqual({ day, bookings: 3, revenue: 4800 });
 

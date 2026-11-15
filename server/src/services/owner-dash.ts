@@ -531,8 +531,8 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
   const [cur, prev, series, byHour, byWeekday, perVenue, ratings, schedules] = await Promise.all([
     totals(f.from, f.to),
     totals(prevFrom, prevTo),
-    q<{ k: string; revenue: string; bookings: number }>(
-      `select ${bucket} k, coalesce(sum(total), 0) revenue, count(*)::int bookings
+    q<{ k: string; revenue: string; walkin: string; bookings: number }>(
+      `select ${bucket} k, coalesce(sum(total), 0) revenue, coalesce(sum(total) filter (where source = 'walkin'), 0) walkin, count(*)::int bookings
          from bookings where venue_id = any($1::text[]) and day between $2::date and $3::date and status in ${PAID}
         group by 1 order by 1`,
       [venues, f.from, f.to],
@@ -609,7 +609,12 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
     range: { from: f.from, to: f.to, days: n, bucket: monthly ? ('month' as const) : ('day' as const) },
     current: shape(cur),
     previous: { from: prevFrom, to: prevTo, ...shape(prev) },
-    series: keys.map((k) => ({ key: k, revenue: taka(byKey.get(k)?.revenue), bookings: byKey.get(k)?.bookings ?? 0 })),
+    series: keys.map((k) => ({
+      key: k,
+      revenue: taka(byKey.get(k)?.revenue),
+      walkinRevenue: taka(byKey.get(k)?.walkin),
+      bookings: byKey.get(k)?.bookings ?? 0,
+    })),
     byHour: Array.from({ length: 24 }, (_, h) => ({ hour: h, bookings: byHour.find((x) => x.h === h)?.n ?? 0 })),
     byWeekday: Array.from({ length: 7 }, (_, d) => ({
       day: d,
@@ -659,16 +664,14 @@ export async function listReviews(ownerId: string, venueId: string | undefined, 
     [venues],
   );
   return {
-    items: rows
-      .slice(0, 30)
-      .map((r) => ({
-        id: r.id,
-        venue: { id: r.venue_id, name: r.venue_name },
-        author: r.author_name,
-        rating: r.rating,
-        body: r.body,
-        createdAt: r.created_at,
-      })),
+    items: rows.slice(0, 30).map((r) => ({
+      id: r.id,
+      venue: { id: r.venue_id, name: r.venue_name },
+      author: r.author_name,
+      rating: r.rating,
+      body: r.body,
+      createdAt: r.created_at,
+    })),
     distribution: [5, 4, 3, 2, 1].map((s) => ({ rating: s, count: dist.find((d) => d.rating === s)?.n ?? 0 })),
     nextCursor: rows.length > 30 ? cursor + 30 : null,
   };
