@@ -21,8 +21,9 @@ async function call(method: string, path: string, body?: unknown, token?: string
 
 async function newUser(role: 'player' | 'owner' = 'player') {
   const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-  const s = await call('POST', '/v1/auth/signup/start', { name: 'Photo Tester', phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'photo pass 123', role });
-  return (await call('POST', '/v1/auth/signup/verify', { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
+  const A = role === 'owner' ? '/v1/owner/auth' : '/v1/auth';
+  const s = await call('POST', `${A}/signup/start`, { name: 'Photo Tester', phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'photo pass 123', role });
+  return (await call('POST', `${A}/signup/verify`, { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
 }
 
 // A tiny but real WebP (1×1).

@@ -21,8 +21,9 @@ async function call(method: string, path: string, body?: unknown, token?: string
 }
 async function newUser(role: 'player' | 'owner') {
   const phone = `17${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
-  const s = await call('POST', '/v1/auth/signup/start', { name: `Test ${role}`, phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'owner pass 123', role });
-  return (await call('POST', '/v1/auth/signup/verify', { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
+  const A = role === 'owner' ? '/v1/owner/auth' : '/v1/auth';
+  const s = await call('POST', `${A}/signup/start`, { name: `Test ${role}`, phone, email: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@test.turfsides.dev`, password: 'owner pass 123', role });
+  return (await call('POST', `${A}/signup/verify`, { phone, code: s.json.devCode })).json as { accessToken: string; user: Json };
 }
 const tomorrow = () => new Date(Date.now() + 6 * 3600_000 + 86400_000).toISOString().slice(0, 10);
 
@@ -60,7 +61,7 @@ d('owner turfs', () => {
 
   it('keeps owners in their own lane', async () => {
     const player = await newUser('player');
-    expect((await call('POST', '/v1/owner/venues', demo[0], player.accessToken)).status).toBe(403);
+    expect((await call('POST', '/v1/owner/venues', demo[0], player.accessToken)).status).toBe(401);
     const a = await newUser('owner');
     const b = await newUser('owner');
     const t = (await call('POST', '/v1/owner/venues', demo[1], a.accessToken)).json;

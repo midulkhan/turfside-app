@@ -104,10 +104,18 @@ triggers test + deploy). `midulkhan/turfside-app` is a full copy of the history.
 Base: `https://api.turfsides.com`. JSON. Auth: `Authorization: Bearer <access JWT>`, refresh tokens
 rotate via `/v1/auth/refresh`. Sessions are listed/revocable per device.
 
+**Two kinds of account, never mixed** (migration 022): players sign in at `/v1/auth/*` and manage their
+account at `/v1/me/*`; turf owners sign in at `/v1/owner/auth/*` and use `/v1/owner/me/*` (same flows:
+sign-up with an emailed code, login + optional 2FA, refresh, logout, password reset by email or number,
+settings, devices, password, name, phone, photo). Access tokens carry the audience (`turfsides-app` or
+`turfsides-owner`): `requireUser` accepts only player tokens, `requireOwner` only owner tokens, so a token
+of one kind gets 401 on the other's routes. Pass scanning (`/v1/passes/*`) is owner-only. Owner accounts
+can't be deleted from the dashboard (support closes them; they own turfs and bookings).
+
 | Area | Routes |
 |---|---|
-| Auth | `/v1/auth/signup/start|verify`, `login`, `login/verify|resend` (email OTP when 2FA is on), `refresh`, `logout`, `password/reset/start|verify` |
-| Me | `/v1/me`, `settings` (notifications, `twoFactor`), `sessions`, `password`, `phone/start|verify`, `delete`, `saved`, `places`, `avatar`, `bookings`, `holds`, `notifications`, `requests`, `push-token` |
+| Auth | `/v1/auth/signup/start|verify`, `login`, `login/verify|resend` (email OTP when 2FA is on), `refresh`, `logout`, `password/reset/start|verify` (by `email` or `phone`). Owners: the same under `/v1/owner/auth/*` |
+| Me | Owners: `/v1/owner/me`, `settings`, `sessions`, `password`, `phone/start|verify`, `avatar` (no `delete`). Players: `/v1/me`, `settings` (notifications, `twoFactor`), `sessions`, `password`, `phone/start|verify`, `delete`, `saved`, `places`, `avatar`, `bookings`, `holds`, `notifications`, `requests`, `push-token` |
 | Venues | `/v1/venues/explore`, `/:id`, `/:id/slots` (**live, never cached**), `/:id/reviews`, `/:id/reviews/mine` |
 | Booking | `/v1/holds` (hold slots) → `/v1/payments` (bKash) → `/v1/bookings/:id`; `cancel` |
 | Squads | `/v1/matches` feed, create, `/:id`, `join`, `pay`, `manage`, accept/decline, `joined`, `mine` |
@@ -124,13 +132,19 @@ with user-readable messages.
 
 ## 6. Database (tables)
 
-`users · sessions · otp_codes · venues · venue_photos · venue_schedule · venue_pricing · pitches ·
+`users · sessions · owners · owner_sessions · otp_codes · venues · venue_photos · venue_schedule · venue_pricing · pitches ·
 venue_blocks · bookings · payments · ledger_entries · idempotency_keys · saved_venues · reviews ·
 notifications · player_requests · player_request_members · audit_log · user_places · slot_updates ·
 orders · match_updates · push_tokens · tournaments · tournament_teams · owner_inbox`
 
 Key facts:
-- `users.roles` includes `player` and/or `owner`. `venues.owner_id` links a turf to its owner.
+- **Players and owners are separate tables.** `users` (+ `sessions`) are players only; `owners`
+  (+ `owner_sessions`) are turf owners. `otp_codes.realm` keeps their codes apart, so one person can
+  have a player account and an owner account with the same phone and email. Owner data points at
+  `owners`: `venues.owner_id`, `bookings.created_by` (walk-ins), `venue_blocks.created_by`,
+  `owner_inbox.user_id`. `bookings.user_id`, reviews, orders etc. stay on `users` (players).
+  Migration 022 copied every existing owner to `owners` with the same id, password, email, phone and
+  photo, and removed `owner` from `users.roles` (their player accounts stay).
   `venues.status`: draft | pending | published | suspended.
 - `bookings.status`: held → pending → confirmed → checked_in → completed (or cancelled/expired).
   Holds expire automatically (pg_cron). An exclusion constraint (`bookings_no_overlap`) makes the database refuse overlapping active bookings on a pitch.
@@ -206,7 +220,7 @@ the `slot_updates` realtime feed. The API connects as the DB owner.
 
 > **Done (Nov 2026):** owner data model (sessions, time-band prices, walk-ins, closures, tournaments, inbox)
 > and the `/v1/owner/*` module with tests (`owner-dashboard.e2e.test.ts`), plus the owner web dashboard
-> (`turfsidesadmin`, Next.js). It calls only the API, signs in with the normal owner accounts, and gets live
+> (`turfsidesadmin`, Next.js). It calls only the API, signs in with owner accounts (`/v1/owner/auth/*`), and gets live
 > updates the same way as the player app (Supabase Realtime on `slot_updates`, polling as a fallback).
 > Its origin must be listed in the API's `CORS_ORIGINS`. Still to do: `venue_members` (staff), the monorepo
 > move and shared `packages/*`, owner mobile, company dashboard.
@@ -231,7 +245,7 @@ The move to a monorepo is housekeeping: URLs and behaviour stay the same.
 ### Server changes (same server, same database)
 
 - Split `server/src/app.ts` into route modules per audience (player / owner / admin). No URL changes.
-- `venue_members(user_id, venue_id, role: owner | manager | staff)` — keep `venues.owner_id` as is.
+- `venue_members(owner_id → owners, venue_id, role: owner | manager | staff)` — keep `venues.owner_id` as is.
   Every owner query is scoped by `venue_id` + membership check.
 - Owner features: venue profile & photos, pitches (5A/6A/7A, football/cricket), opening hours,
   pricing rules (day/time/peak/holidays), blocks (closures, maintenance, offline/walk-in bookings),

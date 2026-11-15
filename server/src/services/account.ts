@@ -4,12 +4,17 @@ import { deleteObject } from '../lib/storage';
 import { dhakaToday } from '../lib/time';
 import { one, q, tx } from '../db';
 
+import { TABLES, type Realm } from './auth';
+
+const U = (r: Realm) => TABLES[r].users;
+const S = (r: Realm) => TABLES[r].sessions;
+
 /** Access tokens are short-lived JWTs; sensitive actions also require the session to still be live. */
-export async function assertLiveSession(sessionId: string) {
+export async function assertLiveSession(sessionId: string, realm: Realm = 'player') {
   // Follow refresh rotation to the device's current row; that row must not be revoked.
   const end = await one<{ ok: boolean }>(
-    `with recursive chain as (select id, replaced_by, revoked_at, expires_at from sessions where id = $1
-       union all select s.id, s.replaced_by, s.revoked_at, s.expires_at from sessions s join chain c on s.id = c.replaced_by)
+    `with recursive chain as (select id, replaced_by, revoked_at, expires_at from ${S(realm)} where id = $1
+       union all select s.id, s.replaced_by, s.revoked_at, s.expires_at from ${S(realm)} s join chain c on s.id = c.replaced_by)
      select (revoked_at is null and expires_at > now()) ok from chain where replaced_by is null limit 1`,
     [sessionId],
   );
@@ -17,42 +22,42 @@ export async function assertLiveSession(sessionId: string) {
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
-export async function getSettings(userId: string) {
+export async function getSettings(userId: string, realm: Realm = 'player') {
   const u = await one<{ notify_enabled: boolean; two_factor: boolean; email: string | null }>(
-    'select notify_enabled, two_factor, email from users where id = $1 and deleted_at is null',
+    `select notify_enabled, two_factor, email from ${U(realm)} where id = $1 and deleted_at is null`,
     [userId],
   );
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   return { notifications: u.notify_enabled, twoFactor: u.two_factor, hasEmail: !!u.email };
 }
 
-export async function updateSettings(userId: string, patch: { notifications?: boolean; twoFactor?: boolean }) {
+export async function updateSettings(userId: string, patch: { notifications?: boolean; twoFactor?: boolean }, realm: Realm = 'player') {
   if (patch.notifications !== undefined)
-    await q('update users set notify_enabled = $2, updated_at = now() where id = $1 and deleted_at is null', [userId, patch.notifications]);
+    await q(`update ${U(realm)} set notify_enabled = $2, updated_at = now() where id = $1 and deleted_at is null`, [userId, patch.notifications]);
   if (patch.twoFactor !== undefined) {
     if (patch.twoFactor) {
       // Codes go by email: there must be an address to send them to.
-      const u = await one<{ email: string | null }>('select email from users where id = $1 and deleted_at is null', [userId]);
+      const u = await one<{ email: string | null }>(`select email from ${U(realm)} where id = $1 and deleted_at is null`, [userId]);
       if (!u?.email) throw new ApiError('invalid', 'Add an email address to your account first. Sign-in codes are sent there.');
     }
-    await q('update users set two_factor = $2, updated_at = now() where id = $1 and deleted_at is null', [userId, patch.twoFactor]);
+    await q(`update ${U(realm)} set two_factor = $2, updated_at = now() where id = $1 and deleted_at is null`, [userId, patch.twoFactor]);
   }
-  return getSettings(userId);
+  return getSettings(userId, realm);
 }
 
 // ── Signed-in devices ───────────────────────────────────────────────────────
 /** Each device keeps exactly one live row (refresh rotation replaces it), so live rows = devices. */
-export async function listSessions(userId: string, currentId: string) {
+export async function listSessions(userId: string, currentId: string, realm: Realm = 'player') {
   const rows = await q<{ id: string; device: string | null; user_agent: string | null; created_at: Date; replaced_by: string | null }>(
-    `select id, device, user_agent, created_at, replaced_by from sessions
+    `select id, device, user_agent, created_at, replaced_by from ${S(realm)}
       where user_id = $1 and revoked_at is null and replaced_by is null and expires_at > now()
       order by created_at desc limit 20`,
     [userId],
   );
   // The caller's token may point at a row that was just rotated: its live successor is "this device".
   const current = await one<{ id: string }>(
-    `with recursive chain as (select id, replaced_by from sessions where id = $1
-       union all select s.id, s.replaced_by from sessions s join chain c on s.id = c.replaced_by)
+    `with recursive chain as (select id, replaced_by from ${S(realm)} where id = $1
+       union all select s.id, s.replaced_by from ${S(realm)} s join chain c on s.id = c.replaced_by)
      select id from chain where replaced_by is null limit 1`,
     [currentId],
   );
@@ -73,27 +78,27 @@ function deviceFromUa(ua: string | null) {
   return 'Unknown device';
 }
 
-export async function revokeSession(userId: string, id: string) {
-  const r = await q('update sessions set revoked_at = now() where id = $1 and user_id = $2 and revoked_at is null returning id', [id, userId]);
+export async function revokeSession(userId: string, id: string, realm: Realm = 'player') {
+  const r = await q(`update ${S(realm)} set revoked_at = now() where id = $1 and user_id = $2 and revoked_at is null returning id`, [id, userId]);
   if (!r.length) throw new ApiError('not_found', 'That device is already signed out.');
   return { ok: true };
 }
 
 /** Sign out every other device; the caller's own device chain stays signed in. */
-export async function revokeOtherSessions(userId: string, currentId: string) {
-  const keep = (await listSessions(userId, currentId)).find((s) => s.current)?.id ?? currentId;
-  const r = await q('update sessions set revoked_at = now() where user_id = $1 and id <> $2 and revoked_at is null returning id', [userId, keep]);
+export async function revokeOtherSessions(userId: string, currentId: string, realm: Realm = 'player') {
+  const keep = (await listSessions(userId, currentId, realm)).find((s) => s.current)?.id ?? currentId;
+  const r = await q(`update ${S(realm)} set revoked_at = now() where user_id = $1 and id <> $2 and revoked_at is null returning id`, [userId, keep]);
   return { signedOut: r.length };
 }
 
 // ── Password ────────────────────────────────────────────────────────────────
-export async function changePassword(userId: string, currentId: string, current: string, next: string) {
-  const u = await one<{ password_hash: string }>('select password_hash from users where id = $1 and deleted_at is null', [userId]);
+export async function changePassword(userId: string, currentId: string, current: string, next: string, realm: Realm = 'player') {
+  const u = await one<{ password_hash: string }>(`select password_hash from ${U(realm)} where id = $1 and deleted_at is null`, [userId]);
   if (!u || !(await verifyPassword(current, u.password_hash))) throw new ApiError('invalid', 'Your current password is incorrect.');
   if (current === next) throw new ApiError('invalid', 'Choose a new password that’s different from the current one.');
-  await q('update users set password_hash = $2, updated_at = now() where id = $1', [userId, await hashPassword(next)]);
+  await q(`update ${U(realm)} set password_hash = $2, updated_at = now() where id = $1`, [userId, await hashPassword(next)]);
   // A changed password signs out every other device (this one stays signed in).
-  const { signedOut } = await revokeOtherSessions(userId, currentId);
+  const { signedOut } = await revokeOtherSessions(userId, currentId, realm);
   return { ok: true, signedOut };
 }
 
@@ -103,15 +108,14 @@ export async function changePassword(userId: string, currentId: string, current:
  * The user row stays as an anonymous record because past bookings and payments (which the
  * turf and our accounting need) point at it. Refused while a game is still ahead.
  */
+/** Player accounts only. Owner accounts are closed through support (they own turfs and bookings). */
 export async function deleteAccount(userId: string, password: string) {
-  const u = await one<{ password_hash: string; avatar_key: string | null; roles: string[] }>(
-    'select password_hash, avatar_key, roles from users where id = $1 and deleted_at is null',
+  const u = await one<{ password_hash: string; avatar_key: string | null }>(
+    'select password_hash, avatar_key from users where id = $1 and deleted_at is null',
     [userId],
   );
   if (!u) throw new ApiError('unauthorized', 'Please sign in again.');
   if (!(await verifyPassword(password, u.password_hash))) throw new ApiError('invalid', 'That password is incorrect.');
-  if (u.roles.includes('owner'))
-    throw new ApiError('conflict', 'This account manages a turf. Contact support to close a turf owner account.');
   const upcoming = await one<{ n: number }>(
     "select count(*)::int n from bookings where user_id = $1 and status in ('confirmed','checked_in') and day >= $2",
     [userId, dhakaToday()],
@@ -137,6 +141,7 @@ export async function deleteAccount(userId: string, password: string) {
       [userId, await hashPassword(randomToken())],
     );
   });
-  if (u.avatar_key) await deleteObject(u.avatar_key).catch(() => {});
+  // An owner account moved over from this one may still show the same photo.
+  if (u.avatar_key && !(await one('select 1 from owners where avatar_key = $1', [u.avatar_key]))) await deleteObject(u.avatar_key).catch(() => {});
   return { deleted: true };
 }
