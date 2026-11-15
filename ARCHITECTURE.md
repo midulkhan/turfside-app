@@ -17,7 +17,7 @@ In-app payments are the business model: every booking goes through the app.
 |---|---|---|---|
 | Player app | Players | Built | Repo root (`src/`), Expo |
 | API | Everyone | Built | `server/` (Fastify) → api.turfsides.com |
-| Owner dashboard (web) | Turf owners & staff | Planned (next) | `apps/owner-web` (Next.js) |
+| Owner dashboard (web) | Turf owners | Built (v1) | Separate Next.js 16 project `turfsidesadmin` (owner's Mac: `~/Projects/turfsidesadmin`); moves to `apps/owner-web` with the monorepo |
 | Owner app (mobile) | Turf owners & staff | Planned | `apps/owner-mobile` (Expo) |
 | Company dashboard | TurfSides team only | Planned | `apps/admin-web` (Next.js) |
 
@@ -80,14 +80,15 @@ In-app payments are the business model: every booking goes through the app.
   src/theme/tokens.ts   Design tokens — the single source of truth for colour/radius/spacing/type
   app.json, app.config.ts, eas.json, google-services.json
 server/
-  src/app.ts            All routes (to be split per audience — see §9)
+  src/app.ts            Player + auth routes (and the original owner turf routes)
+  src/routes/owner.ts   Owner dashboard routes (/v1/owner/* beyond turf CRUD), registered from app.ts
   src/services/         Business logic per area: auth, account, venues, bookings, payments,
-                        matches (squads), reviews, owner
+                        matches (squads), reviews, owner (turf profile), owner-dash (owner dashboard)
   src/lib/              bkash, email, sms, push, storage (R2), crypto, tokens, time
   src/config.ts         Every env var, validated
   src/migrations.ts     Ordered migration list (import + register every new one)
   src/jobs.ts           pg_cron schedules
-  db/migrations/        001…019 SQL, additive only
+  db/migrations/        001…020 SQL, additive only
   test/                 Vitest e2e + unit (see §8)
 .github/workflows/      deploy-server.yml (test + deploy), diagnose.yml, seed-demo-turfs.yml
 docs/                   pass-qr.md, postman collection
@@ -111,8 +112,9 @@ rotate via `/v1/auth/refresh`. Sessions are listed/revocable per device.
 | Booking | `/v1/holds` (hold slots) → `/v1/payments` (bKash) → `/v1/bookings/:id`; `cancel` |
 | Squads | `/v1/matches` feed, create, `/:id`, `join`, `pay`, `manage`, accept/decline, `joined`, `mine` |
 | Passes | `/v1/passes/verify`, `/v1/passes/check-in` (QR entry pass at the turf) |
-| Owner | `/v1/owner/venues` list/get/create/update/delete (guard: `requireOwner`) |
-| Misc | `/health`, `/v1/config` (realtime keys etc.), `/v1/uploads` (R2), `/internal/reconcile` (cron secret) |
+| Owner | `/v1/owner/venues` list/get/create/update/delete (+ optional `slots`, `priceBands`); `/v1/owner/venues/:id/day` (day sheet, live), `/:id/blocks`; `/v1/owner/stats`, `/calendar`; `/v1/owner/bookings` list/get, `POST` (walk-in), `/:id/cancel`, `/:id/check-in`; `/v1/owner/blocks` create/delete; `/v1/owner/reviews`; `/v1/owner/tournaments` CRUD + `/:id/teams`; `/v1/owner/notifications`, `/seen` (guard: `requireOwner`, every query scoped to the owner's turfs) |
+| Tournaments (public) | `/v1/venues/:id/tournaments` (published, upcoming; for the player app later) |
+| Misc | `/health`, `/v1/config` (realtime keys etc.), `/v1/uploads` (R2; returns `publicUrl` too), `/internal/reconcile` (cron secret) |
 
 Validation: every body/param is parsed with zod in `app.ts` (`parse(schema, data)`), e.g. phone
 numbers via `phone10` (10 national digits, stored as `+880…`). Errors are `ApiError(code, message)`
@@ -125,7 +127,7 @@ with user-readable messages.
 `users · sessions · otp_codes · venues · venue_photos · venue_schedule · venue_pricing · pitches ·
 venue_blocks · bookings · payments · ledger_entries · idempotency_keys · saved_venues · reviews ·
 notifications · player_requests · player_request_members · audit_log · user_places · slot_updates ·
-orders · match_updates · push_tokens`
+orders · match_updates · push_tokens · tournaments · tournament_teams · owner_inbox`
 
 Key facts:
 - `users.roles` includes `player` and/or `owner`. `venues.owner_id` links a turf to its owner.
@@ -143,7 +145,17 @@ Key facts:
   for that squad (`contact_phone`).
 - Reviews: one per player per venue, only after they played; final (no edit/delete). Venue rating is
   maintained by a trigger.
-- `audit_log` exists — use it for every owner/admin change.
+- `audit_log` exists — use it for every owner/admin change (the owner dashboard writes it for walk-ins,
+  cancels, check-ins, closures and tournaments).
+- **Sessions & prices** (migration 020): `venue_schedule.slot_mode` = `fixed` (back-to-back sessions of
+  `session_min`: 60, 90 or any length) or `custom` (`custom_slots`: the owner's own list, each with an
+  optional own price). `venue_pricing.bands` = time-of-day hourly prices (optional weekdays).
+  Price of a session: special date → the session's own price → time band → weekday rate → standard rate.
+  One implementation (`sessionsFor` + `priceFor` in `server/src/lib/time.ts`) serves slots, holds and the
+  owner day sheet, so what players see is what they pay.
+- **Walk-ins**: `bookings.source = 'walkin'`, no user, `guest_name/guest_phone/note`, created through the same
+  pitch lock + exclusion constraint as app bookings. Closures (`venue_blocks`, now with `kind`, `tournament_id`)
+  can't cover live bookings, holds refuse them, and a trigger touches `slot_updates` so apps refresh.
 
 RLS is enabled with no policies on every table: the public Supabase keys can read nothing except
 the `slot_updates` realtime feed. The API connects as the DB owner.
@@ -191,6 +203,13 @@ the `slot_updates` realtime feed. The API connects as the DB owner.
 ---
 
 ## 9. Plan: owner dashboard, owner app, company dashboard
+
+> **Done (Nov 2026):** owner data model (sessions, time-band prices, walk-ins, closures, tournaments, inbox)
+> and the `/v1/owner/*` module with tests (`owner-dashboard.e2e.test.ts`), plus the owner web dashboard
+> (`turfsidesadmin`, Next.js). It calls only the API, signs in with the normal owner accounts, and gets live
+> updates the same way as the player app (Supabase Realtime on `slot_updates`, polling as a fallback).
+> Its origin must be listed in the API's `CORS_ORIGINS`. Still to do: `venue_members` (staff), the monorepo
+> move and shared `packages/*`, owner mobile, company dashboard.
 
 ### Target repo layout (monorepo, npm/pnpm workspaces + Turborepo)
 

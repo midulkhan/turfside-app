@@ -21,6 +21,7 @@ import m016 from '../db/migrations/016_reviews.sql';
 import m019 from '../db/migrations/019_member_contact_phone.sql';
 import m018 from '../db/migrations/018_contact_phone.sql';
 import m017 from '../db/migrations/017_two_factor.sql';
+import m020 from '../db/migrations/020_owner_dashboard.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -42,6 +43,7 @@ const MIGRATIONS: [string, string][] = [
   ['017_two_factor', m017],
   ['018_contact_phone', m018],
   ['019_member_contact_phone', m019],
+  ['020_owner_dashboard', m020],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

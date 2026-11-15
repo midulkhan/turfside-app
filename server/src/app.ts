@@ -15,7 +15,7 @@ import { ApiError } from './errors';
 import { bkashEnabled, isSimulated } from './lib/bkash';
 import { safeEqual } from './lib/crypto';
 import { addDays, dhakaToday, isDayKey } from './lib/time';
-import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, UPLOAD_TYPES, type UploadType } from './lib/storage';
+import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, publicUrl, UPLOAD_TYPES, type UploadType } from './lib/storage';
 import { emailState, lastEmailSend } from './lib/email';
 import { isExpoToken, kickPush, pushStatus, sentForTests } from './lib/push';
 import { verifyAccess, verifyAnyPass } from './lib/tokens';
@@ -26,6 +26,7 @@ import * as owner from './services/owner';
 import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
+import { registerOwnerRoutes } from './routes/owner';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
 
 declare module 'fastify' {
@@ -388,6 +389,8 @@ export async function buildApp() {
   );
   app.put('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.updateVenue(req.user!.userId, venueId(req), parse(owner.venueInput, req.body)));
   app.delete('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.removeVenue(req.user!.userId, venueId(req)));
+  // Owner dashboard: bookings, day sheet, closures, stats, reviews, tournaments, inbox.
+  registerOwnerRoutes(app, { requireOwner, parse });
 
   // ── Photo uploads (Cloudflare R2, direct from the app) ──────────────────────
   app.post('/v1/uploads', { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
@@ -402,7 +405,8 @@ export async function buildApp() {
     // Turf photos are for owners only; each user uploads under their own prefix.
     if (b.purpose === 'venue' && !req.user!.roles.includes('owner')) throw new ApiError('forbidden', 'Only turf owners can upload turf photos.');
     const key = newKey(`${b.purpose === 'venue' ? 'venues' : 'avatars'}/${req.user!.userId}`, b.contentType);
-    return { key, ...(await presignPut(key, b.contentType, b.size)) };
+    // publicUrl: where the photo will be served from (owner dashboards put it in the turf's photos).
+    return { key, ...(await presignPut(key, b.contentType, b.size)), publicUrl: publicUrl(key) };
   });
 
   app.put('/v1/me/avatar', { preHandler: requireUser }, async (req) => {
