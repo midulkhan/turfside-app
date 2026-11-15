@@ -38,6 +38,14 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
     hidNative.current = true;
     SplashScreen.hideAsync().catch(() => {});
   };
+  /** Lift the native splash once the video is going; if it already ran on behind it, start over. */
+  const reveal = () => {
+    if (hidNative.current) return;
+    hideNative();
+    try {
+      if (player.currentTime > 0.4) player.replay();
+    } catch {}
+  };
 
   useEventListener(player, 'playToEnd', () => setEnded(true));
   useEventListener(player, 'statusChange', ({ status }) => {
@@ -45,6 +53,12 @@ export function VideoSplash({ appReady, onDone }: { appReady: boolean; onDone: (
       hideNative();
       setEnded(true);
     }
+    // Android release builds don't reliably report the first rendered frame, which left the
+    // native splash covering the whole animation. Lift it as soon as the video can play.
+    if (status === 'readyToPlay') reveal();
+  });
+  useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    if (isPlaying) reveal();
   });
 
   useEffect(() => {

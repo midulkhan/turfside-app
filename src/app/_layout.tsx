@@ -88,11 +88,15 @@ function RootNavigator() {
           </Stack.Protected>
           <Stack.Protected guard={!!user} redirectTo="/">
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-            {/* Opens and closes with a quick crossfade (150 ms on Android; iOS matched). */}
-            <Stack.Screen name="venue/[id]" options={{ animation: 'fade', animationDuration: 180 }} />
+            {/* iOS: a quick crossfade. Android's crossfade fades both screens at once (a grey,
+                see-through frame mid-way), so there the turf glides up over a solid Explore. */}
+            <Stack.Screen
+              name="venue/[id]"
+              options={Platform.OS === 'android' ? { animation: 'fade_from_bottom' } : { animation: 'fade', animationDuration: 180 }}
+            />
             <Stack.Screen name="checkout" />
             <Stack.Screen name="booking/[id]" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
-            <Stack.Screen name="search" options={{ animation: 'fade' }} />
+            <Stack.Screen name="search" options={{ animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'fade' }} />
             <Stack.Screen name="notifications" />
             <Stack.Screen name="join" />
             <Stack.Screen name="players" />
