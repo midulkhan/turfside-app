@@ -228,10 +228,19 @@ export async function buildApp() {
   app.post('/v1/auth/login/resend', authLimit, async (req) => auth.loginResend(parse(z.object({ challenge }), req.body).challenge, req.ip));
   app.post('/v1/auth/refresh', authLimit, async (req) => auth.refresh(parse(z.object({ refreshToken: z.string().min(20).max(200) }), req.body).refreshToken, meta(req)));
   app.post('/v1/auth/logout', { preHandler: requireUser }, async (req) => auth.logout(req.user!.sessionId));
-  app.post('/v1/auth/password/reset/start', authLimit, async (req) => auth.resetStart(parse(z.object({ phone: phone10 }), req.body).phone, req.ip));
+  // Reset by account email (owner dashboard) or by mobile number (player app). The code is
+  // emailed either way; an unknown email or number gets the same answer (no account discovery).
+  const resetWho = z.union([z.object({ email }), z.object({ phone: phone10 })]);
+  app.post('/v1/auth/password/reset/start', authLimit, async (req) => {
+    const b = parse(resetWho, req.body);
+    const phone = 'email' in b ? await auth.phoneForEmail(b.email) : b.phone;
+    return phone ? auth.resetStart(phone, req.ip) : { sent: true };
+  });
   app.post('/v1/auth/password/reset/verify', authLimit, async (req) => {
-    const b = parse(z.object({ phone: phone10, code: z.string().regex(/^\d{6}$/), newPassword: password }), req.body);
-    return auth.resetVerify(b.phone, b.code, b.newPassword, meta(req));
+    const b = parse(z.intersection(resetWho, z.object({ code: z.string().regex(/^\d{6}$/), newPassword: password })), req.body);
+    const phone = 'email' in b ? await auth.phoneForEmail(b.email) : b.phone;
+    if (!phone) throw new ApiError('invalid', 'That code is not right. Try again.');
+    return auth.resetVerify(phone, b.code, b.newPassword, meta(req));
   });
 
   // ── Venues (public; hearts filled in when signed in) ──────────────────────
