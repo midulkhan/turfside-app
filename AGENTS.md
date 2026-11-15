@@ -1,3 +1,5 @@
+**TurfSides: read `ARCHITECTURE.md` first** — how the apps, API and database fit together, the non-negotiable product rules, and the never-break rules for adding the owner and company dashboards.
+
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
 ## Expo has changed — do not trust your training data
