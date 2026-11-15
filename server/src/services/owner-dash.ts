@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
-import { addDays, dhakaToday, instant, isDayKey, priceFor, sessionsFor } from '../lib/time';
+import { addDays, dhakaToday, instant, isDayKey, priceFor, sessionsFor, type SessionSetRow } from '../lib/time';
 
 import { ticketBookingIds } from './bookings';
 import { onBookingCancelled } from './matches';
@@ -196,7 +196,7 @@ export async function daySheet(ownerId: string, venueId: string, day: string) {
     ),
   ]);
   const prices = rules(v);
-  const sessions = sessionsFor(slotRules(v)).map((s) => {
+  const sessions = sessionsFor(slotRules(v), day).map((s) => {
     const a = instant(day, s.start).getTime();
     const b = instant(day, s.end).getTime();
     const bk = bookings.find((x) => x.s.getTime() < b && x.e.getTime() > a);
@@ -263,7 +263,7 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
   const today = dhakaToday();
   if (b.day < addDays(today, -7) || b.day > addDays(today, config.BOOKING_HORIZON_DAYS))
     throw new ApiError('invalid', 'Pick a date within the booking window.');
-  const sessions = sessionsFor(slotRules(v));
+  const sessions = sessionsFor(slotRules(v), b.day);
   const prices = rules(v);
   const picks = [...new Set(b.starts)]
     .map((start) => {
@@ -564,7 +564,8 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
       break_min: number;
       slot_mode: string;
       custom_slots: { start: number; end: number }[] | null;
-    }>('select open_min, close_min, session_min, break_min, slot_mode, custom_slots from venue_schedule where venue_id = any($1::text[])', [
+      slot_sets: SessionSetRow[] | null;
+    }>('select open_min, close_min, session_min, break_min, slot_mode, custom_slots, slot_sets from venue_schedule where venue_id = any($1::text[])', [
       venues,
     ]),
   ]);
@@ -581,19 +582,21 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
   const byKey = new Map(series.map((s) => [s.k, s]));
 
   // Occupancy: booked minutes ÷ bookable minutes in the period.
-  const perDay = schedules.reduce(
-    (m, s) =>
-      m +
-      sessionsFor({
+  // Averaged over a week: session sets can differ by weekday.
+  const week = Array.from({ length: 7 }, (_, k) => addDays(f.from, k));
+  const perDay =
+    schedules.reduce((m, s) => {
+      const r = {
         openMin: s.open_min,
         closeMin: s.close_min,
         lengthMin: s.session_min,
         breakMin: s.break_min,
         mode: s.slot_mode,
         custom: s.custom_slots,
-      }).reduce((t, x) => t + (x.end - x.start), 0),
-    0,
-  );
+        sets: s.slot_sets,
+      };
+      return m + week.reduce((t, d) => t + sessionsFor(r, d).reduce((u, x) => u + (x.end - x.start), 0), 0);
+    }, 0) / 7;
   const shape = (t: Tot | null) => ({
     revenue: taka(t?.revenue),
     appRevenue: taka(t?.app_revenue),

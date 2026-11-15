@@ -62,8 +62,8 @@ export const venueInput = z.object({
     })
     .optional(),
   /**
-   * Optional named session sets (custom mode). Exactly one may be live; with mode "custom" its
-   * sessions become the bookable ones (they replace `slots.custom`). Left out = unchanged.
+   * Optional named session sets (custom mode). Several can be live when their days don't overlap;
+   * at most one live set has no days ("all other days"). Left out = unchanged.
    */
   sessionSets: z
     .array(
@@ -71,6 +71,8 @@ export const venueInput = z.object({
         id: z.string().trim().min(1).max(40),
         name: z.string().trim().min(1).max(40),
         live: z.boolean().default(false),
+        /** Weekdays this set runs on; empty = every day no other live set covers. */
+        days: z.array(z.enum(DAYS)).max(7).default([]),
         slots: z.array(z.object({ start: hhmm, end: hhmm, price: taka.nullable().optional() })).min(1).max(48),
       }),
     )
@@ -110,9 +112,24 @@ function customSlots(v: VenueInput, input: SlotIn[] = v.slots?.custom ?? [], lab
 /** Validated session sets (minutes, poisha) and the live one's sessions. */
 function sessionSetsJson(v: VenueInput) {
   const sets = v.sessionSets ?? [];
-  if (sets.filter((x) => x.live).length > 1) throw new ApiError('invalid', 'sessionSets: Only one session set can be live.');
   if (new Set(sets.map((x) => x.id)).size !== sets.length) throw new ApiError('invalid', 'sessionSets: Each set needs its own id.');
-  return sets.map((x) => ({ id: x.id, name: x.name, live: x.live, slots: customSlots(v, x.slots, `Session set "${x.name}"`) }));
+  const live = sets.filter((x) => x.live);
+  if (live.filter((x) => !x.days.length).length > 1)
+    throw new ApiError('invalid', 'Only one live session set can run on all other days. Pick days for the others.');
+  const seen = new Map<string, string>();
+  for (const x of live)
+    for (const d of x.days) {
+      const other = seen.get(d);
+      if (other) throw new ApiError('invalid', `"${x.name}" and "${other}" are both live on ${d[0]!.toUpperCase()}${d.slice(1)}. Each day can have one live set.`);
+      seen.set(d, x.name);
+    }
+  return sets.map((x) => ({
+    id: x.id,
+    name: x.name,
+    live: x.live,
+    days: [...new Set(x.days)].map((d) => DAYS.indexOf(d)).sort(),
+    slots: customSlots(v, x.slots, `Session set "${x.name}"`),
+  }));
 }
 
 function bandsJson(v: VenueInput) {
@@ -164,7 +181,7 @@ type OwnerRow = {
   slot_mode: string;
   custom_slots: { start: number; end: number; price: number | null }[] | null;
   bands: { from: number; to: number; hourly: number; days: number[] | null }[] | null;
-  slot_sets: { id: string; name: string; live: boolean; slots: { start: number; end: number; price: number | null }[] }[] | null;
+  slot_sets: { id: string; name: string; live: boolean; days?: number[] | null; slots: { start: number; end: number; price: number | null }[] }[] | null;
   booking_paused: boolean;
   booking_notice: string | null;
   photos: string[] | null;
@@ -212,6 +229,7 @@ function shape(r: OwnerRow) {
       id: x.id,
       name: x.name,
       live: x.live,
+      days: (x.days ?? []).map((d) => DAYS[d]),
       slots: x.slots.map((y) => ({ start: fromMin(y.start), end: fromMin(y.end), price: y.price == null ? null : y.price / 100 })),
     })),
     bookingPaused: r.booking_paused,
@@ -237,8 +255,9 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
   let session = v.schedule.sessionMinutes;
   let brk = v.schedule.breakMinutes;
   const sets = v.sessionSets ? sessionSetsJson(v) : null;
-  const live = sets?.find((x) => x.live);
-  // With session sets, the live set is what players book.
+  // With session sets, live sets are what players book (per weekday). custom_slots keeps the
+  // "all other days" set (or the first live one) for anything that doesn't ask for a day.
+  const live = sets?.find((x) => x.live && !x.days.length) ?? sets?.find((x) => x.live);
   const custom = v.slots?.mode === 'custom' ? (live ? live.slots : customSlots(v)) : null;
   if (custom) {
     // Opening hours follow the sessions; the most common length is shown as "N min each".

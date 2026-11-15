@@ -2,7 +2,7 @@ import { cacheGet, cacheIncr, cacheSet, sharedReadable, singleflight } from '../
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
-import { addDays, dhakaToday, hourlyFor, instant, minutesNowInDhaka, priceFor, sessionsFor, type CustomSlot, type PriceBand, type PriceRules, type SlotRules } from '../lib/time';
+import { addDays, dhakaToday, hourlyFor, instant, minutesNowInDhaka, priceFor, sessionsFor, type CustomSlot, type PriceBand, type PriceRules, type SessionSetRow, type SlotRules } from '../lib/time';
 
 export type VenueRow = {
   id: string;
@@ -33,6 +33,7 @@ export type VenueRow = {
   bands?: PriceBand[] | null;
   /** Migration 021: the owner paused new bookings (missing on older cached rows = not paused). */
   booking_paused?: boolean | null;
+  slot_sets?: SessionSetRow[] | null;
   booking_notice?: string | null;
   photos: string[] | null;
   pitch_id: string;
@@ -43,7 +44,7 @@ const VENUE_SELECT = `
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
          p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, p.bands, v.booking_paused, v.booking_notice,
+         s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
   from venues v
@@ -66,12 +67,13 @@ export const slotRules = (v: VenueRow): SlotRules => ({
   breakMin: v.break_min,
   mode: v.slot_mode,
   custom: v.custom_slots,
+  sets: v.slot_sets,
 });
 /** Lowest price per hour on `day`, for "from ৳…/hr" on cards. */
 export function hourlyFromFor(v: VenueRow, day: string) {
   const r = rules(v);
   if (!r.bands.length && v.slot_mode !== 'custom') return hourlyFor(r, day);
-  const per = sessionsFor(slotRules(v)).map((s) => Math.round((priceFor(r, day, s) * 60) / Math.max(1, s.end - s.start)));
+  const per = sessionsFor(slotRules(v), day).map((s) => Math.round((priceFor(r, day, s) * 60) / Math.max(1, s.end - s.start)));
   return per.length ? Math.min(...per) : hourlyFor(r, day);
 }
 
@@ -237,7 +239,7 @@ function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string)
   const prices = rules(v);
   const nowMin = minutesNowInDhaka();
   const now = Date.now();
-  return sessionsFor(slotRules(v))
+  return sessionsFor(slotRules(v), day)
     .filter(({ start }) => day !== today || start > nowMin)
     .map((session) => {
       const { start, end } = session;

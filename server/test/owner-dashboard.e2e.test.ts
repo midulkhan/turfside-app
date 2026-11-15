@@ -364,6 +364,36 @@ d('owner dashboard', () => {
     slots = (await call('GET', `/v1/venues/${v.json.id}/slots?day=${day}`)).json.slots as Json[];
     expect(slots.map((x) => [x.start, x.price])).toEqual([[1200, 300000], [1320, 180000]]);
 
+    // Day-specific sets: Ramadan on Fri+Sat, Normal on all other days; overlapping days are refused.
+    const daySets = [
+      { ...sets[0]!, live: true, days: [] },
+      { ...sets[1]!, live: true, days: ['fri', 'sat'] },
+    ];
+    const ds = await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: daySets }, o.accessToken);
+    expect(ds.status, JSON.stringify(ds.json)).toBe(200);
+    expect(ds.json.sessionSets[1].days).toEqual(['fri', 'sat']);
+    const days = Array.from({ length: 7 }, (_, i) => dayIn(i + 1));
+    const fri = days.find((d) => new Date(`${d}T00:00:00Z`).getUTCDay() === 5)!;
+    const mon = days.find((d) => new Date(`${d}T00:00:00Z`).getUTCDay() === 1)!;
+    const startsOn = async (d: string) => ((await call('GET', `/v1/venues/${v.json.id}/slots?day=${d}`)).json.slots as Json[]).map((x) => x.start);
+    expect(await startsOn(fri)).toEqual([1200, 1320]);
+    expect(await startsOn(mon)).toEqual([420, 1080]);
+    const clash = await call(
+      'PUT',
+      `/v1/owner/venues/${v.json.id}`,
+      { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: [{ ...daySets[0]!, days: ['sat', 'sun'] }, daySets[1]] },
+      o.accessToken,
+    );
+    expect(clash.status).toBe(400);
+    expect(clash.json.error.message).toMatch(/both live on Sat/);
+    // Only day-specific sets live: other days are closed.
+    const only = await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: [{ ...daySets[0]!, live: false }, daySets[1]] }, o.accessToken);
+    expect(only.status).toBe(200);
+    expect(await startsOn(mon)).toEqual([]);
+    expect(await startsOn(fri)).toEqual([1200, 1320]);
+    // Back to Ramadan live on all days for the checks below.
+    expect((await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: flipped }, o.accessToken)).status).toBe(200);
+
     // Two live sets are refused; a bad set names itself.
     const two = await call('PUT', `/v1/owner/venues/${v.json.id}`, { ...base, slots: { mode: 'custom', custom: [] }, sessionSets: sets.map((x) => ({ ...x, live: true })) }, o.accessToken);
     expect(two.status).toBe(400);
