@@ -13,7 +13,8 @@
       "bundleIdentifier": "app.turfsides",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TurfSides uses your location to show turfs near you.",
-        "UIViewControllerBasedStatusBarAppearance": true
+        "UIViewControllerBasedStatusBarAppearance": true,
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -80,6 +81,17 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "backgroundColor": "#FFFFFF"
+    "backgroundColor": "#FFFFFF",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "303d8856-293b-40dd-958e-b67f83284db1"
+      }
+    },
+    "owner": "mnrkhn15"
   }
 }

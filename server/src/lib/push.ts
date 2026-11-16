@@ -11,18 +11,26 @@ import { q } from '../db';
  * (`for update skip locked`).
  */
 const EXPO_SEND = 'https://exp.host/--/api/v2/push/send';
+const EXPO_RECEIPTS = 'https://exp.host/--/api/v2/push/getReceipts';
 const BATCH = 100; // Expo's limit per request
 const MAX_AGE_MIN = 30; // older unsent news is not worth a buzz any more
 
 export const isExpoToken = (t: string) => /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/.test(t);
 
 type Row = { id: string; user_id: string; kind: string; title: string; body: string; data: Record<string, unknown> | null };
-type Ticket = { status: 'ok' | 'error'; message?: string; details?: { error?: string } };
+type Ticket = { id?: string; status: 'ok' | 'error'; message?: string; details?: { error?: string } };
+type Receipt = { status: 'ok' | 'error'; message?: string; details?: { error?: string } };
 
 let running: Promise<void> | null = null;
 let again = false;
 let lastRun = { at: null as string | null, sent: 0, error: null as string | null };
-export const pushStatus = () => lastRun;
+/**
+ * Expo accepting a message (a "ticket") isn't delivery. Whether Firebase/Apple actually took it
+ * shows up later in a "receipt" — e.g. `InvalidCredentials` when the EAS project has no FCM key.
+ */
+let delivery = { checkedAt: null as string | null, delivered: 0, failed: 0, lastError: null as string | null };
+const pendingReceipts: { id: string; token: string; at: number }[] = [];
+export const pushStatus = () => ({ ...lastRun, delivery });
 
 /** Send waiting notifications now (coalesced: one run at a time, one follow-up if asked again). */
 export function kickPush() {
@@ -36,6 +44,7 @@ export function kickPush() {
         again = false;
         await flush();
       } while (again);
+      await checkReceipts().catch(() => {});
       lastRun = { ...lastRun, at: new Date().toISOString(), error: null }; // healthy (even if nothing to send)
     } catch (e) {
       lastRun = { ...lastRun, at: new Date().toISOString(), error: String((e as Error).message ?? e).slice(0, 200) };
@@ -99,8 +108,51 @@ async function flush() {
     // An uninstalled app / revoked permission: forget that token.
     const dead = tickets.flatMap((t, k) => (t.status === 'error' && t.details?.error === 'DeviceNotRegistered' ? [chunk[k]!.to] : []));
     if (dead.length) await q('delete from push_tokens where token = any($1)', [dead]);
+    tickets.forEach((t, k) => {
+      if (t.status === 'ok' && t.id) pendingReceipts.push({ id: t.id, token: chunk[k]!.to, at: Date.now() });
+      else if (t.status === 'error') noteFailure(t);
+    });
   }
   lastRun = { ...lastRun, sent: lastRun.sent + sent };
+}
+
+function noteFailure(r: Receipt) {
+  delivery = { ...delivery, failed: delivery.failed + 1, lastError: `${r.details?.error ?? 'Error'}: ${r.message ?? ''}`.slice(0, 300) };
+}
+
+/** Receipts are ready a little after sending; check them, prune dead tokens, note failures. */
+async function checkReceipts() {
+  if (config.PUSH_DRY_RUN) return;
+  const ready = pendingReceipts.filter((p) => Date.now() - p.at > 20_000).slice(0, 300);
+  if (!ready.length) return;
+  const res = await fetch(EXPO_RECEIPTS, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(config.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${config.EXPO_ACCESS_TOKEN}` } : {}),
+    },
+    body: JSON.stringify({ ids: ready.map((p) => p.id) }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return; // try again next time
+  const json = (await res.json().catch(() => ({}))) as { data?: Record<string, Receipt> };
+  const receipts = json.data ?? {};
+  const dead: string[] = [];
+  for (const p of ready) {
+    const r = receipts[p.id];
+    // Not there yet: keep it for a while; give up on it after half an hour.
+    if (!r) {
+      if (Date.now() - p.at < 30 * 60_000) continue;
+    } else if (r.status === 'ok') delivery = { ...delivery, delivered: delivery.delivered + 1, lastError: null };
+    else {
+      noteFailure(r);
+      if (r.details?.error === 'DeviceNotRegistered') dead.push(p.token);
+    }
+    pendingReceipts.splice(pendingReceipts.indexOf(p), 1);
+  }
+  delivery = { ...delivery, checkedAt: new Date().toISOString() };
+  if (dead.length) await q('delete from push_tokens where token = any($1)', [dead]);
 }
 
 async function send(messages: unknown[]): Promise<Ticket[]> {
