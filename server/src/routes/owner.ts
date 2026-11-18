@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import * as dash from '../services/owner-dash';
+import { resolveLocation } from '../services/geo';
 
 /**
  * Owner dashboard routes (/v1/owner/*, plus the public tournaments list). Registered from
@@ -20,6 +21,11 @@ export function registerOwnerRoutes(app: FastifyInstance, { requireOwner, parse 
   const owner = { preHandler: requireOwner };
   // Writes: generous for a person clicking around, tight enough to stop a runaway script.
   const write = { preHandler: requireOwner, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } };
+
+  // Map picker: a pasted Google Maps link (or coordinates) → the exact point. No Google API.
+  app.post('/v1/owner/geo/resolve', { preHandler: requireOwner, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) =>
+    resolveLocation(parse(z.object({ text: z.string().trim().min(3).max(2000) }), req.body).text),
+  );
   const me = (req: FastifyRequest) => req.user!.userId;
   const id = (req: FastifyRequest) => parse(z.object({ id: uuid }), req.params).id;
 
