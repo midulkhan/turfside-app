@@ -539,4 +539,48 @@ d('owner dashboard', () => {
     // Occupancy: 4 booked hours of 24 on sale that day.
     expect(st.current.occupancy).toBe(16.7);
   });
+  it('edit a walk-in (details, amount, move); app bookings and other owners can’t', async () => {
+    const o = await newUser('owner');
+    const v = (await call('POST', '/v1/owner/venues', base, o.accessToken)).json;
+    const day = dayIn(6);
+    const w = await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [420], guestName: 'Rahim' }, o.accessToken);
+    expect(w.status, JSON.stringify(w.json)).toBe(200);
+    const id = w.json.bookings[0].id as string;
+
+    // Details and amount.
+    const e1 = await call('PATCH', `/v1/owner/bookings/${id}`, { guestName: 'Rahim Uddin', guestPhone: '01711222333', note: 'Pays cash', amount: 1500 }, o.accessToken);
+    expect(e1.status, JSON.stringify(e1.json)).toBe(200);
+    expect(e1.json).toMatchObject({ amount: 1500, customer: { name: 'Rahim Uddin', phone: '01711222333' }, note: 'Pays cash', start: 420 });
+
+    // Move to 13:00: players see 07:00 free and 13:00 taken.
+    const e2 = await call('PATCH', `/v1/owner/bookings/${id}`, { day, start: 780 }, o.accessToken);
+    expect(e2.status, JSON.stringify(e2.json)).toBe(200);
+    expect(e2.json).toMatchObject({ day, start: 780, end: 870, amount: 1500 });
+    const slots = (await call('GET', `/v1/venues/${v.id}/slots?day=${day}`)).json.slots as Json[];
+    expect(slots.find((x) => x.start === 420)!.status).toBe('available');
+    expect(slots.find((x) => x.start === 780)!.status).toBe('booked');
+    // The day sheet and stats follow.
+    const sheet = (await call('GET', `/v1/owner/venues/${v.id}/day?day=${day}`, undefined, o.accessToken)).json;
+    expect(sheet.summary).toMatchObject({ booked: 1, revenue: 1500 });
+
+    // Can't move onto someone else's booking, a closure, or a time that isn't a session.
+    const p = await newUser('player');
+    await payFor(p.accessToken, [slots.find((x) => x.start === 510)!.id as string]);
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { day, start: 510 }, o.accessToken)).status).toBe(409);
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { day, start: 500 }, o.accessToken)).status).toBe(400);
+    expect((await call('POST', '/v1/owner/blocks', { venueId: v.id, from: day, start: '15:30', end: '17:00', kind: 'maintenance' }, o.accessToken)).status).toBe(200);
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { day, start: 870 }, o.accessToken)).status).toBe(409);
+    // Half a move is refused.
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { start: 600 }, o.accessToken)).status).toBe(400);
+
+    // App bookings can't be edited; another owner can't touch it.
+    const appBooking = (await call('GET', `/v1/owner/bookings?venueId=${v.id}&source=app`, undefined, o.accessToken)).json.items[0];
+    expect((await call('PATCH', `/v1/owner/bookings/${appBooking.id}`, { guestName: 'Nope' }, o.accessToken)).status).toBe(403);
+    const other = await newUser('owner');
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { guestName: 'Nope' }, other.accessToken)).status).toBe(404);
+
+    // Cancelled walk-ins can't be edited.
+    await call('POST', `/v1/owner/bookings/${id}/cancel`, { reason: 'No show' }, o.accessToken);
+    expect((await call('PATCH', `/v1/owner/bookings/${id}`, { guestName: 'Late' }, o.accessToken)).status).toBe(409);
+  });
 });

@@ -384,6 +384,100 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
   return { bookings: await Promise.all(ids.map((id) => getBooking(ownerId, id))) };
 }
 
+// ── Edit a walk-in ────────────────────────────────────────────────────────────────────────
+// Only bookings the owner added (source = 'walkin'). App bookings were paid by a player through
+// the app and can't be changed here — they can only be cancelled (with a refund).
+
+export const walkinEditInput = z
+  .object({
+    guestName: z.string().trim().min(2).max(80).optional(),
+    guestPhone: z.string().trim().max(20).optional(),
+    note: z.string().trim().max(300).optional(),
+    /** Amount charged, in taka. */
+    amount: z.number().min(0).max(1_000_000).optional(),
+    /** Move to another session: the session's start (minutes) on `day`. */
+    day: dayKey.optional(),
+    start: z.number().int().min(0).max(2880).optional(),
+  })
+  .strict()
+  .refine((x) => (x.day === undefined) === (x.start === undefined), { message: 'Send both day and start to move a booking.' });
+
+export async function updateWalkin(ownerId: string, id: string, e: z.infer<typeof walkinEditInput>) {
+  const b = await getBooking(ownerId, id);
+  if (b.source !== 'walkin') throw new ApiError('forbidden', 'Only bookings you added can be edited. App bookings can only be cancelled.');
+  if (b.status === 'cancelled') throw new ApiError('conflict', 'This booking was cancelled.');
+  const moving = e.day !== undefined && (e.day !== b.day || e.start !== b.start);
+  if (moving && b.status === 'checked_in') throw new ApiError('conflict', 'This booking is checked in, so its time can’t change.');
+
+  const v = await getOwnedVenueRow(ownerId, b.venue.id);
+  let slot: { start: number; end: number; from: Date; to: Date } | null = null;
+  if (moving) {
+    const today = dhakaToday();
+    if (e.day! < addDays(today, -7) || e.day! > addDays(today, config.BOOKING_HORIZON_DAYS))
+      throw new ApiError('invalid', 'Pick a date within the booking window.');
+    const s = sessionsFor(slotRules(v), e.day!).find((x) => x.start === e.start);
+    if (!s) throw new ApiError('invalid', 'That session does not exist on that day. Reload and pick again.');
+    slot = { start: s.start, end: s.end, from: instant(e.day!, s.start), to: instant(e.day!, s.end) };
+  }
+
+  await tx(async (c) => {
+    await c.query('select pg_advisory_xact_lock(hashtext($1))', [`pitch:${v.pitch_id}`]);
+    if (slot) {
+      await c.query(
+        "update bookings set status = 'expired' where pitch_id = $1 and status = 'held' and hold_expires_at < now() and during && tstzrange($2, $3)",
+        [v.pitch_id, slot.from, slot.to],
+      );
+      const blocked = await c.query('select 1 from venue_blocks where pitch_id = $1 and during && tstzrange($2, $3) limit 1', [
+        v.pitch_id,
+        slot.from,
+        slot.to,
+      ]);
+      if (blocked.rowCount) throw new ApiError('slot_taken', 'That time is closed. Remove the closure first.');
+    }
+    const amount = e.amount === undefined ? null : Math.round(e.amount * 100);
+    try {
+      const r = await c.query(
+        `update bookings b set
+            guest_name  = coalesce($3, guest_name),
+            guest_phone = case when $4::boolean then nullif($5, '') else guest_phone end,
+            note        = case when $6::boolean then nullif($7, '') else note end,
+            total       = coalesce($8::int, total),
+            price_lines = case when $8::int is null then price_lines else jsonb_build_array(jsonb_build_object('label', 'Walk-in booking', 'amount', $8::int)) end,
+            day         = coalesce($9::date, day),
+            start_min   = coalesce($10::int, start_min),
+            end_min     = coalesce($11::int, end_min),
+            during      = case when $12::timestamptz is null then during else tstzrange($12, $13) end
+          from venues v
+         where v.id = b.venue_id and v.owner_id = $2 and b.id = $1 and b.source = 'walkin' and b.status <> 'cancelled'`,
+        [
+          id,
+          ownerId,
+          e.guestName ?? null,
+          e.guestPhone !== undefined,
+          e.guestPhone ?? null,
+          e.note !== undefined,
+          e.note ?? null,
+          amount,
+          slot ? e.day : null,
+          slot?.start ?? null,
+          slot?.end ?? null,
+          slot?.from ?? null,
+          slot?.to ?? null,
+        ],
+      );
+      if (!r.rowCount) throw new ApiError('conflict', 'This booking can no longer be edited.');
+    } catch (err) {
+      if ((err as { code?: string }).code === '23P01') throw new ApiError('slot_taken', 'That time is already booked. Pick another session.');
+      throw err;
+    }
+    await audit(c, ownerId, 'booking.walkin_edit', 'booking', id, {
+      before: { name: b.customer.name, day: b.day, start: b.start, amount: b.amount },
+      changes: e,
+    });
+  });
+  return getBooking(ownerId, id);
+}
+
 // ── Cancel / check in ────────────────────────────────────────────────────────────────────
 
 export async function cancelBooking(ownerId: string, id: string, reason: string) {

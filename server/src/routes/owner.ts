@@ -34,6 +34,8 @@ export function registerOwnerRoutes(app: FastifyInstance, { requireOwner, parse 
   app.get('/v1/owner/bookings', owner, async (req) => dash.listBookings(me(req), parse(dash.bookingQuery, req.query)));
   app.get('/v1/owner/bookings/:id', owner, async (req) => dash.getBooking(me(req), id(req)));
   app.post('/v1/owner/bookings', write, async (req) => dash.createWalkin(me(req), parse(dash.walkinInput, req.body)));
+  // Edit a booking the owner added (walk-in / phone). App bookings can't be edited.
+  app.patch('/v1/owner/bookings/:id', write, async (req) => dash.updateWalkin(me(req), id(req), parse(dash.walkinEditInput, req.body)));
   app.post('/v1/owner/bookings/:id/cancel', write, async (req) =>
     dash.cancelBooking(me(req), id(req), parse(z.object({ reason: z.string().trim().max(200).default('') }), req.body ?? {}).reason),
   );
