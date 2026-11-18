@@ -480,4 +480,63 @@ d('owner dashboard', () => {
     expect((await call('GET', '/v1/owner/me/settings', undefined, o.accessToken)).status).toBe(200);
     expect((await call('PATCH', '/v1/owner/me', { name: 'Owner Renamed' }, o.accessToken)).json.name).toBe('Owner Renamed');
   });
+  it('day sheet after the sessions change: each booking once, at its real time, at the price paid; totals match the overview', async () => {
+    const o = await newUser('owner');
+    const day = dayIn(4);
+    // Custom sessions: 04:40–06:40 for ৳2,000 and 16:00–18:00 for ৳3,400.
+    const v = (
+      await call(
+        'POST',
+        '/v1/owner/venues',
+        {
+          ...base,
+          schedule: { opens: '00:00', closes: '23:59', sessionMinutes: 120, breakMinutes: 0 },
+          pricing: { hourly: 1700 },
+          slots: { mode: 'custom', custom: [{ start: '04:40', end: '06:40', price: 2000 }, { start: '16:00', end: '18:00', price: 3400 }] },
+        },
+        o.accessToken,
+      )
+    ).json;
+    const p1 = await newUser('player');
+    const p2 = await newUser('player');
+    const slots = (await call('GET', `/v1/venues/${v.id}/slots?day=${day}`)).json.slots as Json[];
+    await payFor(p1.accessToken, [slots[0].id]); // 04:40–06:40, ৳2,000
+    await payFor(p2.accessToken, [slots[1].id]); // 16:00–18:00, ৳3,400
+
+    // The owner switches to 2-hour sessions from midnight (00:00, 02:00, 04:00, 06:00 … 22:00), ৳3,400 each.
+    const ch = await call(
+      'PUT',
+      `/v1/owner/venues/${v.id}`,
+      { ...base, schedule: { opens: '00:00', closes: '00:00', sessionMinutes: 120, breakMinutes: 0 }, pricing: { hourly: 1700 }, slots: { mode: 'fixed', custom: [] } },
+      o.accessToken,
+    );
+    expect(ch.status, JSON.stringify(ch.json)).toBe(200);
+
+    const sheet = (await call('GET', `/v1/owner/venues/${v.id}/day?day=${day}`, undefined, o.accessToken)).json;
+    const booked = (sheet.sessions as Json[]).filter((r) => r.kind === 'booking');
+    // One row per booking, at the booked time, with the amount paid.
+    expect(booked.map((r) => [r.start, r.end, r.price, r.status])).toEqual([
+      [280, 400, 2000, 'booked'],
+      [960, 1080, 3400, 'booked'],
+    ]);
+    // The 04:40 booking blocks today's 04:00–06:00 and 06:00–08:00 sessions; the 16:00 one matches exactly.
+    expect(booked[0].covers).toEqual([{ start: 240, end: 360 }, { start: 360, end: 480 }]);
+    expect(booked[1].covers).toEqual([]);
+    // 04:00–06:00 and 06:00–08:00 overlap the 04:40 booking, 16:00–18:00 is the other: none listed as sessions.
+    const open = (sheet.sessions as Json[]).filter((r) => r.kind === 'session').map((r) => r.start);
+    expect(open).toEqual([0, 120, 480, 600, 720, 840, 1080, 1200, 1320]);
+    expect(sheet.summary).toMatchObject({ total: 12, booked: 2, bookedHours: 4, revenue: 5400 });
+    // Rows are in time order and never overlap.
+    const all = sheet.sessions as Json[];
+    for (let k = 1; k < all.length; k++) expect(all[k].start).toBeGreaterThanOrEqual(all[k - 1].end);
+
+    // The overview and calendar say the same for that day.
+    const st = (await call('GET', `/v1/owner/stats?venueId=${v.id}&from=${day}&to=${day}`, undefined, o.accessToken)).json;
+    expect(st.current).toMatchObject({ bookings: 2, revenue: 5400, hours: 4 });
+    expect(st.series[0]).toMatchObject({ bookings: 2, revenue: 5400 });
+    const cal = (await call('GET', `/v1/owner/calendar?venueId=${v.id}&month=${day.slice(0, 7)}`, undefined, o.accessToken)).json as Json[];
+    expect(cal.find((x) => x.day === day)).toMatchObject({ bookings: 2, revenue: 5400 });
+    // Occupancy: 4 booked hours of 24 on sale that day.
+    expect(st.current.occupancy).toBe(16.7);
+  });
 });

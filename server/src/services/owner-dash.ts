@@ -176,7 +176,15 @@ export async function getBooking(ownerId: string, id: string) {
   return bookingOut(b);
 }
 
-// ── Day sheet: every session of a day with who has it ────────────────────────────────────
+// ── Day sheet: the day as it really is ───────────────────────────────────────────────────
+//
+// Each booking appears ONCE, at the time it was booked, with the amount it was booked for — even if
+// the owner has since changed the sessions (a 4:40–6:40 booking stays 4:40–6:40). The current
+// sessions fill the rest of the day: a session that any booking overlaps can't be sold, so it is not
+// listed separately. Counts and revenue use the same rules as the overview (bookings of this day,
+// confirmed / checked in / completed, by amount charged).
+
+const SHEET_STATUSES = "('held','pending','confirmed','checked_in','completed')";
 
 export async function daySheet(ownerId: string, venueId: string, day: string) {
   const v = await getOwnedVenueRow(ownerId, venueId);
@@ -185,7 +193,7 @@ export async function daySheet(ownerId: string, venueId: string, day: string) {
   const [bookings, blocks] = await Promise.all([
     q<BookingRow & { s: Date; e: Date }>(
       `${BOOKING_SELECT.replace('select b.id,', 'select lower(b.during) s, upper(b.during) e, b.id,')}
-        where b.pitch_id = $1 and b.during && tstzrange($2, $3) and b.status in ${ACTIVE}
+        where b.pitch_id = $1 and b.during && tstzrange($2, $3) and b.status in ${SHEET_STATUSES}
           and not (b.status in ('held','pending') and b.hold_expires_at < now())
         order by lower(b.during)`,
       [v.pitch_id, from, to],
@@ -195,43 +203,91 @@ export async function daySheet(ownerId: string, venueId: string, day: string) {
       [v.pitch_id, from, to],
     ),
   ]);
+  const base = from.getTime();
+  const rel = (d: Date) => Math.round((d.getTime() - base) / 60_000);
+  const now = Date.now();
   const prices = rules(v);
-  const sessions = sessionsFor(slotRules(v), day).map((s) => {
+
+  type Row = {
+    kind: 'booking' | 'session';
+    start: number;
+    end: number;
+    /** Booking rows: the amount booked for. Session rows: today's price for that session. */
+    price: number;
+    status: 'available' | 'held' | 'booked' | 'checked_in' | 'blocked';
+    past: boolean;
+    booking: ReturnType<typeof bookingOut> | null;
+    block: { id: string; reason: string | null; kind: string; tournamentId: string | null } | null;
+    /** Set when this booking belongs to another day's sheet (a late session running past midnight). */
+    bookedFor: string | null;
+    /** Booking rows: today's sessions it overlaps without matching them (they can't be sold). */
+    covers: { start: number; end: number }[];
+  };
+  const rows: Row[] = [];
+
+  for (const b of bookings) {
+    const held = b.status === 'held' || b.status === 'pending';
+    rows.push({
+      kind: 'booking',
+      start: rel(b.s),
+      end: rel(b.e),
+      price: taka(b.total),
+      status: held ? 'held' : b.status === 'checked_in' ? 'checked_in' : 'booked',
+      past: b.e.getTime() < now,
+      // Who is paying stays private until they've paid.
+      booking: held ? null : bookingOut(b),
+      block: null,
+      bookedFor: b.day === day ? null : b.day,
+      covers: [],
+    });
+  }
+  let scheduled = 0;
+  for (const s of sessionsFor(slotRules(v), day)) {
+    scheduled++;
     const a = instant(day, s.start).getTime();
-    const b = instant(day, s.end).getTime();
-    const bk = bookings.find((x) => x.s.getTime() < b && x.e.getTime() > a);
-    const bl = blocks.find((x) => x.s.getTime() < b && x.e.getTime() > a);
-    const status = bk
-      ? bk.status === 'held' || bk.status === 'pending'
-        ? 'held'
-        : bk.status === 'checked_in'
-          ? 'checked_in'
-          : 'booked'
-      : bl
-        ? 'blocked'
-        : 'available';
-    return {
+    const e = instant(day, s.end).getTime();
+    const hits = bookings.flatMap((x, i) => (x.s.getTime() < e && x.e.getTime() > a ? [i] : []));
+    if (hits.length) {
+      // Taken: the booking row shows it. Say so when the times differ (sessions changed after booking).
+      for (const i of hits) if (rows[i]!.start !== s.start || rows[i]!.end !== s.end) rows[i]!.covers.push({ start: s.start, end: s.end });
+      continue;
+    }
+    const bl = blocks.find((x) => x.s.getTime() < e && x.e.getTime() > a);
+    rows.push({
+      kind: 'session',
       start: s.start,
       end: s.end,
       price: taka(priceFor(prices, day, s)),
-      status: status as 'available' | 'held' | 'booked' | 'checked_in' | 'blocked',
-      past: b < Date.now(),
-      booking: bk && bk.status !== 'held' && bk.status !== 'pending' ? bookingOut(bk) : null,
-      block: bl && !bk ? { id: bl.id, reason: bl.reason, kind: bl.kind, tournamentId: bl.tournament_id } : null,
-    };
-  });
+      status: bl ? 'blocked' : 'available',
+      past: e < now,
+      booking: null,
+      block: bl ? { id: bl.id, reason: bl.reason, kind: bl.kind, tournamentId: bl.tournament_id } : null,
+      bookedFor: null,
+      covers: [],
+    });
+  }
+  rows.sort((x, y) => x.start - y.start || (x.kind === 'booking' ? -1 : 1));
+
+  // Same rule as the overview chart: this day's bookings that are confirmed, checked in or completed.
+  const paid = bookings.filter((b) => b.day === day && ['confirmed', 'checked_in', 'completed'].includes(b.status));
   return {
     venue: { id: v.id, name: v.name, status: v.status },
     day,
-    sessions,
+    sessions: rows,
     summary: {
-      total: sessions.length,
-      booked: sessions.filter((s) => s.status === 'booked' || s.status === 'checked_in').length,
-      blocked: sessions.filter((s) => s.status === 'blocked').length,
-      available: sessions.filter((s) => s.status === 'available' && !s.past).length,
-      revenue: taka(
-        bookings.filter((b) => ['confirmed', 'checked_in', 'completed'].includes(b.status)).reduce((n, b) => n + Number(b.total), 0),
-      ),
+      /** Sessions in today's schedule. */
+      total: scheduled,
+      /** Bookings for this day (each counted once, however long it is). */
+      booked: paid.length,
+      bookedHours: Math.round((paid.reduce((n, b) => n + (b.end_min - b.start_min), 0) / 60) * 10) / 10,
+      /** Players paying right now (held for a few minutes). */
+      held: rows.filter((r) => r.status === 'held').length,
+      /** Sessions you closed. */
+      blocked: rows.filter((r) => r.kind === 'session' && r.status === 'blocked').length,
+      /** Sessions players can still book. */
+      available: rows.filter((r) => r.kind === 'session' && r.status === 'available' && !r.past).length,
+      /** Amount booked for this day (the turf's price; the TurfSides service fee is not included). */
+      revenue: taka(paid.reduce((n, b) => n + Number(b.total), 0)),
     },
   };
 }
@@ -581,10 +637,9 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
   } else for (let i = 0; i < n; i++) keys.push(addDays(f.from, i));
   const byKey = new Map(series.map((s) => [s.k, s]));
 
-  // Occupancy: booked minutes ÷ bookable minutes in the period.
-  // Averaged over a week: session sets can differ by weekday.
-  const week = Array.from({ length: 7 }, (_, k) => addDays(f.from, k));
-  const perDay =
+  // Occupancy: booked minutes ÷ minutes on sale in the period, counted day by day (session sets can
+  // differ by weekday). Uses today's schedule for every day, including past ones.
+  const capacity = (a: string, days: number) =>
     schedules.reduce((m, s) => {
       const r = {
         openMin: s.open_min,
@@ -595,9 +650,13 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
         custom: s.custom_slots,
         sets: s.slot_sets,
       };
-      return m + week.reduce((t, d) => t + sessionsFor(r, d).reduce((u, x) => u + (x.end - x.start), 0), 0);
-    }, 0) / 7;
-  const shape = (t: Tot | null) => ({
+      let t = 0;
+      for (let i = 0; i < days; i++) t += sessionsFor(r, addDays(a, i)).reduce((u, x) => u + (x.end - x.start), 0);
+      return m + t;
+    }, 0);
+  const capCur = capacity(f.from, n);
+  const capPrev = capacity(prevFrom, n);
+  const shape = (t: Tot | null, cap: number) => ({
     revenue: taka(t?.revenue),
     appRevenue: taka(t?.app_revenue),
     walkinRevenue: taka(t?.walkin_revenue),
@@ -606,12 +665,12 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
     cancelled: t?.cancelled ?? 0,
     players: t?.players ?? 0,
     walkins: t?.walkins ?? 0,
-    occupancy: perDay ? Math.min(100, Math.round(((t?.minutes ?? 0) / (perDay * n)) * 1000) / 10) : 0,
+    occupancy: cap ? Math.min(100, Math.round(((t?.minutes ?? 0) / cap) * 1000) / 10) : 0,
   });
   return {
     range: { from: f.from, to: f.to, days: n, bucket: monthly ? ('month' as const) : ('day' as const) },
-    current: shape(cur),
-    previous: { from: prevFrom, to: prevTo, ...shape(prev) },
+    current: shape(cur, capCur),
+    previous: { from: prevFrom, to: prevTo, ...shape(prev, capPrev) },
     series: keys.map((k) => ({
       key: k,
       revenue: taka(byKey.get(k)?.revenue),
