@@ -75,6 +75,7 @@ jobs:
           OTP_PHONE_LIMIT: '1000'
           OTP_RESEND_SECONDS: '0'
           PUSH_DRY_RUN: 'true'
+          EMAIL_DRY_RUN: 'true'
           RATE_LIMIT_PER_MIN: '10000'
           # Redis cache through scripts/upstash-local.mjs (same protocol as Upstash)
           UPSTASH_REDIS_REST_URL: http://127.0.0.1:8079

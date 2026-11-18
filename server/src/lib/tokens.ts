@@ -49,6 +49,10 @@ export function signPass(bookingId: string, expiresAtSec: number) {
   return `tsp1.${body}.${hmac(secret('PASS_SECRET'), body)}`;
 }
 
+/** Signature for the emailed QR image link (/v1/passes/:id/qr.png?s=…): only the email can open it. */
+export const qrLinkSig = (bookingId: string) => hmac(secret('PASS_SECRET'), `qr.${bookingId}`).slice(0, 22);
+export const qrLinkOk = (bookingId: string, s: unknown) => typeof s === 'string' && s.length === 22 && safeEqual(s, qrLinkSig(bookingId));
+
 export function verifyPass(token: string) {
   const [v, id, exp, sig] = token.split('.');
   if (v !== 'tsp1' || !id || !exp || !sig) return null;

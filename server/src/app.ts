@@ -18,7 +18,10 @@ import { addDays, dhakaToday, isDayKey } from './lib/time';
 import { deleteObject, headObject, MAX_UPLOAD_BYTES, newKey, pingStorage, presignPut, publicUrl, UPLOAD_TYPES, type UploadType } from './lib/storage';
 import { emailState, lastEmailSend } from './lib/email';
 import { isExpoToken, kickPush, pushStatus, sentForTests } from './lib/push';
-import { verifyAccess, verifyAnyPass } from './lib/tokens';
+import QRCode from 'qrcode';
+
+import { qrLinkOk, verifyAccess, verifyAnyPass } from './lib/tokens';
+import { emailsForTests } from './services/booking-emails';
 import * as account from './services/account';
 import * as auth from './services/auth';
 import type { Realm } from './services/auth';
@@ -560,6 +563,10 @@ export async function buildApp() {
     await q('delete from push_tokens where token = $1 and user_id = $2', [b.token, req.user!.userId]);
     return { ok: true };
   });
+  if (config.EMAIL_DRY_RUN && config.NODE_ENV !== 'production') {
+    app.get('/v1/test/emails', async () => ({ sent: emailsForTests }));
+  }
+
   if (config.PUSH_DRY_RUN && config.NODE_ENV !== 'production') {
     app.get('/v1/test/pushes', async () => {
       await kickPush();
@@ -730,6 +737,23 @@ export async function buildApp() {
   }
 
   // ── Bookings ──────────────────────────────────────────────────────────────
+
+  /**
+   * The entry-pass QR as an image, for the confirmation email (mail apps won't show inline images).
+   * The link is signed per booking, so only the email can open it; the QR is the same signed pass
+   * the app shows, built fresh. A cancelled or finished booking gets a "no longer valid" image.
+   */
+  app.get('/v1/passes/:id/qr.png', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { s } = (req.query ?? {}) as { s?: string };
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !qrLinkOk(id, s)) throw new ApiError('not_found', 'Not found.');
+    const b = await one<{ user_id: string | null }>('select user_id from bookings where id = $1', [id]);
+    const t = b?.user_id ? await bookings.getBooking(b.user_id, id).catch(() => null) : null;
+    reply.header('Cache-Control', 'private, max-age=300').header('X-Robots-Tag', 'noindex');
+    if (!t?.passToken) return reply.type('image/png').send(createReadStream(join(publicDir, 'brand', 'email-pass-void.png')));
+    const png = await QRCode.toBuffer(t.passToken, { type: 'png', errorCorrectionLevel: 'M', margin: 2, width: 512, color: { dark: '#161B1DFF', light: '#FFFFFFFF' } });
+    return reply.type('image/png').send(png);
+  });
   app.get('/v1/bookings/:id', { preHandler: requireUser }, async (req) => bookings.getBooking(req.user!.userId, (req.params as { id: string }).id));
   app.post('/v1/bookings/:id/cancel', { preHandler: requireUser }, async (req) => bookings.cancelBooking(req.user!.userId, (req.params as { id: string }).id));
 

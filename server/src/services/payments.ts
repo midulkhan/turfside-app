@@ -6,6 +6,7 @@ import { randomToken } from '../lib/crypto';
 
 import { HOLDING, expireUnpaid } from './matches';
 import { refreshDays } from './venues';
+import { sendBookingEmails } from './booking-emails';
 
 /** Which turf-days an order (or a single booking) covers, for refreshing the slot cache after a change. */
 async function daysOf(orderId: string | null, bookingId?: string) {
@@ -320,9 +321,11 @@ export async function finalize(paymentId: string): Promise<{ status: string; boo
         [p.user_id],
       );
     }
-    return { status: confirmed ? 'confirmed' : 'refund_required', bookingId: p.booking_id, days: slots.map((x) => [x.venue_id, x.day] as const) };
+    return { status: confirmed ? 'confirmed' : 'refund_required', bookingId: p.booking_id, days: slots.map((x) => [x.venue_id, x.day] as const), fresh: confirmed };
   });
   if ('days' in out && out.days) await refreshDays(out.days.map(([venueId, day]) => ({ venueId, day })));
+  // Confirmation emails (player + turf owner): only from the call that confirmed it, in the background.
+  if ('fresh' in out && out.fresh) void sendBookingEmails(p.id);
   return { status: out.status === 'refund_required' ? 'failed' : out.status, bookingId: out.bookingId };
 }
 
