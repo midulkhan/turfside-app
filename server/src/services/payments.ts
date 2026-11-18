@@ -44,7 +44,7 @@ export function safeReturnUrl(url?: string) {
   return ok ? url : null;
 }
 
-export async function startPayment(userId: string, holdId: string, idemKey: string, returnUrl?: string) {
+export async function startPayment(userId: string, holdId: string, idemKey: string, returnUrl?: string, note?: string) {
   if (!bkash.bkashEnabled()) throw new ApiError('not_configured', 'Payments are not available yet.');
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(idemKey)) throw new ApiError('invalid', 'Missing or invalid Idempotency-Key header.');
 
@@ -79,6 +79,8 @@ export async function startPayment(userId: string, holdId: string, idemKey: stri
     // Keep every slot in the order locked while the user is on the bKash page.
     await c.query("update orders set status = 'pending', hold_expires_at = now() + make_interval(mins => $2) where id = $1", [o.id, PAYMENT_WINDOW_MIN()]);
     await c.query("update bookings set status = 'pending', hold_expires_at = now() + make_interval(mins => $2) where order_id = $1 and status = 'held'", [o.id, PAYMENT_WINDOW_MIN()]);
+    // The customer's note goes on every slot of the order (or is cleared if they removed it).
+    await c.query('update bookings set note = $2 where order_id = $1', [o.id, note ?? null]);
     return p;
   });
   // The hold now lasts the whole payment window: without this, a cached copy would show

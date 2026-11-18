@@ -11,7 +11,7 @@ import { signPass, signPass2 } from '../lib/tokens';
 import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules, slotRules } from './venues';
 
-const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id,
+const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id, note,
   (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
 
 /** One slot of a booking made of several (same order / payment). */
@@ -92,6 +92,7 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '
 
 type BookingRow = {
   pitch_name?: string | null;
+  note?: string | null;
   order_id?: string | null;
   id: string;
   code: string;
@@ -407,6 +408,8 @@ export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] =
     slotCount: merged ? run.length : 1,
     /** Other tickets bought in the same payment (slots that weren't back to back). */
     otherTickets: others,
+    /** The customer's note to the turf, added at checkout. */
+    note: b.note ?? null,
     // Signed entry pass carrying the ticket itself (docs/pass-qr.md), valid until 6 hours after
     // the session ends. Without the holder (not expected) it falls back to the id-only v1 pass.
     passToken:

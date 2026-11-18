@@ -32,6 +32,9 @@ import * as api from '@/features/api/client';
 import { useSettings, useUpdateSettings } from '@/features/api/queries';
 import { Segmented } from '@/components/ui/segmented';
 import { Switch } from '@/components/ui/switch';
+import { Sheet } from '@/components/ui/sheet';
+import { PasswordInput } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useTheme, type ThemePref } from '@/theme/theme-provider';
 import { uploadPhoto } from '@/features/api/uploads';
 import { errorMessage } from '@/features/session/pending-signup';
@@ -95,6 +98,7 @@ export default function Profile() {
   const bottom = useTabBarSpace();
   const { user, place, signOut, updateUser } = useSession();
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
 
   const pickPhoto = async () => {
     // The system photo picker needs no library permission on iOS 14+ / Android 13+.
@@ -220,16 +224,16 @@ export default function Profile() {
                 disabled={settings.isPending || updateSettings.isPending}
                 accessibilityLabel="Enable 2FA: email me a code when I sign in"
                 onValueChange={(v) =>
-                  updateSettings.mutate(
-                    { twoFactor: v },
-                    {
-                      onSuccess: () =>
-                        v
-                          ? Alert.alert('Two-step sign-in is on', 'Next time you sign in, we’ll email you a 6-digit code to finish.')
-                          : undefined,
-                      onError: (e) => Alert.alert('Couldn’t change two-step sign-in', errorMessage(e)),
-                    },
-                  )
+                  v
+                    ? updateSettings.mutate(
+                        { twoFactor: true },
+                        {
+                          onSuccess: () => Alert.alert('Two-step sign-in is on', 'Next time you sign in, we’ll email you a 6-digit code to finish.'),
+                          onError: (e) => Alert.alert('Couldn’t change two-step sign-in', errorMessage(e)),
+                        },
+                      )
+                    : // Turning it off needs the password; the switch stays on until it's confirmed.
+                      setConfirmOff(true)
                 }
               />
             }
@@ -272,12 +276,70 @@ export default function Profile() {
           </Text>
         </View>
       </ScrollView>
+      <TwoFactorOffSheet visible={confirmOff} onClose={() => setConfirmOff(false)} />
     </View>
+  );
+}
+
+/** Confirm turning two-step sign-in off with the account password. */
+function TwoFactorOffSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const update = useUpdateSettings();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | undefined>();
+  // Fresh each time it opens.
+  const [wasOpen, setWasOpen] = useState(visible);
+  if (visible !== wasOpen) {
+    setWasOpen(visible);
+    if (visible) {
+      setPassword('');
+      setError(undefined);
+    }
+  }
+  const submit = () => {
+    if (!password) return setError('Enter your password.');
+    update.mutate(
+      { twoFactor: false, password },
+      {
+        onSuccess: () => {
+          haptic.success();
+          onClose();
+        },
+        onError: (e) => {
+          haptic.error();
+          setError(errorMessage(e));
+        },
+      },
+    );
+  };
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.offSheet}>
+        <Text variant="title">Turn off two-step sign-in?</Text>
+        <Text variant="body" color={colors.textMuted}>
+          Your account will be protected by your password alone. Enter your password to confirm.
+        </Text>
+        <PasswordInput
+          autoFocus
+          value={password}
+          onChangeText={(v) => {
+            setPassword(v);
+            setError(undefined);
+          }}
+          placeholder="Password"
+          error={error}
+          returnKeyType="done"
+          onSubmitEditing={submit}
+        />
+        <Button label="Turn off 2FA" onPress={submit} loading={update.isPending} disabled={!password} />
+        <Button label="Keep it on" variant="ghost" onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 
 const styles = createStyles(() => ({
   root: { flex: 1, backgroundColor: colors.bg },
+  offSheet: { gap: space[4], paddingHorizontal: gutter, paddingTop: space[2], paddingBottom: space[5] },
   scroll: { flex: 1 },
   sticky: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[3] },
   flex: { flex: 1 },

@@ -11,6 +11,7 @@ import {
   FileText,
   Lock,
   MapPin,
+  MessageSquareText,
   Pencil,
   Plus,
   TicketPercent,
@@ -19,12 +20,14 @@ import {
   X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { Avatar } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -137,6 +140,13 @@ export default function Checkout() {
   const [paying, setPaying] = useState(false);
   // One idempotency key per hold: a retry after a network drop can never charge twice.
   const payKey = useRef(newIdempotencyKey());
+  // Optional note for the turf (switch on → a text box). Sent with the payment; owners see it.
+  const [noteOn, setNoteOn] = useState(false);
+  const [note, setNote] = useState('');
+  const scroller = useRef<ScrollViewInstance>(null);
+  const noteY = useRef(0);
+  // Bring the note box up near the top, clear of the keyboard, once it's open.
+  const showNote = () => setTimeout(() => scroller.current?.scrollTo({ y: Math.max(0, noteY.current - space[6]), animated: true }), 300);
   const paid = useRef(false);
 
   // No cart: leaving checkout without paying gives the slots straight back, so they're free
@@ -202,7 +212,7 @@ export default function Checkout() {
       const returnUrl = Linking.createURL('payment-return');
       const { paymentId, checkoutUrl } = isShare
         ? await api.startSharePayment(matchId!, payKey.current, returnUrl)
-        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl);
+        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl, noteOn ? note.trim() || undefined : undefined);
       let cancelled = false;
       if (checkoutUrl) {
         // bKash hosted checkout. The redirect back is NOT proof of payment —
@@ -280,8 +290,12 @@ export default function Checkout() {
         <ErrorState message={loadError.message} onRetry={() => router.back()} />
       ) : (
         <ScrollView
+          ref={scroller}
           onScroll={scrolled.onScroll}
           scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={[styles.content, { paddingBottom: 170 + insets.bottom }]}
           showsVerticalScrollIndicator={false}>
           {/* Hold timer */}
@@ -380,6 +394,48 @@ export default function Checkout() {
               <Text variant="label">Edit</Text>
             </Pressable>
           </Card>
+
+          {/* Note for the turf (not for split-payment shares: the booking is the host's). */}
+          {isShare ? null : (
+            <View
+              onLayout={(e) => {
+                noteY.current = e.nativeEvent.layout.y;
+              }}>
+              <Card style={styles.noteCard}>
+                <View style={styles.noteRow}>
+                  <MessageSquareText size={20} color={colors.ink} strokeWidth={1.6} />
+                  <View style={styles.flex}>
+                    <Text variant="labelStrong">Add a note for the turf</Text>
+                    <Text variant="label" color={colors.textMuted}>
+                      The turf sees it with your booking
+                    </Text>
+                  </View>
+                  <Switch
+                    value={noteOn}
+                    accessibilityLabel="Add a note for the turf"
+                    onValueChange={setNoteOn}
+                  />
+                </View>
+                {noteOn ? (
+                  <View style={styles.noteBox}>
+                    <Input
+                      autoFocus
+                      multiline
+                      value={note}
+                      onChangeText={setNote}
+                      onFocus={showNote}
+                      maxLength={300}
+                      placeholder="E.g. we’ll bring our own ball, arriving 10 minutes early…"
+                      accessibilityLabel="Note for the turf"
+                    />
+                    <Text variant="caption" color={colors.textSubtle} style={styles.noteCount}>
+                      {note.length}/300
+                    </Text>
+                  </View>
+                ) : null}
+              </Card>
+            </View>
+          )}
 
           {/* Price details — all amounts come from the server quote */}
           <Text variant="title" style={[styles.section, styles.sectionTitle]}>
@@ -540,6 +596,10 @@ const styles = createStyles(() => ({
   vrTall: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
   sectionTitle: { marginTop: space[3] },
   details: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  noteCard: { marginTop: space[3] },
+  noteRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  noteBox: { marginTop: space[3] },
+  noteCount: { textAlign: 'right', marginTop: space[1] },
   edit: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: space[1], minHeight: 44 },
   lines: { padding: space[4], gap: space[3] },
   line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: space[4] },

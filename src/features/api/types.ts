@@ -99,6 +99,8 @@ export type Booking = {
   slotCount?: number;
   /** Other tickets from the same payment (slots that weren't back to back). */
   otherTickets?: OtherTicket[];
+  /** The customer's note to the turf, added at checkout. */
+  note?: string | null;
 };
 export type BookingFilter = 'all' | 'open' | 'closed';
 export type BookingPage = { items: Booking[]; next: Booking | null; nextCursor: number | null };

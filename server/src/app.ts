@@ -279,8 +279,13 @@ export async function buildApp() {
     // Me + account: settings, devices, password, name, phone, photo.
     app.get(M, { preHandler: guard }, async (req) => auth.me(req.user!.userId, realm));
     app.get(`${M}/settings`, { preHandler: guard }, async (req) => account.getSettings(req.user!.userId, realm));
-    app.put(`${M}/settings`, { preHandler: guard }, async (req) =>
-      account.updateSettings(req.user!.userId, parse(z.object({ notifications: z.boolean().optional(), twoFactor: z.boolean().optional() }).strict(), req.body), realm),
+    // Turning two-step sign-in off needs the password, so rate-limit guesses like other sensitive routes.
+    app.put(`${M}/settings`, { preHandler: guard, config: { rateLimit: { max: 20, timeWindow: '15 minutes', keyGenerator: perSession } } }, async (req) =>
+      account.updateSettings(
+        req.user!.userId,
+        parse(z.object({ notifications: z.boolean().optional(), twoFactor: z.boolean().optional(), password: z.string().max(200).optional() }).strict(), req.body),
+        realm,
+      ),
     );
     app.get(`${M}/sessions`, { preHandler: live }, async (req) => account.listSessions(req.user!.userId, req.user!.sessionId, realm));
     app.delete(`${M}/sessions/:id`, { preHandler: live }, async (req) => {
@@ -658,8 +663,16 @@ export async function buildApp() {
   app.get('/v1/me/holds', { preHandler: requireUser }, async (req) => bookings.listHolds(req.user!.userId));
 
   app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
-    const { holdId, returnUrl } = parse(z.object({ holdId: z.string().uuid(), returnUrl: z.string().max(300).optional() }), req.body);
-    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl);
+    const { holdId, returnUrl, note } = parse(
+      z.object({
+        holdId: z.string().uuid(),
+        returnUrl: z.string().max(300).optional(),
+        // A note for the turf (e.g. "bringing our own bibs"); the owner sees it with the booking.
+        note: z.string().trim().max(300, 'Keep your note under 300 characters.').optional(),
+      }),
+      req.body,
+    );
+    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl, note || undefined);
   });
   app.get('/v1/payments/:id', { preHandler: requireUser }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);

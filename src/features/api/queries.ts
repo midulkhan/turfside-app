@@ -263,7 +263,8 @@ export function useUpdateSettings() {
     onMutate: async (patch) => {
       await qc.cancelQueries({ queryKey: ['settings'] });
       const prev = qc.getQueryData<api.Settings>(['settings']);
-      qc.setQueryData<api.Settings>(['settings'], (s) => ({ notifications: true, ...s, ...patch }));
+      const { password: _pw, ...shown } = patch; // never into the cache
+      qc.setQueryData<api.Settings>(['settings'], (s) => ({ notifications: true, ...s, ...shown }));
       return { prev };
     },
     onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(['settings'], ctx.prev),

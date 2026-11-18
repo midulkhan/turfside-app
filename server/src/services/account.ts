@@ -31,7 +31,11 @@ export async function getSettings(userId: string, realm: Realm = 'player') {
   return { notifications: u.notify_enabled, twoFactor: u.two_factor, hasEmail: !!u.email };
 }
 
-export async function updateSettings(userId: string, patch: { notifications?: boolean; twoFactor?: boolean }, realm: Realm = 'player') {
+export async function updateSettings(
+  userId: string,
+  patch: { notifications?: boolean; twoFactor?: boolean; password?: string },
+  realm: Realm = 'player',
+) {
   if (patch.notifications !== undefined)
     await q(`update ${U(realm)} set notify_enabled = $2, updated_at = now() where id = $1 and deleted_at is null`, [userId, patch.notifications]);
   if (patch.twoFactor !== undefined) {
@@ -39,6 +43,17 @@ export async function updateSettings(userId: string, patch: { notifications?: bo
       // Codes go by email: there must be an address to send them to.
       const u = await one<{ email: string | null }>(`select email from ${U(realm)} where id = $1 and deleted_at is null`, [userId]);
       if (!u?.email) throw new ApiError('invalid', 'Add an email address to your account first. Sign-in codes are sent there.');
+    } else {
+      // Switching protection off is a security change: only the account holder may do it, so the
+      // password is required (a borrowed unlocked phone isn't enough). Already off: nothing to check.
+      const u = await one<{ two_factor: boolean; password_hash: string }>(
+        `select two_factor, password_hash from ${U(realm)} where id = $1 and deleted_at is null`,
+        [userId],
+      );
+      if (u?.two_factor) {
+        if (!patch.password) throw new ApiError('invalid', 'Enter your password to turn off two-step sign-in.');
+        if (!(await verifyPassword(patch.password, u.password_hash))) throw new ApiError('invalid', 'That password is incorrect.');
+      }
     }
     await q(`update ${U(realm)} set two_factor = $2, updated_at = now() where id = $1 and deleted_at is null`, [userId, patch.twoFactor]);
   }

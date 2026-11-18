@@ -151,10 +151,11 @@ export const getMyHolds = (signal?: AbortSignal) => request<Hold[]>('GET', '/v1/
  * returns its checkout URL; the app opens it and then polls getPaymentStatus.
  * `returnUrl` is where the server sends the browser back to (validated server-side).
  */
-export const startPayment = (holdId: string, idempotencyKey: string, returnUrl?: string) =>
+/** `note`: the customer's note to the turf (up to 300 characters); the owner sees it with the booking. */
+export const startPayment = (holdId: string, idempotencyKey: string, returnUrl?: string, note?: string) =>
   request<{ paymentId: string; checkoutUrl: string | null }>('POST', '/v1/payments', {
     auth: 'required',
-    body: { holdId, returnUrl },
+    body: { holdId, returnUrl, ...(note ? { note } : {}) },
     idempotencyKey,
     timeoutMs: 30_000,
   });
@@ -234,7 +235,9 @@ export type ExploreLike = ExploreResult;
 export type Settings = { notifications: boolean; twoFactor?: boolean; hasEmail?: boolean };
 export type DeviceSession = { id: string; device: string; lastActive: number; current: boolean };
 export const getSettings = (signal?: AbortSignal) => request<Settings>('GET', '/v1/me/settings', { auth: 'required', signal });
-export const updateSettings = (patch: Partial<Settings>) => request<Settings>('PUT', '/v1/me/settings', { auth: 'required', body: patch });
+/** Turning `twoFactor` off needs the account `password`. */
+export const updateSettings = (patch: Partial<Settings> & { password?: string }) =>
+  request<Settings>('PUT', '/v1/me/settings', { auth: 'required', body: patch });
 export const getSessions = (signal?: AbortSignal) => request<DeviceSession[]>('GET', '/v1/me/sessions', { auth: 'required', signal });
 export const revokeSession = (id: string) => request<{ ok: true }>('DELETE', `/v1/me/sessions/${enc(id)}`, { auth: 'required' });
 export const revokeOtherSessions = () => request<{ signedOut: number }>('POST', '/v1/me/sessions/revoke-others', { auth: 'required', body: {} });

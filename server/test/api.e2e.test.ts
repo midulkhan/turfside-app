@@ -92,7 +92,11 @@ d('TurfSides API', () => {
     // A code works once.
     expect((await call('POST', '/v1/auth/login/verify', { challenge: step1.json.challenge, code: step1.json.devCode })).status).toBe(400);
     // Switched off again: back to password only.
-    expect((await call('PUT', '/v1/me/settings', { twoFactor: false }, ok.json.accessToken)).json.twoFactor).toBe(false);
+    // Turning it off needs the password: without it, or with a wrong one, it stays on.
+    expect((await call('PUT', '/v1/me/settings', { twoFactor: false }, ok.json.accessToken)).status).toBe(400);
+    expect((await call('PUT', '/v1/me/settings', { twoFactor: false, password: 'wrong pass 99' }, ok.json.accessToken)).status).toBe(400);
+    expect((await call('GET', '/v1/me/settings', undefined, ok.json.accessToken)).json.twoFactor).toBe(true);
+    expect((await call('PUT', '/v1/me/settings', { twoFactor: false, password: 'correct horse 1' }, ok.json.accessToken)).json.twoFactor).toBe(false);
     expect((await call('POST', '/v1/auth/login', { identifier: a.phone, password: 'correct horse 1' })).json.accessToken).toBeTruthy();
   });
 
@@ -168,7 +172,9 @@ d('TurfSides API', () => {
     const hold = await call('POST', '/v1/holds', { slotId: slot.id }, b.accessToken, { 'Idempotency-Key': randomUUID() });
     expect(hold.json.total).toBe(slot.price);
     const payKey = randomUUID();
-    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, b.accessToken, { 'Idempotency-Key': payKey });
+    // A customer note longer than 300 characters is refused; a normal one rides along.
+    expect((await call('POST', '/v1/payments', { holdId: hold.json.holdId, note: 'x'.repeat(301) }, b.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(400);
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId, note: '  Bringing our own bibs  ' }, b.accessToken, { 'Idempotency-Key': payKey });
     expect(pay.status).toBe(200);
     const again = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, b.accessToken, { 'Idempotency-Key': payKey });
     expect(again.json.paymentId).toBe(pay.json.paymentId); // retry never creates a 2nd payment
@@ -190,6 +196,7 @@ d('TurfSides API', () => {
     expect(st.json.status).toBe('confirmed');
     const booking = await call('GET', `/v1/bookings/${st.json.bookingId}`, undefined, b.accessToken);
     expect(booking.json.status).toBe('confirmed');
+    expect(booking.json.note).toBe('Bringing our own bibs');
     // The QR carries the ticket itself: "TSP2.<signature>.<ticket JSON>".
     expect(booking.json.passToken).toMatch(/^TSP2\.[\w-]{22}\.\{/);
     const ticket = JSON.parse(booking.json.passToken.slice(booking.json.passToken.indexOf('{')));
