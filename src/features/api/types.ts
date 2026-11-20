@@ -136,6 +136,8 @@ export type NotificationItem = {
   read: boolean;
   /** Where tapping it should go (e.g. { type: 'match_accepted', matchId }). */
   data?: { type?: string; matchId?: string };
+  /** Paging position: pass the last item's cursor as `before` to get the next page. */
+  cursor?: string;
 };
 
 // ---- find players -----------------------------------------------------------

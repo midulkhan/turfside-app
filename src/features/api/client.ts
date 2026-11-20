@@ -213,6 +213,15 @@ export const cancelBooking = (id: string) => request<{ ok: true }>('POST', `/v1/
 export const getNotifications = (signal?: AbortSignal) =>
   request<NotificationItem[]>('GET', '/v1/me/notifications', { auth: 'required', signal });
 
+/** Notifications a page at a time, newest first. `before`: the last item's cursor from the previous page. */
+export const NOTIFICATION_PAGE = 10;
+export const getNotificationPage = (before: string | undefined, signal?: AbortSignal) =>
+  request<NotificationItem[]>(
+    'GET',
+    `/v1/me/notifications?limit=${NOTIFICATION_PAGE}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
+    { auth: 'required', signal },
+  );
+
 export const getRequests = (signal?: AbortSignal) => request<PlayerRequest[]>('GET', '/v1/me/requests', { auth: 'required', signal });
 
 // ---- photos (Cloudflare R2) ---------------------------------------------------

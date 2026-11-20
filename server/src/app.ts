@@ -574,12 +574,36 @@ export async function buildApp() {
     });
   }
 
+  // Newest first. Without `limit` it returns the latest 50 (what older app versions expect).
+  // Paged: `?limit=10`, then `&before=<cursor of the last item>` for the next page. Each item carries
+  // its `cursor` (exact timestamp + id), so pages never skip or repeat rows created in the same instant.
   app.get('/v1/me/notifications', { preHandler: requireUser }, async (req) => {
-    const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date; data: Record<string, unknown> | null }>(
-      'select id, kind, title, body, read_at, created_at, data from notifications where user_id = $1 order by created_at desc limit 50',
-      [req.user!.userId],
+    const { limit, before } = parse(
+      z.object({
+        limit: z.coerce.number().int().min(1).max(50).optional(),
+        before: z.string().regex(/^[^|]{10,40}\|[0-9a-f-]{36}$/, 'Invalid cursor.').optional(),
+      }),
+      req.query,
     );
-    return rows.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, read: !!n.read_at, at: new Date(n.created_at).getTime(), data: n.data ?? undefined }));
+    const [at, id] = before ? before.split('|') : [null, null];
+    const rows = await q<{ id: string; kind: string; title: string; body: string; read_at: Date | null; created_at: Date; data: Record<string, unknown> | null; cursor: string }>(
+      `select id, kind, title, body, read_at, created_at, data,
+              to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || id cursor
+         from notifications
+        where user_id = $1 and ($2::timestamptz is null or (created_at, id) < ($2::timestamptz, $3::uuid))
+        order by created_at desc, id desc limit $4`,
+      [req.user!.userId, at, id, limit ?? 50],
+    );
+    return rows.map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      title: n.title,
+      body: n.body,
+      read: !!n.read_at,
+      at: new Date(n.created_at).getTime(),
+      data: n.data ?? undefined,
+      cursor: n.cursor,
+    }));
   });
   app.get('/v1/me/requests', { preHandler: requireUser }, async (req) => {
     const rows = await q<{ id: string; kind: string; venue_name: string; area: string; day: string; start_min: number; end_min: number; spots_total: number; spots_filled: number; share: number; status: string }>(

@@ -162,6 +162,18 @@ export function useNotifications() {
   return useQuery({ queryKey: qk.notifications, queryFn: ({ signal }) => api.getNotifications(signal), staleTime: 60_000 });
 }
 
+/** The notifications screen: 10 at a time, more as you scroll. Lives under qk.notifications, so the
+ *  existing invalidations (new push, payment…) refresh it too. */
+export function useNotificationPages() {
+  return useInfiniteQuery({
+    queryKey: [...qk.notifications, 'pages'] as const,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => api.getNotificationPage(pageParam, signal),
+    getNextPageParam: (last) => (last.length < api.NOTIFICATION_PAGE ? undefined : last.at(-1)?.cursor),
+    staleTime: 60_000,
+  });
+}
+
 /** Hold + server-computed quote. Seeded from createHold; refetched from the server if missing. */
 export function useHold(holdId: string | undefined) {
   return useQuery({
