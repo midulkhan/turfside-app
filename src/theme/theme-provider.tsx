@@ -29,20 +29,40 @@ const systemScheme = (): Scheme => (Appearance.getColorScheme() === 'dark' ? 'da
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [pref, setPrefState] = useState<ThemePref | null>(null);
   const [system, setSystem] = useState<Scheme>(systemScheme);
+  // The covering fade is only for a real switch (Settings, or the phone's own light/dark
+  // setting); it must never run on its own in the middle of navigating.
+  const switchedAt = useRef(0);
+  const lastSystem = useRef<Scheme>(systemScheme());
 
   useEffect(() => {
     // Never wait on storage for long: the whole app (and the splash hand-off) sits behind this.
     Promise.race([prefs.get(PREF_KEY), new Promise<null>((r) => setTimeout(() => r(null), 1500))])
       .then((v) => setPrefState(v === 'light' || v === 'dark' || v === 'system' ? v : 'system'))
       .catch(() => setPrefState('system'));
-    // Fires for system changes and for our own overrides below.
-    const sub = Appearance.addChangeListener(({ colorScheme }) => setSystem(colorScheme === 'dark' ? 'dark' : 'light'));
-    return () => sub.remove();
+    // Fires for system changes and for our own overrides below. Android can report a passing,
+    // wrong value (e.g. while a screen is popped), which flashed the whole app in the other
+    // theme. Only follow a scheme that's still the same a moment later.
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const sub = Appearance.addChangeListener(() => {
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        const next = systemScheme();
+        if (next !== lastSystem.current) switchedAt.current = Date.now();
+        lastSystem.current = next;
+        setSystem(next);
+      }, 400);
+    });
+    return () => {
+      sub.remove();
+      clearTimeout(settle);
+    };
   }, []);
 
   useEffect(() => {
     // Native only (keyboard, alerts, pickers); web has no app-level override.
-    if (pref && typeof Appearance.setColorScheme === 'function') Appearance.setColorScheme(pref === 'system' ? 'unspecified' : pref);
+    if (pref && typeof Appearance.setColorScheme === 'function') {
+      Appearance.setColorScheme(pref === 'system' ? 'unspecified' : pref);
+    }
   }, [pref]);
 
   const scheme: Scheme = !pref || pref === 'system' ? system : pref;
@@ -59,7 +79,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const shown = useRef<Scheme | null>(null);
   useEffect(() => {
     if (!pref) return;
-    if (shown.current && shown.current !== scheme) {
+    if (shown.current && shown.current !== scheme && Date.now() - switchedAt.current < 1500) {
       veil.set(1);
       veil.set(withTiming(0, { duration: 340, easing: Easing.out(Easing.quad) }));
     }
@@ -68,6 +88,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const veilStyle = useAnimatedStyle(() => ({ opacity: veil.get() }));
 
   const setPref = useCallback((p: ThemePref) => {
+    switchedAt.current = Date.now();
+    if (p === 'system' && typeof Appearance.setColorScheme === 'function') {
+      // Back to "System": take the phone's real scheme now, not after the settle delay.
+      Appearance.setColorScheme('unspecified');
+      const now = systemScheme();
+      lastSystem.current = now;
+      setSystem(now);
+    }
     setPrefState(p);
     prefs.set(PREF_KEY, p).catch(() => {});
   }, []);
