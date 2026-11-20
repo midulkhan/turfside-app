@@ -105,15 +105,8 @@ d('booking confirmation emails', () => {
     expect(owner.html).toContain('৳6,000');
     expect(owner.html).not.toContain('/qr.png'); // the pass is the player's, not the owner's
 
-    // The QR image link works, and only with its signature.
-    const qr = /src="([^"]+\/v1\/passes\/[^"]+\/qr\.png\?s=[^"]+)"/.exec(player.html)![1]!;
-    const path = qr.replace(/^https?:\/\/[^/]+/, '').replace(/&amp;/g, '&');
-    const img = await fetch(`${API}${path}`);
-    expect(img.status).toBe(200);
-    expect(img.headers.get('content-type')).toBe('image/png');
-    const bytes = new Uint8Array(await img.arrayBuffer());
-    expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
-    expect((await fetch(`${API}${path.replace(/s=[^&]+/, 's=AAAAAAAAAAAAAAAAAAAAAA')}`)).status).toBe(404);
+    // No QR in the email: the entry pass lives in the app.
+    expect(player.html).not.toContain('/qr.png');
 
     // Walk-ins the owner adds don't email anyone.
     const before = (await emails()).length;

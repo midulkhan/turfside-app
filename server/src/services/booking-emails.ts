@@ -1,16 +1,14 @@
 /**
  * Booking confirmation emails, sent once when an app booking is paid (payments.finalize):
- *  - the player: "Congratulations, your booking is confirmed", the details and the entry-pass QR;
+ *  - the player: "Congratulations, your booking is confirmed" and the details (the entry pass lives
+ *    in the app, not the email);
  *  - the turf owner: "Congrats, you got a new booking", with the customer and session details.
  * Fire-and-forget: a failed email never affects the payment or the booking.
- * The QR is a hosted PNG (/v1/passes/:id/qr.png?s=…) of the same signed pass the app shows,
- * because Gmail and Outlook don't show inline data: images.
  */
 import { config } from '../config';
 import { one, q } from '../db';
 import { emailEnabled, sendEmail } from '../lib/email';
 import { addDays } from '../lib/time';
-import { qrLinkSig } from '../lib/tokens';
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -129,10 +127,6 @@ export async function sendBookingEmails(paymentId: string) {
   }
 }
 
-// ── QR image link ────────────────────────────────────────────────────────────
-
-export const qrUrl = (bookingId: string) => `${base()}/v1/passes/${bookingId}/qr.png?s=${qrLinkSig(bookingId)}`;
-
 // ── Formatting ───────────────────────────────────────────────────────────────
 
 const base = () => config.PUBLIC_URL.replace(/\/+$/, '');
@@ -190,7 +184,7 @@ function shell(o: { preheader: string; hero: string; heroAlt: string; body: stri
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
 <title>TurfSides</title>
 <style>
-  @media (max-width:520px){ .px{padding-left:20px!important;padding-right:20px!important} .h1{font-size:28px!important;line-height:36px!important} .qr{width:104px!important;height:104px!important} .lbl{width:96px!important} .cardpad{padding-left:16px!important;padding-right:16px!important} .cap{letter-spacing:0.6px!important} .paidcol{width:104px!important} .amt{font-size:21px!important} .h2{font-size:20px!important;line-height:26px!important} }
+  @media (max-width:520px){ .px{padding-left:20px!important;padding-right:20px!important} .h1{font-size:23px!important;line-height:30px!important} .lbl{width:96px!important} .cardpad{padding-left:16px!important;padding-right:16px!important} .cap{letter-spacing:0.6px!important} .paidcol{width:104px!important} .amt{font-size:21px!important} .h2{font-size:20px!important;line-height:26px!important} }
   a{color:${C.ink}}
 </style></head>
 <body style="margin:0;padding:0;background:${C.bg};font-family:${SANS};color:${C.ink};-webkit-font-smoothing:antialiased">
@@ -213,7 +207,7 @@ const row = (label: string, value: string, last = false) => `<tr>
 const rows = (r: [string, string][]) => r.map(([l, v], i) => row(l, v, i === r.length - 1)).join('');
 
 const headline = (title: string, sub: string) => `<tr><td class="px" align="center" style="padding:34px 40px 8px">
-<h1 class="h1" style="margin:0;font-family:${SERIF};font-weight:500;font-size:34px;line-height:42px;color:${C.ink};letter-spacing:-0.3px">${title}</h1>
+<h1 class="h1" style="margin:0;font-family:${SERIF};font-weight:500;font-size:26px;line-height:34px;color:${C.ink};letter-spacing:-0.2px">${title}</h1>
 <p style="margin:12px 0 0;font-size:16px;line-height:24px;color:${C.dim}">${sub}</p></td></tr>`;
 
 const ticketLines = (t: Ticket[]) =>
@@ -248,15 +242,11 @@ export function playerEmail(m: BookingMail) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${C.line};border-radius:20px">
     <tr><td class="cardpad" style="padding:22px 22px 18px;border-bottom:1px solid ${C.line}">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td valign="top" style="padding-right:14px">
+        <td valign="top">
           <p class="cap" style="margin:0;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${C.faint};font-weight:600;white-space:nowrap">Booking ${esc(t0.code)}</p>
           <p style="margin:8px 0 0;font-family:${SERIF};font-size:24px;line-height:30px;font-weight:600;color:${C.ink}">${esc(v.name)}</p>
           <p style="margin:4px 0 0;font-size:14px;color:${C.dim}">${esc(place(v))}</p>
           <p style="margin:14px 0 0"><span style="display:inline-block;white-space:nowrap;background:${C.limeSoft};color:${C.limeText};font-size:13px;font-weight:600;border-radius:999px;padding:6px 12px">${esc(when)}</span></p>
-        </td>
-        <td valign="top" align="right" style="width:128px">
-          <img class="qr" src="${qrUrl(t0.leadId)}" width="128" height="128" alt="Entry pass QR for ${esc(t0.code)}" style="display:block;width:128px;height:128px;border:1px solid ${C.line};border-radius:14px;background:#FFFFFF">
-          <p style="margin:6px 0 0;font-size:11px;color:${C.faint};text-align:center">Scan at the turf</p>
         </td>
       </tr></table>
     </td></tr>
@@ -267,7 +257,7 @@ export function playerEmail(m: BookingMail) {
 </td></tr>
 <tr><td class="px" style="padding:16px 28px 0">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.soft};border-radius:16px"><tr><td style="padding:16px 18px;font-size:13.5px;line-height:21px;color:${C.dim}">
-    <strong style="color:${C.ink}">At the turf:</strong> arrive 10 minutes early and show this QR, or the pass in the TurfSides app, at the front desk.${many ? ` Your ${m.tickets.length} time slots each have their own pass in the app.` : ''}
+    <strong style="color:${C.ink}">At the turf:</strong> arrive 10 minutes early and show your entry pass in the TurfSides app at the front desk.${many ? ` Your ${m.tickets.length} time slots each have their own pass in the app.` : ''}
     Need to cancel? Open the booking in the app; the turf’s refund policy is shown there.
   </td></tr></table>
 </td></tr>
@@ -297,7 +287,7 @@ export function playerEmail(m: BookingMail) {
     `Paid: ${taka(m.paid)} via bKash${m.trxId ? ` (transaction ${m.trxId})` : ''}`,
     ...(m.note ? [`Your note: ${m.note}`] : []),
     '',
-    'At the turf, show the entry pass QR in the TurfSides app (or in this email) at the front desk.',
+    'At the turf, show your entry pass in the TurfSides app at the front desk.',
     '',
     'Thank you for using TurfSides. Have a great game!',
   ].join('\n');
