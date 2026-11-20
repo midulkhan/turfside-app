@@ -1,5 +1,5 @@
 import { createContext, Fragment, use, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Appearance, StyleSheet } from 'react-native';
+import { Appearance, AppState, Platform, StyleSheet } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { prefs } from '@/lib/storage';
@@ -39,19 +39,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     Promise.race([prefs.get(PREF_KEY), new Promise<null>((r) => setTimeout(() => r(null), 1500))])
       .then((v) => setPrefState(v === 'light' || v === 'dark' || v === 'system' ? v : 'system'))
       .catch(() => setPrefState('system'));
-    // Fires for system changes and for our own overrides below. Android can report a passing,
-    // wrong value (e.g. while a screen is popped), which flashed the whole app in the other
-    // theme. Only follow a scheme that's still the same a moment later.
+    const follow = () => {
+      const next = systemScheme();
+      if (next !== lastSystem.current) switchedAt.current = Date.now();
+      lastSystem.current = next;
+      setSystem(next);
+    };
     let settle: ReturnType<typeof setTimeout> | undefined;
-    const sub = Appearance.addChangeListener(() => {
+    const later = (ms: number) => {
       clearTimeout(settle);
-      settle = setTimeout(() => {
-        const next = systemScheme();
-        if (next !== lastSystem.current) switchedAt.current = Date.now();
-        lastSystem.current = next;
-        setSystem(next);
-      }, 400);
-    });
+      settle = setTimeout(follow, ms);
+    };
+    // Android reports wrong light/dark values while screens are pushed and popped, which
+    // re-themed the app in the middle of going back (a blank light screen sliding away). So there
+    // the phone's setting is only read when the app comes to the front (that's when people change
+    // it in Settings), never mid-navigation. iOS reports reliably: follow it live, debounced.
+    const sub =
+      Platform.OS === 'android'
+        ? AppState.addEventListener('change', (st) => {
+            if (st === 'active') later(300);
+          })
+        : Appearance.addChangeListener(() => later(250));
     return () => {
       sub.remove();
       clearTimeout(settle);
