@@ -1,4 +1,4 @@
-import { Check, UsersRound } from 'lucide-react-native';
+import { Check, Swords, UsersRound } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
 import { View } from 'react-native';
 import Animated, {
@@ -144,7 +144,13 @@ export const SlotTicket = memo(function SlotTicket({
         onPress?.(slot);
       }}
       accessibilityRole="button"
-      accessibilityLabel={squad ? `${range}, booked, squad recruiting: ${spotsLabel(squad.spotsLeft)}. Tap to view.` : `${range}, ${status}`}
+      accessibilityLabel={
+        squad
+          ? squad.opponent
+            ? `${range}, booked, looking for an opponent team. Tap to view.`
+            : `${range}, booked, squad recruiting: ${spotsLabel(squad.spotsLeft)}. Tap to view.`
+          : `${range}, ${status}`
+      }
       accessibilityState={{ disabled, selected: !!selected }}>
       <TicketSurface
         fill={tone.fill}
@@ -171,7 +177,7 @@ export const SlotTicket = memo(function SlotTicket({
         {loading ? <Animated.View style={[styles.bar, styles.barSub, barPulse]} /> : null}
         {squad ? (
           <Animated.View style={textIn}>
-            <SquadFlip spots={squad.spotsLeft} sub={tone.sub} />
+            <SquadFlip spots={squad.spotsLeft} sub={tone.sub} opponent={squad.opponent} />
           </Animated.View>
         ) : (
         <Animated.View style={[styles.row, textIn]}>
@@ -197,7 +203,7 @@ const spotsLabel = (n: number) => (n === 1 ? '1 open spot' : `${n} open spots`);
  * "Booked" ⇄ "Open spots · 2": the status line turns over like a departures board every few
  * seconds. With reduced motion it just shows the open spots.
  */
-function SquadFlip({ spots, sub }: { spots: number; sub: string }) {
+function SquadFlip({ spots, sub, opponent }: { spots: number; sub: string; opponent?: boolean }) {
   const reduce = useReducedMotion();
   const p = useSharedValue(0);
   useEffect(() => {
@@ -229,9 +235,9 @@ function SquadFlip({ spots, sub }: { spots: number; sub: string }) {
   const open = (
     <View style={styles.row}>
       <View style={styles.live} />
-      <UsersRound size={13} color={colors.lime} strokeWidth={2.2} />
+      {opponent ? <Swords size={13} color={colors.lime} strokeWidth={2.2} /> : <UsersRound size={13} color={colors.lime} strokeWidth={2.2} />}
       <Text variant="labelStrong" color={colors.lime} numberOfLines={1}>
-        {spots === 1 ? '1 spot open' : `${spots} spots open`}
+        {opponent ? 'Opponent wanted' : spots === 1 ? '1 spot open' : `${spots} spots open`}
       </Text>
     </View>
   );

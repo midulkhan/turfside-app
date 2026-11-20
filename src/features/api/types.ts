@@ -57,7 +57,8 @@ export type ReviewSummary = {
 /** held = another player is checking out (up to 5 min); mine = your own hold, resumable via holdId. */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
 /** A booked slot whose organiser is recruiting players: `spotsLeft` free to request. */
-export type SlotSquad = { id: string; spotsLeft: number; host?: boolean };
+/** `opponent`: the organiser is looking for a whole opposing team (not single players). */
+export type SlotSquad = { id: string; spotsLeft: number; host?: boolean; opponent?: boolean };
 export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string; squad?: SlotSquad };
 export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number };
 
@@ -177,8 +178,18 @@ export type Match = {
   pass?: { code: string; passToken: string } | null;
   /** Paid players only: the organiser's contact (they agreed when opening spots). */
   host?: { name: string; phone: string };
+  /** 'players': open spots for individuals. 'opponent': looking for one whole team. Older servers omit it. */
+  type?: MatchType;
+  /** Opponent posts: the host's team name. */
+  teamName?: string;
+  /** Opponent posts: the share of the turf the opposing team pays (percent). */
+  opponentPercent?: number;
+  /** Opponent posts: the team that paid and will play (null until then). */
+  opponent?: { teamName: string; size: number | null } | null;
 };
-export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number; spots?: number };
+export type MatchType = 'players' | 'opponent';
+/** On opponent posts the person is the captain of `teamName` (`teamSize` players). */
+export type MatchPerson = { userId: string; name: string; avatar: string | null; position: MatchPosition; level: MatchLevel; games: number; spots?: number; teamName?: string; teamSize?: number | null };
 export type MatchManage = Match & {
   booking: { id: string; code: string };
   requests: MatchPerson[];
@@ -191,7 +202,7 @@ export type MyMatches = {
   bookings: { id: string; venue: { id: string; name: string; area: string; photo: string | null }; format: string; day: DayKey; start: number; end: number; amountPaid: Poisha }[];
 };
 export type Page<T> = { items: T[]; nextCursor: number | null };
-export type MatchFeedParams = { lat?: number; lng?: number; nearby: boolean; day?: DayKey };
+export type MatchFeedParams = { lat?: number; lng?: number; nearby: boolean; day?: DayKey; type?: MatchType };
 
 export type ApiErrorCode =
   | 'slot_taken'

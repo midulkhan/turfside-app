@@ -15,11 +15,18 @@ import { getVenueRow, photoUrl } from './venues';
  * accepted player has a short window to pay their share through bKash; paying puts them in the
  * squad. The share is fixed by the server (booking total / squad size, rounded up to the taka),
  * so nobody can profit from strangers and the price is the same for everyone.
+ *
+ * Find an opponent (type 'opponent'): the same post, but it asks for one whole other team. It has
+ * a single "spot"; a captain asks with their team's name and size, the host accepts one team,
+ * and that captain pays the team's share of the turf (default half, set by the host).
  */
 
 export type Level = 'casual' | 'regular' | 'competitive';
 export type Position = 'any' | 'goalkeeper' | 'defender' | 'midfielder' | 'forward';
 export type MyStatus = 'owner' | 'none' | 'pending' | 'accepted' | 'paid' | 'declined' | 'withdrawn' | 'expired';
+export type MatchType = 'players' | 'opponent';
+/** Shares of the turf cost the host can ask an opponent team to pay. */
+export const OPPONENT_PERCENTS = [50, 40, 30] as const;
 
 const CLOSE_BEFORE_MIN = 30; // requests and payments stop this long before kick-off
 const PAY_WINDOW_MIN = 5; // an accepted player has this long to pay (never past CLOSE_BEFORE_MIN)
@@ -43,6 +50,8 @@ export const squadSize = (format: string) => {
   return m ? Math.min(Number(m[1]) * 2, 30) : 10;
 };
 const fairShare = (total: number, players: number) => Math.ceil(total / players / 100) * 100;
+/** The opponent team's part of the booking (rounded up to the taka). */
+const teamShare = (total: number, percent: number) => Math.ceil((total * percent) / 100 / 100) * 100;
 
 type Row = {
   id: string;
@@ -68,6 +77,12 @@ type Row = {
   faces: { name: string; avatar_key: string | null }[];
   organiser_name: string;
   organiser_avatar: string | null;
+  type: MatchType;
+  team_name: string | null;
+  opponent_percent: number | null;
+  /** The opponent team that paid (opponent posts only). */
+  opp_team: string | null;
+  opp_size: number | null;
 };
 
 /** Shared select: a match with its live counts and the viewer's own status ($1 = viewer id or null). */
@@ -81,7 +96,10 @@ const SELECT = `
          coalesce((select json_agg(x) from (
            select u.name, u.avatar_key from player_request_members m join users u on u.id = m.user_id
             where m.request_id = r.id and m.status = 'paid' order by m.paid_at limit 2) x), '[]'::json) faces,
-         o.name organiser_name, o.avatar_key organiser_avatar
+         o.name organiser_name, o.avatar_key organiser_avatar,
+         r.type, r.team_name, r.opponent_percent,
+         (select m.team_name from player_request_members m where m.request_id = r.id and m.status = 'paid' limit 1) opp_team,
+         (select m.team_size from player_request_members m where m.request_id = r.id and m.status = 'paid' limit 1) opp_size
     from player_requests r
     join bookings b on b.id = r.booking_id
     join users o on o.id = r.user_id
@@ -90,7 +108,9 @@ const SELECT = `
 async function shape(r: Row, viewerId: string | null) {
   const v = await getVenueRow(r.venue_id).catch(() => null);
   const spotsLeft = Math.max(0, r.spots_total - r.paid - r.reserved);
-  const playersIn = r.players_total - r.spots_total + r.paid;
+  const opponent = r.type === 'opponent';
+  // Opponent posts: the host's side is in; the other half arrives with the team that pays.
+  const playersIn = opponent ? Math.ceil(r.players_total / 2) + (r.paid > 0 ? Math.floor(r.players_total / 2) : 0) : r.players_total - r.spots_total + r.paid;
   const faces = [{ name: r.organiser_name, avatar: avatar(r.organiser_avatar) }, ...r.faces.map((f) => ({ name: f.name, avatar: avatar(f.avatar_key) }))];
   let my: MyStatus = viewerId && r.user_id === viewerId ? 'owner' : ((r.my_status as MyStatus | null) ?? 'none');
   // An accepted player who let the payment window pass is no longer holding a spot.
@@ -127,6 +147,18 @@ async function shape(r: Row, viewerId: string | null) {
     payBy: my === 'accepted' && r.my_pay_by ? new Date(r.my_pay_by).getTime() : null,
     /** When the next held spot is released if unpaid: the app refreshes then. */
     reservedUntil: r.reserved_until ? new Date(r.reserved_until).getTime() : null,
+    /** 'players': open spots for individuals. 'opponent': looking for one whole team. */
+    type: r.type,
+    ...(opponent
+      ? {
+          /** The host's team name. */
+          teamName: r.team_name ?? `${r.organiser_name.split(' ')[0]}'s team`,
+          /** The share of the turf the opponent team pays (percent). */
+          opponentPercent: r.opponent_percent ?? 50,
+          /** The team that paid and will play (once confirmed). */
+          opponent: r.opp_team ? { teamName: r.opp_team, size: r.opp_size } : null,
+        }
+      : {}),
   };
 }
 export type MatchOut = Awaited<ReturnType<typeof shape>>;
@@ -148,7 +180,7 @@ const taka = (poisha: number) => `৳${Math.round(poisha / 100).toLocaleString('
 /** Open games anyone can join, soonest first, 10 at a time. `nearby`: within 10 km of lat/lng. */
 export async function feed(
   viewerId: string | null,
-  p: { lat?: number; lng?: number; nearby?: boolean; day?: string; cursor?: number; limit?: number },
+  p: { lat?: number; lng?: number; nearby?: boolean; day?: string; cursor?: number; limit?: number; type?: MatchType },
 ) {
   const limit = Math.min(p.limit ?? PAGE_SIZE, 20);
   const offset = p.cursor ?? 0;
@@ -159,12 +191,14 @@ export async function feed(
       where r.status = 'open' and b.status in ('confirmed', 'checked_in')
         and lower(b.during) > now() + make_interval(mins => ${CLOSE_BEFORE_MIN})
         and ($2::date is null or b.day = $2)
+        and r.type = $8
         and (not $3::boolean or 6371 * acos(least(1, cos(radians($4)) * cos(radians(v.lat)) * cos(radians(v.lng) - radians($5)) + sin(radians($4)) * sin(radians(v.lat)))) <= 10)
      ) m
      where (m.spots_total - m.paid - m.reserved) > 0 or m.my_status is not null or m.user_id = $1
      order by m.day, m.start_min, m.id
      offset $6 limit $7`,
-    [viewerId, p.day ?? null, !!near, p.lat ?? 0, p.lng ?? 0, offset, limit + 1],
+    // Without a type, players posts only: what app versions before opponents expect.
+    [viewerId, p.day ?? null, !!near, p.lat ?? 0, p.lng ?? 0, offset, limit + 1, p.type ?? 'players'],
   );
   const page = rows.slice(0, limit);
   return {
@@ -248,30 +282,65 @@ export async function joined(userId: string) {
 // ── Organiser ──────────────────────────────────────────────────────────────
 
 /** Open spots on one of your confirmed bookings. Idempotent: a booking has one live match. */
-export async function createMatch(userId: string, input: { bookingId: string; title?: string; level: Level; openSpots: number; sharePhone?: true; contactPhone?: string }) {
+export async function createMatch(
+  userId: string,
+  input: {
+    bookingId: string;
+    title?: string;
+    level: Level;
+    openSpots?: number;
+    sharePhone?: true;
+    contactPhone?: string;
+    type?: MatchType;
+    teamName?: string;
+    opponentPercent?: number;
+  },
+) {
+  const type: MatchType = input.type ?? 'players';
   const b = await one<{ id: string; venue_id: string; day: string; start_min: number; total: number; status: string }>(
     'select id, venue_id, day::text, start_min, total, status from bookings where id = $1 and user_id = $2',
     [input.bookingId, userId],
   );
   if (!b || !['confirmed', 'checked_in'].includes(b.status)) throw new ApiError('not_found', 'Booking not found.');
-  if (kickoff(b) - Date.now() < 60 * 60_000) throw new ApiError('forbidden', 'Players can be found up to an hour before kick-off.');
+  if (kickoff(b) - Date.now() < 60 * 60_000)
+    throw new ApiError('forbidden', type === 'opponent' ? 'An opponent can be found up to an hour before kick-off.' : 'Players can be found up to an hour before kick-off.');
   const existing = await one<{ id: string }>("select id from player_requests where booking_id = $1 and status <> 'cancelled'", [b.id]);
   if (existing) return getMatch(userId, existing.id);
 
   const v = await getVenueRow(b.venue_id);
   const format = v.formats[0] ?? '5-a-side';
   const players = squadSize(format);
-  if (input.openSpots < 1 || input.openSpots >= players) throw new ApiError('invalid', `Open between 1 and ${players - 1} spots.`);
+  const opponent = type === 'opponent';
+  const teamName = input.teamName?.trim().slice(0, 40) || null;
+  if (opponent && (!teamName || teamName.length < 2)) throw new ApiError('invalid', 'Give your team a name.');
+  const percent = input.opponentPercent ?? 50;
+  if (opponent && !(OPPONENT_PERCENTS as readonly number[]).includes(percent)) throw new ApiError('invalid', 'Choose how the turf cost is split.');
+  const openSpots = opponent ? 1 : (input.openSpots ?? 0);
+  if (!opponent && (openSpots < 1 || openSpots >= players)) throw new ApiError('invalid', `Open between 1 and ${players - 1} spots.`);
   const hour = Math.floor(b.start_min / 60) % 24;
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Late night';
-  const title = (input.title?.trim() || `${part} ${format}`).slice(0, 60);
+  const title = (input.title?.trim() || (opponent ? `${teamName} vs ?` : `${part} ${format}`)).slice(0, 60);
   const created = await one<{ id: string }>(
-    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total, phone_consent_at, contact_phone)
-     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8, now(), $9)
+    `insert into player_requests (booking_id, user_id, spots_total, spots_filled, share, status, title, level, format, players_total, phone_consent_at, contact_phone,
+                                  type, team_name, opponent_percent)
+     values ($1,$2,$3,0,$4,'open',$5,$6,$7,$8, now(), $9, $10, $11, $12)
      on conflict (booking_id) where status <> 'cancelled' do update set updated_at = now(), phone_consent_at = coalesce(player_requests.phone_consent_at, now())
      returning id`,
     // A different number for this squad (10 national digits, already validated) — stored like account numbers.
-    [b.id, userId, input.openSpots, fairShare(b.total, players), title, input.level, format, players, input.contactPhone ? `+880${input.contactPhone}` : null],
+    [
+      b.id,
+      userId,
+      openSpots,
+      opponent ? teamShare(b.total, percent) : fairShare(b.total, players),
+      title,
+      input.level,
+      format,
+      players,
+      input.contactPhone ? `+880${input.contactPhone}` : null,
+      type,
+      opponent ? teamName : null,
+      opponent ? percent : null,
+    ],
   );
   return getMatch(userId, created!.id);
 }
@@ -285,8 +354,22 @@ async function ownMatch(userId: string, id: string) {
 /** The organiser's view: the match plus everyone who asked and everyone in. */
 export async function manage(userId: string, id: string) {
   const r = await ownMatch(userId, id);
-  const people = await q<{ user_id: string; name: string; avatar_key: string | null; position: string | null; level: string | null; status: string; pay_by: Date | null; holding: boolean; spots: number; games: number; phone: string | null }>(
-    `select m.user_id, u.name, u.avatar_key, m.position, m.level, m.status, m.pay_by, ${HOLDING} holding, m.spots,
+  const people = await q<{
+    user_id: string;
+    name: string;
+    avatar_key: string | null;
+    position: string | null;
+    level: string | null;
+    status: string;
+    pay_by: Date | null;
+    holding: boolean;
+    spots: number;
+    games: number;
+    phone: string | null;
+    team_name: string | null;
+    team_size: number | null;
+  }>(
+    `select m.user_id, u.name, u.avatar_key, m.position, m.level, m.status, m.pay_by, ${HOLDING} holding, m.spots, m.team_name, m.team_size,
             -- The organiser sees a player's number only once they've paid (and agreed when asking).
             case when m.status = 'paid' and m.phone_consent_at is not null then coalesce(m.contact_phone, u.phone) end phone,
             ((select count(*) from bookings x where x.user_id = m.user_id and x.status in ('checked_in','completed','confirmed') and x.day < (now() at time zone 'Asia/Dhaka')::date)
@@ -305,6 +388,8 @@ export async function manage(userId: string, id: string) {
     level: (x.level ?? 'casual') as Level,
     games: x.games,
     spots: x.spots,
+    // Opponent posts: the challenging team (the person is its captain).
+    ...(x.team_name ? { teamName: x.team_name, teamSize: x.team_size ?? null } : {}),
   });
   const b = await one<{ code: string }>('select code from bookings where id = $1', [r.booking_id]);
   return {
@@ -334,8 +419,8 @@ export async function updateMatch(userId: string, id: string, input: { title?: s
 export async function decide(userId: string, id: string, memberId: string, accept: boolean) {
   await tx(async (c) => {
     const r = (
-      await c.query<{ user_id: string; spots_total: number; status: string; day: string; start_min: number; share: number; venue_id: string }>(
-        `select r.user_id, r.spots_total, r.status, b.day::text, b.start_min, r.share, b.venue_id
+      await c.query<{ user_id: string; spots_total: number; status: string; day: string; start_min: number; share: number; venue_id: string; type: MatchType; team_name: string | null }>(
+        `select r.user_id, r.spots_total, r.status, b.day::text, b.start_min, r.share, b.venue_id, r.type, r.team_name
            from player_requests r join bookings b on b.id = r.booking_id where r.id = $1 for update of r`,
         [id],
       )
@@ -346,61 +431,101 @@ export async function decide(userId: string, id: string, memberId: string, accep
     const venue = (await getVenueRow(r.venue_id).catch(() => null))?.name ?? 'the turf';
     if (!accept) {
       await c.query("update player_request_members set status = 'declined', decided_at = now() where request_id = $1 and user_id = $2", [id, memberId]);
-      await notify(c, memberId, 'Not this time', `The organiser couldn't fit you into the game at ${venue}. Plenty more games nearby.`, { type: 'match_declined', matchId: id });
+      await notify(
+        c,
+        memberId,
+        'Not this time',
+        r.type === 'opponent'
+          ? `${r.team_name ?? 'The host'} picked another team for the game at ${venue}. Plenty more teams are looking for opponents.`
+          : `The organiser couldn't fit you into the game at ${venue}. Plenty more games nearby.`,
+        { type: 'match_declined', matchId: id },
+      );
       return;
     }
     const start = kickoff(r);
     if (start - Date.now() < (CLOSE_BEFORE_MIN + 5) * 60_000) throw new ApiError('forbidden', 'It is too close to kick-off to add players.');
     const taken = await spotsTaken(c, id);
     const free = r.spots_total - taken;
-    if (free <= 0) throw new ApiError('conflict', 'All spots are taken right now. Someone may still be paying; try again in a few minutes.');
+    if (free <= 0)
+      throw new ApiError(
+        'conflict',
+        r.type === 'opponent'
+          ? 'You already accepted a team. If they don’t pay in time, you can accept another.'
+          : 'All spots are taken right now. Someone may still be paying; try again in a few minutes.',
+      );
     if (m.spots > free) throw new ApiError('conflict', `This request is for ${m.spots} spots but only ${free} ${free === 1 ? 'is' : 'are'} free right now.`);
     const payBy = new Date(Math.min(Date.now() + PAY_WINDOW_MIN * 60_000, start - CLOSE_BEFORE_MIN * 60_000));
     await c.query("update player_request_members set status = 'accepted', decided_at = now(), pay_by = $3 where request_id = $1 and user_id = $2", [id, memberId, payBy]);
     const by = payBy.toLocaleTimeString('en-GB', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit', hour12: true });
-    await notify(
-      c,
-      memberId,
-      "You're in! Pay to confirm",
-      `${venue}, ${timeLabel(r.day, r.start_min)}. Pay ${taka(r.share * m.spots)} by ${by} (${PAY_WINDOW_MIN} minutes) to keep your ${m.spots === 1 ? 'spot' : `${m.spots} spots`}.`,
-      { type: 'match_accepted', matchId: id },
-    );
+    if (r.type === 'opponent')
+      await notify(
+        c,
+        memberId,
+        'Challenge accepted! Pay to confirm',
+        `${r.team_name ?? 'The host'} will play you at ${venue}, ${timeLabel(r.day, r.start_min)}. Pay your team's ${taka(r.share)} by ${by} (${PAY_WINDOW_MIN} minutes) to lock in the game.`,
+        { type: 'match_accepted', matchId: id },
+      );
+    else
+      await notify(
+        c,
+        memberId,
+        "You're in! Pay to confirm",
+        `${venue}, ${timeLabel(r.day, r.start_min)}. Pay ${taka(r.share * m.spots)} by ${by} (${PAY_WINDOW_MIN} minutes) to keep your ${m.spots === 1 ? 'spot' : `${m.spots} spots`}.`,
+        { type: 'match_accepted', matchId: id },
+      );
   });
   return manage(userId, id);
 }
 
 // ── Player ─────────────────────────────────────────────────────────────────
 
-export async function requestToJoin(userId: string, id: string, input: { position: Position; level: Level; spots?: number; sharePhone?: true; contactPhone?: string }) {
-  const spots = Math.max(1, Math.floor(input.spots ?? 1));
+export async function requestToJoin(
+  userId: string,
+  id: string,
+  input: { position: Position; level: Level; spots?: number; sharePhone?: true; contactPhone?: string; teamName?: string; teamSize?: number },
+) {
+  let spots = Math.max(1, Math.floor(input.spots ?? 1));
   await tx(async (c) => {
     const r = (
-      await c.query<{ user_id: string; status: string; spots_total: number; day: string; start_min: number; title: string; venue_id: string }>(
-        `select r.user_id, r.status, r.spots_total, b.day::text, b.start_min, r.title, b.venue_id
+      await c.query<{ user_id: string; status: string; spots_total: number; day: string; start_min: number; title: string; venue_id: string; type: MatchType; players_total: number }>(
+        `select r.user_id, r.status, r.spots_total, b.day::text, b.start_min, r.title, b.venue_id, r.type, r.players_total
            from player_requests r join bookings b on b.id = r.booking_id where r.id = $1 for update of r`,
         [id],
       )
     ).rows[0];
     if (!r || r.status === 'cancelled') throw new ApiError('not_found', 'This match is no longer available.');
     if (r.user_id === userId) throw new ApiError('forbidden', 'This is your own match.');
+    // A challenge is from one whole team: its name and size; it takes the post's single spot.
+    const opponent = r.type === 'opponent';
+    const teamName = input.teamName?.trim().slice(0, 40) || null;
+    const side = Math.floor(r.players_total / 2);
+    if (opponent) {
+      if (!teamName || teamName.length < 2) throw new ApiError('invalid', 'Give your team a name.');
+      if (!input.teamSize || input.teamSize < 1 || input.teamSize > side) throw new ApiError('invalid', `Your team can have up to ${side} players.`);
+      spots = 1;
+    }
     if (r.status !== 'open') throw new ApiError('forbidden', 'The organiser has paused new requests.');
     if (kickoff(r) - Date.now() < CLOSE_BEFORE_MIN * 60_000) throw new ApiError('forbidden', 'Requests have closed for this game.');
     const m = (await c.query<{ status: string }>('select status from player_request_members where request_id = $1 and user_id = $2 for update', [id, userId])).rows[0];
     if (m && ['pending', 'accepted', 'paid'].includes(m.status)) return; // already asked: idempotent
     // Declined, withdrawn or let the pay window pass: asking again is fine.
     const free = r.spots_total - (await spotsTaken(c, id));
-    if (free <= 0) throw new ApiError('conflict', 'This game is full.');
+    if (free <= 0) throw new ApiError('conflict', opponent ? 'This game already has an opponent.' : 'This game is full.');
     if (spots > free) throw new ApiError('conflict', `Only ${free} ${free === 1 ? 'spot is' : 'spots are'} left. Lower the number and try again.`);
     await c.query(
-      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at, phone_consent_at, contact_phone) values ($1,$2,'pending',$3,$4,$5, now(), now(), $6)
+      `insert into player_request_members (request_id, user_id, status, position, level, spots, created_at, phone_consent_at, contact_phone, team_name, team_size)
+       values ($1,$2,'pending',$3,$4,$5, now(), now(), $6, $7, $8)
        on conflict (request_id, user_id) do update set status = 'pending', position = $3, level = $4, spots = $5, created_at = now(), decided_at = null, pay_by = null,
-         phone_consent_at = now(), contact_phone = $6`,
+         phone_consent_at = now(), contact_phone = $6, team_name = $7, team_size = $8`,
       // A different number for this squad (10 national digits, already validated), or null for their account number.
-      [id, userId, input.position, input.level, spots, input.contactPhone ? `+880${input.contactPhone}` : null],
+      [id, userId, input.position, input.level, spots, input.contactPhone ? `+880${input.contactPhone}` : null, opponent ? teamName : null, opponent ? input.teamSize : null],
     );
     const who = (await c.query<{ name: string }>('select name from users where id = $1', [userId])).rows[0]?.name ?? 'A player';
-    const n = spots === 1 ? '' : ` with ${spots - 1} friend${spots === 2 ? '' : 's'}`;
-    await notify(c, r.user_id, 'New request to join', `${who} wants to join "${r.title}"${n}.`, { type: 'match_request', matchId: id });
+    if (opponent) await notify(c, r.user_id, 'New challenge', `${teamName} (captain ${who}) wants to play you in "${r.title}".`, { type: 'match_request', matchId: id });
+    else {
+      const n = spots === 1 ? '' : ` with ${spots - 1} friend${spots === 2 ? '' : 's'}`;
+      await notify(c, r.user_id, 'New request to join', `${who} wants to join "${r.title}"${n}.`, { type: 'match_request', matchId: id });
+    }
   });
   return getMatch(userId, id);
 }

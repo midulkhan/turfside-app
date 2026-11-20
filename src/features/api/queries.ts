@@ -6,7 +6,7 @@ import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
 import { beginSaved, endSaved } from './saved-store';
-import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchLevel, MatchManage, MatchPosition, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
+import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, ExploreParams, ExploreResult, Match, MatchFeedParams, MatchManage, Page, SavedPlace, SavedPlaceInput, VenueDetail, VenueSummary } from './types';
 
 /**
  * Query keys + cache policy in one place.
@@ -378,8 +378,7 @@ function touchMatches(qc: QueryClient, id: string, manage?: MatchManage) {
 export function useJoinMatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, position, level, spots, contactPhone }: { id: string; position: MatchPosition; level: MatchLevel; spots: number; contactPhone?: string }) =>
-      api.joinMatch(id, { position, level, spots, contactPhone }),
+    mutationFn: ({ id, ...b }: { id: string } & api.JoinMatchInput) => api.joinMatch(id, b),
     onSuccess: (m) => {
       qc.setQueryData(qk.match(m.id), m);
       touchMatches(qc, m.id);
@@ -417,7 +416,7 @@ export function useUpdateMatch(id: string) {
 export function useCreateMatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number; contactPhone?: string }) => api.createMatch(b),
+    mutationFn: (b: api.CreateMatchInput) => api.createMatch(b),
     onSuccess: (m, b) => {
       touchMatches(qc, m.id);
       void qc.invalidateQueries({ queryKey: qk.booking(b.bookingId) });

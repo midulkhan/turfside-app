@@ -224,7 +224,7 @@ export default function BookingTicket() {
 
           {b.otherTickets?.length ? <OtherTickets tickets={b.otherTickets} /> : null}
 
-          {/* Find players: open spots on this booking (or manage the ones already open). */}
+          {/* Find players or an opponent for this booking (or manage the post already up). */}
           {b.status === 'confirmed' || b.matchId ? (
             <PressableScale
               scaleTo={0.99}
@@ -234,10 +234,10 @@ export default function BookingTicket() {
                 <AvatarStack names={['Rafi Ahmed', 'Sami Khan', 'Tanvir Islam']} size={38} />
                 <View style={styles.flex}>
                   <Text variant="bodyStrong" color={colors.charcoal}>
-                    {b.matchId ? 'Manage your squad' : 'Need more players?'}
+                    {b.matchId ? 'Manage your post' : 'Need players or an opponent?'}
                   </Text>
                   <Text variant="label" color={colors.charcoal} style={styles.onLimeMuted}>
-                    {b.matchId ? 'See requests and who has paid' : 'Open spots and let players nearby join'}
+                    {b.matchId ? 'See requests and who has paid' : 'Fill open spots, or challenge a team nearby'}
                   </Text>
                 </View>
                 <View style={styles.darkArrow}>

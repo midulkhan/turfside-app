@@ -73,7 +73,7 @@ export default function FindPlayers() {
                 {waiting > 0 ? `${waiting} spot${waiting === 1 ? '' : 's'} to fill.` : 'Short of players?'}
               </Text>
               <Text variant="label" color="rgba(255,255,255,0.8)" style={styles.bannerSub}>
-                Open spots on a booking. Players ask, you choose who joins.
+                Open spots, or find a team to play. You choose who joins.
               </Text>
             </View>
           </View>
@@ -88,7 +88,7 @@ export default function FindPlayers() {
               <EmptyState
                 icon={UsersRound}
                 title="No upcoming bookings"
-                body="Book a turf first. Then open the spots you can't fill and players nearby can ask to join."
+                body="Book a turf first. Then open the spots you can't fill, or find a team to play against."
                 action="Book a turf"
                 onAction={() => router.dismissTo('/explore')}
               />
@@ -106,7 +106,7 @@ export default function FindPlayers() {
 
               {bookings.length ? (
                 <View style={styles.section}>
-                  <SectionRow title="Open spots on a booking" count={bookings.length} unit="booking" />
+                  <SectionRow title="Post a booking" count={bookings.length} unit="booking" />
                   {bookings.map((b) => (
                     <BookingRow key={b.id} b={b} onOpen={() => setOpening(b)} />
                   ))}
@@ -116,7 +116,7 @@ export default function FindPlayers() {
               <View style={styles.note}>
                 <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
                 <Text variant="label" color={colors.textMuted} style={styles.flex}>
-                  Everyone pays the same fair share. Accepted players have 5 minutes to pay.
+                  Players pay the same fair share; an opponent team pays the part you choose. Whoever you accept has 5 minutes to pay.
                 </Text>
               </View>
             </>
@@ -169,7 +169,7 @@ function BookingRow({ b, onOpen }: { b: Booking; onOpen: () => void }) {
         </View>
       </View>
       <View style={styles.bookingAction}>
-        <Button label="Open spots" icon={UsersRound} small onPress={onOpen} />
+        <Button label="Find players or an opponent" icon={UsersRound} small onPress={onOpen} />
       </View>
     </Card>
   );

@@ -119,7 +119,7 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
             </Text>
             <View style={[styles.pill, { backgroundColor: live ? colors.limeSoft : colors.surfaceMuted }]}>
               <Text variant="caption" color={live ? colors.limeText : colors.textMuted}>
-                {m.status === 'cancelled' ? 'Cancelled' : live ? 'Squad' : 'Played'}
+                {m.status === 'cancelled' ? 'Cancelled' : live ? (m.type === 'opponent' ? 'Team vs Team' : 'Squad') : 'Played'}
               </Text>
             </View>
           </View>
@@ -127,7 +127,7 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
             {formatDay(m.day, { year: false })} · {formatRange(m.start, m.end)}
           </Text>
           <View style={styles.rowBottom}>
-            <Text variant="labelStrong">{formatTaka(m.share * spots)}</Text>
+            <Text variant="labelStrong">{formatTaka(m.type === 'opponent' ? m.share : m.share * spots)}</Text>
             <View style={[styles.link, styles.shrink]}>
               <UsersRound size={15} color={colors.ink} />
               {/* A long squad name shortens with "…"; the spot count always shows in full. */}
@@ -135,7 +135,7 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
                 {m.title}
               </Text>
               <Text variant="labelStrong" numberOfLines={1}>
-                · {spots === 1 ? '1 spot' : `${spots} spots`}
+                · {m.type === 'opponent' ? 'your team' : spots === 1 ? '1 spot' : `${spots} spots`}
               </Text>
             </View>
           </View>

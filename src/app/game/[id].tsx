@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Plus, ShieldCheck, Share2, Timer, Undo2 } from 'lucide-react-native';
+import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Plus, ShieldCheck, Share2, Swords, Timer, Undo2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PinDrop } from '@/components/icons/pin-drop';
 import { ContactRow } from '@/components/match/contact-row';
 import { EntryPass } from '@/components/ticket/entry-pass';
-import { JoinSheet, MatchAction, SquadBar, Tag, levelLabel, spotsLabel, statusPill, whenLabel } from '@/components/match/match-ui';
+import { JoinSheet, MatchAction, SquadBar, Tag, VsTag, isOpponent, levelLabel, spotsLabel, statusPill, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
@@ -51,12 +51,15 @@ export default function GameDetails() {
 
   // Never ask for more than is open (others may have just taken some).
   const canAsk = !!m && m.status === 'open' && m.spotsLeft > 0 && !['owner', 'pending', 'accepted', 'paid'].includes(m.my);
+  const opp = !!m && isOpponent(m);
   const spots = canAsk ? Math.min(Math.max(1, want), m.spotsLeft) : (m?.mySpots ?? 1);
 
   const share = () =>
     m &&
     Share.share({
-      message: `Join ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${spotsLabel(m.spotsLeft)}, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
+      message: opp
+        ? `${m.teamName ?? 'A team'} is looking for an opponent at ${m.venue.name}, ${whenLabel(m)} (${versusLabel(m.format)}). Your team pays ${formatTaka(m.share)}. Open TurfSides → Join a squad → Opponents.`
+        : `Join ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${spotsLabel(m.spotsLeft)}, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
     });
 
   return (
@@ -75,7 +78,7 @@ export default function GameDetails() {
             refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={colors.ink} />}
             contentContainerStyle={[styles.content, { paddingBottom: space[6] }]}
             showsVerticalScrollIndicator={false}>
-            {m && m.my !== 'owner' ? <Body m={m} canAsk={canAsk} spots={spots} onSpots={setWant} /> : <Loading />}
+            {m && m.my !== 'owner' ? <Body m={m} canAsk={canAsk && !opp} spots={spots} onSpots={setWant} /> : <Loading />}
           </ScrollView>
           {m && m.my !== 'owner' ? <PriceBar m={m} spots={spots} bottom={insets.bottom} onJoin={setJoining} /> : null}
         </>
@@ -116,7 +119,8 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
       <View style={styles.titleBlock}>
         <Text variant="h1">{m.title}</Text>
         <View style={styles.tags}>
-          <Tag label={m.format} />
+          {isOpponent(m) ? <VsTag /> : null}
+          <Tag label={isOpponent(m) ? versusLabel(m.format) : m.format} />
           <Tag label={levelLabel(m.level)} />
         </View>
       </View>
@@ -195,15 +199,31 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
       {/* Paid: you and the organiser can reach each other. Nobody else sees either number. */}
       {m.my === 'paid' && m.host ? (
         <Card style={styles.contact}>
-          <ContactRow caption="Your organiser" name={m.host.name} phone={m.host.phone} />
+          <ContactRow caption={isOpponent(m) ? 'The other captain' : 'Your organiser'} name={m.host.name} phone={m.host.phone} />
           <Text variant="caption" color={colors.textMuted}>
-            Only you and the organiser see each other’s numbers.
+            {isOpponent(m) ? 'Only you and the host see each other’s numbers.' : 'Only you and the organiser see each other’s numbers.'}
           </Text>
         </Card>
       ) : null}
 
-      {/* Squad */}
-      <View style={styles.section}>
+      {/* Opponent posts: the two teams. Players posts: the squad. */}
+      {isOpponent(m) ? (
+        <View style={styles.section}>
+          <Text variant="h3">Teams</Text>
+          <Card style={styles.versus}>
+            <TeamSide name={m.teamName ?? 'Host team'} caption={`${m.faces[0]?.name ?? 'Host'} · ${levelLabel(m.level)}`} avatar={m.faces[0]} />
+            <View style={styles.vsBadge}>
+              <Swords size={18} color={colors.charcoal} strokeWidth={2.2} />
+            </View>
+            <TeamSide
+              name={m.opponent?.teamName ?? (m.my === 'paid' ? 'Your team' : 'Your team?')}
+              caption={m.opponent ? `${m.opponent.size ?? Math.floor(m.playersTotal / 2)} players` : 'Waiting for a challenger'}
+              muted={!m.opponent}
+            />
+          </Card>
+        </View>
+      ) : null}
+      <View style={[styles.section, isOpponent(m) && styles.hidden]}>
         <View style={styles.sectionRow}>
           <Text variant="h3">Squad</Text>
           <Text variant="label" color={colors.textMuted}>
@@ -229,9 +249,19 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
       <View style={styles.section}>
         <Text variant="h3">Good to know</Text>
         <View style={styles.points}>
-          <Point icon={ShieldCheck} text="The turf is already booked and paid for by the organiser." />
-          <Point icon={Clock3} text="Once you're accepted, you have 5 minutes to pay. After that the spots go back to the game." />
-          <Point icon={Undo2} text="If the organiser cancels, your share is refunded in full." />
+          <Point icon={ShieldCheck} text="The turf is already booked and paid for by the host." />
+          {isOpponent(m) ? (
+            <>
+              <Point icon={Swords} text="The host picks one team to play. Your team pays its share only if you're picked." />
+              <Point icon={Clock3} text="Once accepted, you have 5 minutes to pay for your team. After that the host can pick another team." />
+              <Point icon={Undo2} text="If the host cancels, your team's payment is refunded in full." />
+            </>
+          ) : (
+            <>
+              <Point icon={Clock3} text="Once you're accepted, you have 5 minutes to pay. After that the spots go back to the game." />
+              <Point icon={Undo2} text="If the organiser cancels, your share is refunded in full." />
+            </>
+          )}
         </View>
       </View>
 
@@ -264,6 +294,28 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
   );
 }
 
+function TeamSide({ name, caption, avatar, muted }: { name: string; caption: string; avatar?: { name: string; avatar: string | null }; muted?: boolean }) {
+  return (
+    <View style={styles.teamSide}>
+      {avatar ? (
+        <Avatar name={avatar.name} uri={avatar.avatar} size={48} />
+      ) : (
+        <View style={[styles.teamBlank, muted && styles.teamBlankMuted]}>
+          <Text variant="title" color={muted ? colors.textMuted : colors.ink}>
+            ?
+          </Text>
+        </View>
+      )}
+      <Text variant="labelStrong" numberOfLines={1} align="center" color={muted ? colors.textMuted : colors.ink}>
+        {name}
+      </Text>
+      <Text variant="caption" color={colors.textMuted} numberOfLines={1} align="center">
+        {caption}
+      </Text>
+    </View>
+  );
+}
+
 function Point({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   return (
     <View style={styles.point}>
@@ -278,9 +330,20 @@ function Point({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
 /** Price (for the chosen spots) and the viewer's next step, pinned to the bottom. */
 function PriceBar({ m, spots, bottom, onJoin }: { m: Match; spots: number; bottom: number; onJoin: (m: Match) => void }) {
   const left = useCountdown(m.my === 'accepted' ? m.payBy : null);
+  const opp = isOpponent(m);
   const hint =
     m.my === 'accepted' && left !== null
       ? null
+      : opp
+        ? m.my === 'pending'
+          ? "Challenge sent. You'll be notified when the host answers."
+          : m.my === 'declined'
+            ? 'The host picked another team. Plenty more teams want a game.'
+            : m.my === 'expired'
+              ? 'The 5 minutes to pay ran out. Challenge again if the game is still open.'
+              : m.my === 'none' || m.my === 'withdrawn'
+                ? 'Your team pays only after the host accepts.'
+                : null
       : m.my === 'pending'
         ? `Request sent for ${spots === 1 ? '1 spot' : `${spots} spots`}. You'll be notified when the organiser answers.`
         : m.my === 'declined'
@@ -296,17 +359,17 @@ function PriceBar({ m, spots, bottom, onJoin }: { m: Match; spots: number; botto
         <View style={[styles.timer, left < 60_000 && styles.timerUrgent]}>
           <Timer size={16} color={left < 60_000 ? colors.danger : colors.limeText} strokeWidth={2.2} />
           <Text variant="labelStrong" color={left < 60_000 ? colors.danger : colors.limeText} style={styles.flex}>
-            Accepted! Pay within {mmss(left)} to keep your {spots === 1 ? 'spot' : `${spots} spots`}
+            {opp ? `Accepted! Pay within ${mmss(left)} to lock in the game` : `Accepted! Pay within ${mmss(left)} to keep your ${spots === 1 ? 'spot' : `${spots} spots`}`}
           </Text>
         </View>
       ) : null}
       <View style={styles.barRow}>
         <View style={styles.price}>
           <Text variant="h3" style={styles.priceText}>
-            {formatTaka(m.share * spots)}
+            {formatTaka(opp ? m.share : m.share * spots)}
           </Text>
           <Text variant="caption" color={colors.textMuted}>
-            {spots === 1 ? 'per player' : `${spots} spots · ${formatTaka(m.share)} each`}
+            {opp ? 'for your team' : spots === 1 ? 'per player' : `${spots} spots · ${formatTaka(m.share)} each`}
           </Text>
         </View>
         <View style={styles.barLine} />
@@ -397,6 +460,12 @@ const styles = createStyles(() => ({
   priceText: { fontFamily: font.bold },
   barLine: { width: 1, height: 36, backgroundColor: colors.border },
   counter: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  hidden: { display: 'none' },
+  versus: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  teamSide: { flex: 1, alignItems: 'center', gap: 4, minWidth: 0 },
+  teamBlank: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  teamBlankMuted: { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong },
+  vsBadge: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   count: { minWidth: 32, textAlign: 'center', fontVariant: ['tabular-nums'] },
   timer: { flexDirection: 'row', alignItems: 'center', gap: space[2], backgroundColor: colors.limeSoft, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2] },
   timerUrgent: { backgroundColor: colors.dangerSoft },

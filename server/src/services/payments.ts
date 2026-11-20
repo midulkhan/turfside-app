@@ -179,8 +179,8 @@ async function settleShare(p: PaymentRow, result: bkash.ExecRes) {
     ]);
     await c.query("insert into ledger_entries (payment_id, booking_id, kind, amount, note) values ($1,$2,'charge',$3,'bKash share')", [p.id, p.booking_id, p.amount]);
     const r = (
-      await c.query<{ user_id: string; spots_total: number; status: string; title: string }>(
-        'select user_id, spots_total, status, title from player_requests where id = $1 for update',
+      await c.query<{ user_id: string; spots_total: number; status: string; title: string; type: string }>(
+        'select user_id, spots_total, status, title, type from player_requests where id = $1 for update',
         [p.match_id],
       )
     ).rows[0];
@@ -218,14 +218,21 @@ async function settleShare(p: PaymentRow, result: bkash.ExecRes) {
     ]);
     const who = (await c.query<{ name: string }>('select name from users where id = $1', [p.user_id])).rows[0]?.name ?? 'A player';
     const amount = `৳${Math.round(p.amount / 100).toLocaleString('en-IN')}`;
-    await c.query("insert into notifications (user_id, kind, title, body, data) values ($1, 'match', 'You''re in the squad', $2, $3)", [
+    const opponent = r.type === 'opponent';
+    const team = opponent
+      ? ((await c.query<{ team_name: string | null }>('select team_name from player_request_members where request_id = $1 and user_id = $2', [p.match_id, p.user_id])).rows[0]
+          ?.team_name ?? who)
+      : who;
+    await c.query("insert into notifications (user_id, kind, title, body, data) values ($1, 'match', $2, $3, $4)", [
       p.user_id,
-      `${amount} via bKash. See you on the pitch.`,
+      opponent ? 'Game on!' : "You're in the squad",
+      opponent ? `${amount} via bKash. Your team is confirmed for "${r.title}".` : `${amount} via bKash. See you on the pitch.`,
       JSON.stringify({ type: 'match_paid', matchId: p.match_id }),
     ]);
-    await c.query("insert into notifications (user_id, kind, title, body, data) values ($1, 'match', 'A player paid', $2, $3)", [
+    await c.query("insert into notifications (user_id, kind, title, body, data) values ($1, 'match', $2, $3, $4)", [
       r.user_id,
-      `${who} paid and joined "${r.title}".`,
+      opponent ? 'Opponent confirmed' : 'A player paid',
+      opponent ? `${team} paid and will play you in "${r.title}".` : `${who} paid and joined "${r.title}".`,
       JSON.stringify({ type: 'match_member_paid', matchId: p.match_id }),
     ]);
     return { status: 'confirmed', matchId: p.match_id };

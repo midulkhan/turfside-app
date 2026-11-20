@@ -154,7 +154,7 @@ export async function invalidateVenue(_id?: string) {
  */
 export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
 /** `squad`: a booked slot whose organiser is recruiting: tapping it opens the squad. */
-export type SlotSquad = { id: string; spotsLeft: number; host?: boolean };
+export type SlotSquad = { id: string; spotsLeft: number; host?: boolean; opponent?: boolean };
 export type SlotOut = { id: string; start: number; end: number; price: number; status: SlotStatus; holdId?: string; squad?: SlotSquad };
 
 // ── Availability: what is booked / held / blocked, per pitch per day ─────────────────────
@@ -164,7 +164,7 @@ export type SlotOut = { id: string; start: number; end: number; price: number; s
  * request, on every server process. The exclusion constraint still makes double booking
  * impossible regardless.
  */
-type Taken = { s: number; e: number; kind: string; id: string | null; userId: string | null; until: number | null; sq?: { id: string; left: number; host: string } | null };
+type Taken = { s: number; e: number; kind: string; id: string | null; userId: string | null; until: number | null; sq?: { id: string; left: number; host: string; type: string } | null };
 
 /** Is committed transaction `xid` visible in snapshot "xmin:xmax:xip,…"? (kept for tests/tools) */
 export function snapshotIncludes(snap: string, xid: bigint) {
@@ -178,14 +178,14 @@ export function snapshotIncludes(snap: string, xid: bigint) {
 /** One query: live bookings + blocks overlapping the day, for some pitches (or all). */
 async function queryTaken(day: string, pitchIds: string[] | null, closeMin: number) {
   const { HOLDING } = await import('./matches'); // lazy: matches imports this module
-  type Sq = { id: string; left: number; host: string } | null;
+  type Sq = { id: string; left: number; host: string; type: string } | null;
   const row = await one<{ rows: { p: string; s: string; e: string; kind: string; id: string | null; u: string | null; h: string | null; sq: Sq }[] }>(
     `select coalesce((select json_agg(t) from (
               select bk.pitch_id p, lower(bk.during) s, upper(bk.during) e,
                      case when bk.status in ('held','pending') then 'held' else 'booked' end kind,
                      coalesce(bk.order_id, bk.id) id, bk.user_id u, bk.hold_expires_at h,
                      -- A squad recruiting on this booking: spots still free to request.
-                     (select json_build_object('id', r.id, 'host', r.user_id, 'left', greatest(0, r.spots_total
+                     (select json_build_object('id', r.id, 'host', r.user_id, 'type', r.type, 'left', greatest(0, r.spots_total
                               - (select coalesce(sum(m.spots), 0) from player_request_members m where m.request_id = r.id and m.status = 'paid')
                               - (select coalesce(sum(m.spots), 0) from player_request_members m where m.request_id = r.id and ${HOLDING})))
                         from player_requests r where r.booking_id = bk.id and r.status = 'open' limit 1) sq
@@ -257,7 +257,12 @@ function buildSlots(v: VenueRow, day: string, taken: Taken[], viewerId?: string)
         return {
           ...base,
           status: 'booked' as const,
-          squad: { id: clash.sq.id, spotsLeft: clash.sq.left, ...(viewerId && clash.sq.host === viewerId ? { host: true } : {}) },
+          squad: {
+            id: clash.sq.id,
+            spotsLeft: clash.sq.left,
+            ...(clash.sq.type === 'opponent' ? { opponent: true } : {}),
+            ...(viewerId && clash.sq.host === viewerId ? { host: true } : {}),
+          },
         };
       return { ...base, status: clash.kind as SlotStatus };
     });

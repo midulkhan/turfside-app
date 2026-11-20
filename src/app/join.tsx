@@ -1,14 +1,15 @@
 import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowLeft, Bell, CalendarDays, Info, MapPin, UsersRound, X } from 'lucide-react-native';
-import { useCallback, useMemo, useState } from 'react';
+import { ArrowLeft, Bell, CalendarDays, Info, MapPin, Swords, UsersRound, X } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MatchCard, dayLabel } from '@/components/match/match-ui';
 import { CalendarModal } from '@/components/ui/calendar';
 import { Chip } from '@/components/ui/chip';
+import { Segmented } from '@/components/ui/segmented';
 import { IconButton } from '@/components/ui/icon-button';
 import { END_THRESHOLD, ListLoader } from '@/components/ui/list-loader';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,17 +18,25 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import { useMatchFeed } from '@/features/api/queries';
 import { useLiveMatchFeed, useRefreshAt } from '@/features/api/realtime';
+import type { MatchType } from '@/features/api/types';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
+import { prefs } from '@/lib/storage';
 import { addDays, dhakaToday, type DayKey } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
 const NO_ANCHOR = { disabled: true };
+const KIND_KEY = 'ts.joinKind';
+const KINDS: { value: MatchType; label: string }[] = [
+  { value: 'players', label: 'Players' },
+  { value: 'opponent', label: 'Opponents' },
+];
 
 /**
- * Join a squad: open spots on games other players have already booked and paid for.
+ * Join a squad: open spots on games other players have already booked and paid for, or (the
+ * Opponents switch, remembered between visits) teams looking for a whole team to play.
  * (Your own games live on Find players.)
  * Filters: Nearby (within 10 km of your place; off by default) and a date.
  * Loads 10 games at a time; the next 10 as you reach the end.
@@ -38,9 +47,21 @@ export default function JoinSquad() {
   const [nearby, setNearby] = useState(false);
   const [day, setDay] = useState<DayKey | undefined>(undefined);
   const [picking, setPicking] = useState(false);
+  const [kind, setKind] = useState<MatchType>('players');
   const scrolled = useScrolled();
+  const opponents = kind === 'opponent';
+  useEffect(() => {
+    prefs
+      .get(KIND_KEY)
+      .then((v) => v === 'opponent' && setKind('opponent'))
+      .catch(() => {});
+  }, []);
+  const pickKind = (k: MatchType) => {
+    setKind(k);
+    prefs.set(KIND_KEY, k).catch(() => {});
+  };
 
-  const params = useMemo(() => ({ lat: place.lat, lng: place.lng, nearby, day }), [place.lat, place.lng, nearby, day]);
+  const params = useMemo(() => ({ lat: place.lat, lng: place.lng, nearby, day, type: kind }), [place.lat, place.lng, nearby, day, kind]);
   const feed = useMatchFeed(params);
   const pull = usePullToRefresh(feed.refetch);
   // Your own games are on Find players; here are the ones you can join.
@@ -61,6 +82,13 @@ export default function JoinSquad() {
     const open = items.filter((m) => m.my !== 'owner' && m.my !== 'paid' && m.spotsLeft > 0).map((m) => m.spotsLeft);
     return open.length ? Math.min(...open) : null;
   }, [items]);
+  const headline = opponents
+    ? items.length
+      ? `${items.length}${feed.hasNextPage ? '+' : ''} team${items.length === 1 ? '' : 's'} want a game.`
+      : 'Find a team to play.'
+    : fewest === null
+      ? 'Find your next game.'
+      : `Your squad is ${fewest} player${fewest === 1 ? '' : 's'} away.`;
 
   const onEnd = useCallback(() => {
     if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
@@ -74,13 +102,15 @@ export default function JoinSquad() {
         <Image source={require('@/assets/banners/players-bg.webp')} style={styles.bannerImg} contentFit="cover" contentPosition="right center" transition={0} />
         <View style={styles.bannerText}>
           <Text variant="h1" color="#FFFFFF" style={styles.bannerTitle} maxFontSizeMultiplier={1.1}>
-            {fewest === null ? 'Find your next game.' : `Your squad is ${fewest} player${fewest === 1 ? '' : 's'} away.`}
+            {headline}
           </Text>
           <Text variant="label" color="rgba(255,255,255,0.8)" style={styles.bannerSub}>
-            Join a game near you. Pay only when you&apos;re accepted.
+            {opponents ? 'Challenge a team with a booked turf. Your team pays only when accepted.' : 'Join a game near you. Pay only when you’re accepted.'}
           </Text>
         </View>
       </View>
+
+      <Segmented large accessibilityLabel="Looking for" value={kind} onChange={pickKind} options={KINDS} />
 
       <View style={styles.filters}>
         <Chip
@@ -103,12 +133,12 @@ export default function JoinSquad() {
 
       <View style={styles.sectionRow}>
         <Text variant="title" style={styles.sectionTitle}>
-          {nearby ? 'Games near you' : 'Open games'}
+          {opponents ? (nearby ? 'Teams near you' : 'Teams looking for a game') : nearby ? 'Games near you' : 'Open games'}
         </Text>
         {!loading ? (
           <Text variant="label" color={colors.textMuted}>
             {items.length}
-            {feed.hasNextPage ? '+' : ''} {items.length === 1 ? 'match' : 'matches'}
+            {feed.hasNextPage ? '+' : ''} {opponents ? (items.length === 1 ? 'team' : 'teams') : items.length === 1 ? 'match' : 'matches'}
           </Text>
         ) : null}
       </View>
@@ -159,9 +189,13 @@ export default function JoinSquad() {
             ) : (
               <View style={styles.empty}>
                 <EmptyState
-                  icon={UsersRound}
-                  title={day || nearby ? 'No games match these filters' : 'No open games right now'}
-                  body="When players open spots on their bookings, they show up here."
+                  icon={opponents ? Swords : UsersRound}
+                  title={day || nearby ? (opponents ? 'No teams match these filters' : 'No games match these filters') : opponents ? 'No teams looking right now' : 'No open games right now'}
+                  body={
+                    opponents
+                      ? 'When a team posts its booking to find an opponent, it shows up here. Have a booking? Post it from Find players.'
+                      : 'When players open spots on their bookings, they show up here.'
+                  }
                 />
               </View>
             )
@@ -173,7 +207,7 @@ export default function JoinSquad() {
                 <View style={styles.note}>
                   <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
                   <Text variant="label" color={colors.textMuted}>
-                    Join requests are approved by the organiser.
+                    {opponents ? 'The host picks the team they play.' : 'Join requests are approved by the organiser.'}
                   </Text>
                 </View>
               ) : null}

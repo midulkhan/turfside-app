@@ -631,6 +631,8 @@ export async function buildApp() {
         day: z.string().refine(isDayKey, 'Invalid date.').optional(),
         cursor: z.coerce.number().int().min(0).max(10_000).optional(),
         limit: z.coerce.number().int().min(1).max(20).optional(),
+        // 'players' (default, and all older apps know) or 'opponent' (teams looking for a game).
+        type: z.enum(['players', 'opponent']).optional(),
       }),
       req.query,
     );
@@ -642,7 +644,24 @@ export async function buildApp() {
   app.post('/v1/matches', { preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
     matches.createMatch(
       req.user!.userId,
-      parse(z.object({ bookingId: z.string().uuid(), title: z.string().trim().min(2).max(60).optional(), level, openSpots: z.number().int().min(1).max(29), sharePhone, contactPhone: phone10.optional() }), req.body),
+      parse(
+        z
+          .object({
+            bookingId: z.string().uuid(),
+            title: z.string().trim().min(2).max(60).optional(),
+            level,
+            type: z.enum(['players', 'opponent']).default('players'),
+            // Players posts: how many spots. Opponent posts: the host's team and the split.
+            openSpots: z.number().int().min(1).max(29).optional(),
+            teamName: z.string().trim().min(2, 'Give your team a name.').max(40).optional(),
+            opponentPercent: z.union([z.literal(50), z.literal(40), z.literal(30)]).optional(),
+            sharePhone,
+            contactPhone: phone10.optional(),
+          })
+          .refine((b) => b.type === 'opponent' || b.openSpots !== undefined, { message: 'Choose how many spots to open.', path: ['openSpots'] })
+          .refine((b) => b.type !== 'opponent' || !!b.teamName, { message: 'Give your team a name.', path: ['teamName'] }),
+        req.body,
+      ),
     ),
   );
   app.get('/v1/matches/joined', { preHandler: requireUser }, async (req) => matches.joined(req.user!.userId));
@@ -659,7 +678,19 @@ export async function buildApp() {
     matches.requestToJoin(
       req.user!.userId,
       matchId(req),
-      parse(z.object({ position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'), level: level.default('casual'), spots: z.number().int().min(1).max(29).default(1), sharePhone, contactPhone: phone10.optional() }), req.body ?? {}),
+      parse(
+        z.object({
+          position: z.enum(['any', 'goalkeeper', 'defender', 'midfielder', 'forward']).default('any'),
+          level: level.default('casual'),
+          spots: z.number().int().min(1).max(29).default(1),
+          sharePhone,
+          contactPhone: phone10.optional(),
+          // Challenging an opponent post: your team's name and how many players you bring.
+          teamName: z.string().trim().min(2, 'Give your team a name.').max(40).optional(),
+          teamSize: z.number().int().min(1).max(15).optional(),
+        }),
+        req.body ?? {},
+      ),
     ),
   );
   app.delete('/v1/matches/:id/join', { preHandler: requireUser }, async (req) => matches.withdraw(req.user!.userId, matchId(req)));

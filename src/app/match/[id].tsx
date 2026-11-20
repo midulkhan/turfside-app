@@ -5,7 +5,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Share, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
-import { SquadBar, Tag, clockLabel, levelLabel, positionLabel, whenLabel } from '@/components/match/match-ui';
+import { SquadBar, Tag, VsTag, clockLabel, isOpponent, levelLabel, positionLabel, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -81,9 +81,23 @@ function SpotsTag({ n = 1, always }: { n?: number; always?: boolean }) {
   );
 }
 
-function StatusPill({ status }: { status: MatchManage['status'] }) {
+function StatusPill({ status, opponent }: { status: MatchManage['status']; opponent?: boolean }) {
   const open = status === 'open';
-  const label = open ? 'Recruitment open' : status === 'paused' ? 'Recruitment paused' : status === 'full' ? 'Squad full' : 'Closed';
+  const label = opponent
+    ? open
+      ? 'Looking for an opponent'
+      : status === 'paused'
+        ? 'Challenges paused'
+        : status === 'full'
+          ? 'Opponent confirmed'
+          : 'Closed'
+    : open
+      ? 'Recruitment open'
+      : status === 'paused'
+        ? 'Recruitment paused'
+        : status === 'full'
+          ? 'Squad full'
+          : 'Closed';
   return (
     <View style={[styles.pill, !open && styles.pillMuted]}>
       <View style={[styles.dot, !open && styles.dotMuted]} />
@@ -98,10 +112,13 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
   const decide = useDecideRequest(m.id);
   const reserved = m.squad.filter((s) => !s.paid).length;
   const canPause = m.status === 'open' || m.status === 'paused';
+  const opp = isOpponent(m);
 
   const share = () =>
     Share.share({
-      message: `Join my game: ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${m.spotsLeft} spot${m.spotsLeft === 1 ? '' : 's'} left, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
+      message: opp
+        ? `${m.teamName ?? 'My team'} is looking for an opponent: ${m.venue.name}, ${whenLabel(m)} (${versusLabel(m.format)}). Your team pays ${formatTaka(m.share)}. Open TurfSides → Join a squad → Opponents.`
+        : `Join my game: ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${m.spotsLeft} spot${m.spotsLeft === 1 ? '' : 's'} left, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
     });
 
   const answer = (p: MatchPerson, accept: boolean) => {
@@ -120,11 +137,11 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
 
   return (
     <>
-      <StatusPill status={m.status} />
+      <StatusPill status={m.status} opponent={opp} />
       <View style={styles.headline}>
-        <Text variant="h1">Your match. Your squad.</Text>
+        <Text variant="h1">{opp ? 'Your team. Your pick.' : 'Your match. Your squad.'}</Text>
         <Text variant="body" color={colors.textMuted}>
-          Manage players for your upcoming game.
+          {opp ? 'Choose the team you play in your upcoming game.' : 'Manage players for your upcoming game.'}
         </Text>
       </View>
 
@@ -164,24 +181,45 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
           </Text>
           <Pencil size={18} color={colors.ink} strokeWidth={1.8} />
         </Pressable>
-        <View style={styles.stats}>
-          <Stat value={`${m.playersIn} / ${m.playersTotal}`} label="Players" />
-          <View style={styles.vr} />
-          <Stat value={String(m.openSpots)} label="Open spots" />
-          <View style={styles.vr} />
-          <Stat value={formatTaka(m.share)} label="Per player" />
-        </View>
-        <SquadBar total={m.playersTotal} inCount={m.playersIn} reserved={reserved} />
+        {opp ? (
+          <View style={styles.stats}>
+            <Stat text value={m.teamName ?? 'Your team'} label="Your team" />
+            <View style={styles.vr} />
+            <Stat text value={m.opponent?.teamName ?? (reserved ? 'Paying…' : '—')} label="Opponent" />
+            <View style={styles.vr} />
+            <Stat value={formatTaka(m.share)} label={`They pay (${m.opponentPercent ?? 50}%)`} />
+          </View>
+        ) : (
+          <>
+            <View style={styles.stats}>
+              <Stat value={`${m.playersIn} / ${m.playersTotal}`} label="Players" />
+              <View style={styles.vr} />
+              <Stat value={String(m.openSpots)} label="Open spots" />
+              <View style={styles.vr} />
+              <Stat value={formatTaka(m.share)} label="Per player" />
+            </View>
+            <SquadBar total={m.playersTotal} inCount={m.playersIn} reserved={reserved} />
+          </>
+        )}
         <View style={styles.tags}>
+          {opp ? <VsTag /> : null}
           <Tag label={levelLabel(m.level)} />
-          <Tag label={m.format} />
+          <Tag label={opp ? versusLabel(m.format) : m.format} />
         </View>
         <View style={styles.buttons}>
           <Button label="Share invite" variant="outline" icon={Share2} small onPress={share} style={styles.flex} />
           {canPause ? (
             <Button
               label={m.status === 'paused' ? 'Resume' : 'Pause'}
-              accessibilityHint={m.status === 'paused' ? 'Lets players ask to join again' : 'Stops new join requests for now'}
+              accessibilityHint={
+                opp
+                  ? m.status === 'paused'
+                    ? 'Lets teams challenge you again'
+                    : 'Stops new challenges for now'
+                  : m.status === 'paused'
+                    ? 'Lets players ask to join again'
+                    : 'Stops new join requests for now'
+              }
               variant="outline"
               icon={m.status === 'paused' ? Play : Pause}
               small
@@ -195,7 +233,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
 
       {/* Requests */}
       <Text variant="h2" style={styles.section}>
-        Awaiting your approval
+        {opp ? 'Challenges' : 'Awaiting your approval'}
       </Text>
       {m.requests.length ? (
         m.requests.map((p) => (
@@ -205,12 +243,14 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
               <View style={styles.flex}>
                 <View style={styles.nameRow}>
                   <Text variant="bodyStrong" numberOfLines={1} style={styles.shrink}>
-                    {p.name}
+                    {p.teamName ?? p.name}
                   </Text>
-                  <SpotsTag n={p.spots} />
+                  {p.teamName ? null : <SpotsTag n={p.spots} />}
                 </View>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
-                  {positionLabel(p.position)} · {levelLabel(p.level)}
+                  {p.teamName
+                    ? `Captain ${p.name} · ${p.teamSize ?? '?'} players · ${levelLabel(p.level)}`
+                    : `${positionLabel(p.position)} · ${levelLabel(p.level)}`}
                 </Text>
                 <Text variant="caption" color={colors.textMuted}>
                   {p.games === 0 ? 'New player' : p.games === 1 ? '1 game played' : `${p.games} games played`}
@@ -227,14 +267,16 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
         <Card style={styles.emptyCard}>
           <UsersRound size={20} color={colors.textMuted} strokeWidth={1.8} />
           <Text variant="label" color={colors.textMuted} style={styles.flex}>
-            No requests yet. Share the invite to fill your spots faster.
+            {opp ? 'No challenges yet. Share your post so teams nearby see it.' : 'No requests yet. Share the invite to fill your spots faster.'}
           </Text>
         </Card>
       )}
       <View style={styles.note}>
         <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
         <Text variant="label" color={colors.textMuted} style={styles.flex}>
-          Accepted players have 5 minutes to pay. If they don&apos;t, the spots open up again.
+          {opp
+            ? 'The team you accept has 5 minutes to pay. If they don’t, you can accept another.'
+            : 'Accepted players have 5 minutes to pay. If they don’t, the spots open up again.'}
         </Text>
       </View>
 
@@ -242,7 +284,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
       {m.squad.length ? (
         <>
           <Text variant="h2" style={styles.section}>
-            In your squad
+            {opp ? 'Your opponent' : 'In your squad'}
           </Text>
           {m.squad.map((p) => (
             <Card key={p.userId} style={styles.member}>
@@ -251,13 +293,15 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
                 <Avatar name={p.name} uri={p.avatar} size={44} />
                 <View style={styles.flex}>
                   <Text variant="bodyStrong" numberOfLines={1}>
-                    {p.name}
+                    {p.teamName ?? p.name}
                   </Text>
                   <Text variant="label" color={colors.textMuted} numberOfLines={1}>
-                    {positionLabel(p.position)} · {levelLabel(p.level)}
+                    {p.teamName
+                      ? `Captain ${p.name} · ${p.teamSize ?? '?'} players`
+                      : `${positionLabel(p.position)} · ${levelLabel(p.level)}`}
                   </Text>
                 </View>
-                <SpotsTag n={p.spots} always />
+                {p.teamName ? null : <SpotsTag n={p.spots} always />}
               </View>
               <View style={styles.memberFoot}>
                 <View style={[styles.state, p.paid ? styles.statePaid : styles.stateWaiting]}>
@@ -288,10 +332,13 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+function Stat({ value, label, text }: { value: string; label: string; text?: boolean }) {
   return (
     <View style={styles.stat}>
-      <Text variant="number">{value}</Text>
+      {/* `text`: a name rather than a number (opponent posts); one line, never pushing others out. */}
+      <Text variant={text ? 'title' : 'number'} numberOfLines={1}>
+        {value}
+      </Text>
       <Text variant="label" color={colors.textMuted}>
         {label}
       </Text>
@@ -350,7 +397,7 @@ const styles = createStyles(() => ({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   titleText: { flexShrink: 1 },
   stats: { flexDirection: 'row', alignItems: 'center' },
-  stat: { flex: 1, alignItems: 'center', gap: 2 },
+  stat: { flex: 1, alignItems: 'center', gap: 2, minWidth: 0 },
   vr: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
   tags: { flexDirection: 'row', gap: space[2] },
   buttons: { flexDirection: 'row', gap: space[3] },

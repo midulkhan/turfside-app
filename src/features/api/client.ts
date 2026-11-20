@@ -11,7 +11,7 @@
 import type { DayKey } from '@/lib/time';
 
 import { request } from './http';
-import type {
+import type { MatchType,
   AppConfig,
   AuthResult,
   Booking,
@@ -178,11 +178,22 @@ export const getMatches = (p: MatchFeedParams, cursor: number, signal?: AbortSig
   request<Page<Match>>('GET', '/v1/matches', {
     auth: 'optional',
     signal,
-    query: { lat: p.lat, lng: p.lng, nearby: p.nearby ? 'true' : undefined, day: p.day, cursor, limit: PAGE },
+    query: { lat: p.lat, lng: p.lng, nearby: p.nearby ? 'true' : undefined, day: p.day, type: p.type, cursor, limit: PAGE },
   });
 export const getMatch = (id: string, signal?: AbortSignal) => request<Match>('GET', `/v1/matches/${enc(id)}`, { auth: 'optional', signal });
 /** The UI only allows this after the organiser agrees to share their number (sharePhone). */
-export const createMatch = (b: { bookingId: string; title?: string; level: MatchLevel; openSpots: number; contactPhone?: string }) =>
+export type CreateMatchInput = {
+  bookingId: string;
+  title?: string;
+  level: MatchLevel;
+  contactPhone?: string;
+  /** Default 'players' (needs openSpots). 'opponent' needs teamName; opponentPercent defaults to 50. */
+  type?: MatchType;
+  openSpots?: number;
+  teamName?: string;
+  opponentPercent?: 50 | 40 | 30;
+};
+export const createMatch = (b: CreateMatchInput) =>
   request<Match>('POST', '/v1/matches', { auth: 'required', body: { ...b, sharePhone: true } });
 export const getMatchManage = (id: string, signal?: AbortSignal) =>
   request<MatchManage>('GET', `/v1/matches/${enc(id)}/manage`, { auth: 'required', signal });
@@ -193,7 +204,9 @@ export const decideRequest = (id: string, userId: string, accept: boolean) =>
 export const getJoinedMatches = (signal?: AbortSignal) => request<Match[]>('GET', '/v1/matches/joined', { auth: 'required', signal });
 export const getMyMatches = (signal?: AbortSignal) => request<MyMatches>('GET', '/v1/matches/mine', { auth: 'required', signal });
 /** The UI only allows this after the player agrees to share their number (sharePhone). */
-export const joinMatch = (id: string, b: { position: MatchPosition; level: MatchLevel; spots: number; contactPhone?: string }) =>
+/** Opponent posts: send `teamName` and `teamSize` (spots is always 1, the team). */
+export type JoinMatchInput = { position: MatchPosition; level: MatchLevel; spots: number; contactPhone?: string; teamName?: string; teamSize?: number };
+export const joinMatch = (id: string, b: JoinMatchInput) =>
   request<Match>('POST', `/v1/matches/${enc(id)}/join`, { auth: 'required', body: { ...b, sharePhone: true } });
 export const leaveMatch = (id: string) => request<Match>('DELETE', `/v1/matches/${enc(id)}/join`, { auth: 'required' });
 /** Pay your share of a match you were accepted into (bKash, like a booking). */

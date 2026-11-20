@@ -100,16 +100,20 @@ export default function Checkout() {
           format: mt.format,
           slots: [{ id: '', day: mt.day, start: mt.start, end: mt.end }],
           lines: [
-            {
-              label: 'Your share',
-              detail: (mt.mySpots ?? 1) === 1 ? `${mt.title} · 1 of ${mt.playersTotal} players` : `${mt.title} · ${mt.mySpots} spots × ${formatTaka(mt.share)}`,
-              amount: mt.share * (mt.mySpots ?? 1),
-            },
+            mt.type === 'opponent'
+              ? { label: 'Your share', detail: `${mt.title} · your team's ${mt.opponentPercent ?? 50}% of the turf`, amount: mt.share }
+              : {
+                  label: 'Your share',
+                  detail: (mt.mySpots ?? 1) === 1 ? `${mt.title} · 1 of ${mt.playersTotal} players` : `${mt.title} · ${mt.mySpots} spots × ${formatTaka(mt.share)}`,
+                  amount: mt.share * (mt.mySpots ?? 1),
+                },
           ],
-          total: mt.share * (mt.mySpots ?? 1),
+          total: mt.type === 'opponent' ? mt.share : mt.share * (mt.mySpots ?? 1),
           expiresAt: mt.payBy,
           policy:
-            "Your share secures your place in the squad. If the organiser cancels the game, you get a full refund. Can't make it? Let the organiser know — paid shares aren't refunded otherwise.",
+            mt.type === 'opponent'
+              ? "Paying locks in the game for your team. If the host cancels, you get a full refund. Can't make it? Let the host know — paid shares aren't refunded otherwise."
+              : "Your share secures your place in the squad. If the organiser cancels the game, you get a full refund. Can't make it? Let the organiser know — paid shares aren't refunded otherwise.",
         }
       : undefined
     : hold.data
