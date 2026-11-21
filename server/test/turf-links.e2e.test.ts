@@ -95,6 +95,27 @@ d('turf links and reference numbers', () => {
     expect(await missing.text()).toContain('isn’t active');
   });
 
+  it('link previews get a branded 1200×630 JPEG card, small enough for WhatsApp', async () => {
+    // A seeded turf: it has a (WebP) photo, which the card has to decode.
+    const list = (await call('GET', '/v1/venues/explore?lat=23.78&lng=90.41')).json;
+    const id = (list.near?.[0] ?? list.further?.[0])?.id as string;
+    const pub = (await call('GET', `/v1/venues/${id}`)).json;
+    const html = await (await fetch(`${API}/t/${pub.shortCode}`)).text();
+    const img = /<meta property="og:image" content="([^"]+)">/.exec(html)?.[1];
+    expect(img).toMatch(new RegExp(`/t/${pub.shortCode}/card\\.jpg\\?v=[0-9a-f]{10}$`));
+    expect(html).toContain('<meta property="og:image:width" content="1200">');
+    expect(html).toContain('<meta property="og:image:type" content="image/jpeg">');
+    const res = await fetch(img!.replace(/^https?:\/\/[^/]+/, API!));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect([buf[0], buf[1], buf[2]]).toEqual([0xff, 0xd8, 0xff]); // a real JPEG
+    expect(buf.length).toBeGreaterThan(20_000); // the photo is in it, not a blank card
+    expect(buf.length).toBeLessThan(600_000); // WhatsApp drops bigger images
+    // Unknown code: the plain brand image instead.
+    expect((await fetch(`${API}/t/ZZZZZZZ/card.jpg`, { redirect: 'manual' })).status).toBe(302);
+  });
+
   it('seeded turfs got codes from the migration', async () => {
     const list = (await call('GET', '/v1/venues/explore?lat=23.78&lng=90.41')).json;
     const id = (list.near?.[0] ?? list.further?.[0])?.id as string;

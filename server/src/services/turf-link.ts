@@ -7,7 +7,9 @@
  * store links. It also carries the Open Graph tags that WhatsApp, Messenger and others read for the
  * link preview (photo, name, area, price).
  */
+import { createHash } from 'node:crypto';
 import { config } from '../config';
+import { renderCard } from '../lib/og-card';
 import { one } from '../db';
 import { getVenueRow, photoUrl, refLabel, SHORT_CODE, shareUrl, startingPrice } from './venues';
 
@@ -40,6 +42,36 @@ export async function venueByCode(raw: string) {
   // "From …": the same rule as the app (startingPrice), not just the standard rate.
   const row = await getVenueRow(v.id).catch(() => null);
   return { ...v, from: row ? fromLabel(startingPrice(row)) : `From ৳${taka(v.hourly)}/hr` };
+}
+
+type Linked = Row & { from: number };
+
+/** What the card shows; its hash goes in the image URL so apps re-fetch when it changes. */
+const cardInput = (v: Linked) => ({
+  name: v.name,
+  place: [v.area, v.city].filter(Boolean).join(', '),
+  formats: v.formats ?? [],
+  from: v.from,
+  rating: Number(v.rating) || 0,
+  reviews: v.review_count ?? 0,
+  ref: refLabel(v.ref_no),
+  photo: v.photo ? photoUrl(v.photo) : null,
+});
+const cardVersion = (v: Linked) => createHash('sha1').update(JSON.stringify(cardInput(v))).digest('hex').slice(0, 10);
+/** The share card's URL (absolute: link-preview bots need that). */
+export const cardUrl = (v: Linked) => `${config.PUBLIC_URL.replace(/\/+$/, '')}/t/${v.short_code}/card.jpg?v=${cardVersion(v)}`;
+
+// Recent cards in memory (a shared link is fetched by many previews at once). Small: ~100 KB each.
+const cards = new Map<string, Buffer>();
+/** The share card JPEG for a turf, rendered once per version. */
+export async function turfCard(v: Linked) {
+  const key = `${v.short_code}:${cardVersion(v)}`;
+  const hit = cards.get(key);
+  if (hit) return hit;
+  const jpg = await renderCard(cardInput(v));
+  cards.set(key, jpg);
+  if (cards.size > 40) cards.delete(cards.keys().next().value!);
+  return jpg;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -94,7 +126,14 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
     status: 200,
     html: shell({
       title: `${v.name} · TurfSides`,
-      og: { title: `${v.name} · ${place}`, description: `${facts.join(' · ')}. Book it on TurfSides.`, image: photo, url: shareUrl(v.short_code)! },
+      og: {
+        title: `${v.name} · ${place}`,
+        description: `${facts.join(' · ')}. ${refLabel(v.ref_no) ? `Turf ID ${refLabel(v.ref_no)}. ` : ''}See times and book on TurfSides.`,
+        image: cardUrl(v),
+        imageAlt: `${v.name}, ${place}. From ৳${from} per hour on TurfSides.`,
+        card: true,
+        url: shareUrl(v.short_code)!,
+      },
       body: `<main class="card">
   <div class="photo" style="background-image:url('${esc(photo)}')"></div>
   <div class="pad">
@@ -118,7 +157,13 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
   };
 }
 
-function shell(o: { title: string; og: { title: string; description: string; image: string; url: string }; body: string }) {
+function shell(o: { title: string; og: { title: string; description: string; image: string; url: string; imageAlt?: string; card?: boolean }; body: string }) {
+  // The generated card is a 1200×630 JPEG; saying so lets apps lay out the big preview straight away.
+  const card = o.og.card
+    ? `<meta property="og:image:secure_url" content="${esc(o.og.image)}"><meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${esc(o.og.imageAlt ?? o.og.title)}"><meta name="twitter:image:alt" content="${esc(o.og.imageAlt ?? o.og.title)}">`
+    : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(o.title)}</title>
@@ -126,7 +171,10 @@ function shell(o: { title: string; og: { title: string; description: string; ima
 <meta property="og:type" content="website"><meta property="og:site_name" content="TurfSides">
 <meta property="og:title" content="${esc(o.og.title)}"><meta property="og:description" content="${esc(o.og.description)}">
 <meta property="og:image" content="${esc(o.og.image)}"><meta property="og:url" content="${esc(o.og.url)}">
-<meta name="twitter:card" content="summary_large_image"><meta name="robots" content="noindex">
+${card}
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(o.og.title)}">
+<meta name="twitter:description" content="${esc(o.og.description)}"><meta name="twitter:image" content="${esc(o.og.image)}">
+<meta property="og:locale" content="en_US"><meta name="robots" content="noindex">
 <meta name="theme-color" content="#F3F3EF">
 <style>
   *{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:#F3F3EF;

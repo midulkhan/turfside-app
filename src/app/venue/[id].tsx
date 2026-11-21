@@ -4,6 +4,9 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
+  Check,
+  Copy,
+  Hash,
   Bath,
   CalendarDays,
   CirclePause,
@@ -30,6 +33,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentRef, type RefObject } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -420,6 +424,7 @@ export default function VenueScreen() {
                     / {priceUnit(startingPriceOf(v), 'long')}
                   </Text>
                 </View>
+                {v.ref ? <TurfId value={v.ref} /> : null}
               </View>
             </Animated.View>
           ) : (
@@ -550,10 +555,7 @@ export default function VenueScreen() {
               size={HERO_BTN}
               onPress={() =>
                 v &&
-                Share.share({
-                  // The short link opens this turf in the app (or a page with the turf and store links).
-                  message: v.shareUrl ? `${v.name}, ${v.area}. Book on TurfSides: ${v.shareUrl}` : `${v.name}, ${v.area}. Book on TurfSides.`,
-                })
+                Share.share(shareContent(v))
               }
             />
             <IconButton
@@ -998,6 +1000,66 @@ const DetailsTab = memo(function DetailsTab({ v, onDirections }: { v: VenueDetai
   );
 });
 
+/**
+ * What a shared turf looks like in WhatsApp, Messenger, Facebook…: a short, tidy message with the
+ * turf's own link on its last line. The link (turfsides.com/CODE) carries the preview card: photo,
+ * name, area, price and turf ID.
+ */
+function shareContent(v: { name: string; area: string; city?: string; formats?: string[]; hourlyFrom: number; rating?: number; reviewCount?: number; shareUrl?: string | null }) {
+  const place = [v.area, v.city].filter(Boolean).join(', ');
+  const lines = [
+    `⚽ ${v.name}`,
+    `📍 ${place}`,
+    [v.formats?.length ? v.formats.join(' / ') : null, `from ${formatTaka(v.hourlyFrom)}/hr`, v.rating && v.reviewCount ? `★ ${v.rating.toFixed(1)}` : null]
+      .filter(Boolean)
+      .join(' · '),
+    '',
+    v.shareUrl ? `Book it on TurfSides 👉 ${v.shareUrl}` : 'Book it on TurfSides.',
+  ];
+  // The link only in the message (passing it separately as well shows it twice in WhatsApp on iPhone).
+  return { message: lines.join('\n'), title: v.name };
+}
+
+/** "Turf ID TS-5356" with one-tap copy (owners and support quote it). */
+function TurfId({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = () => {
+    Clipboard.setStringAsync(value)
+      .then(() => {
+        haptic.success();
+        setCopied(true);
+      })
+      .catch(() => {});
+  };
+  return (
+    <View style={styles.metaRow}>
+      <Hash size={16} color={colors.textMuted} strokeWidth={1.7} />
+      <Text variant="body" color={colors.textMuted} style={styles.address} numberOfLines={1}>
+        Turf ID{'  '}
+        <Text variant="bodyStrong" color={colors.text} selectable>
+          {value}
+        </Text>
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={copied ? 'Turf ID copied' : `Copy turf ID ${value}`}
+        onPress={copy}
+        hitSlop={10}
+        style={[styles.copyPill, copied && styles.copyPillDone]}>
+        {copied ? <Check size={14} color={colors.limeText} strokeWidth={2.6} /> : <Copy size={14} color={colors.ink} strokeWidth={2} />}
+        <Text variant="caption" color={copied ? colors.limeText : colors.ink} style={styles.copyText}>
+          {copied ? 'Copied' : 'Copy'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = createStyles(() => ({
   placeholderCard: {
     borderRadius: radius.xl,
@@ -1070,6 +1132,19 @@ const styles = createStyles(() => ({
   address: { fontSize: 13.5, lineHeight: 18 },
   dateNum: { fontSize: 16, lineHeight: 20 },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: space[2] },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 26,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  copyPillDone: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
+  copyText: { fontFamily: font.semibold },
 
   strip: { flexDirection: 'row', paddingVertical: space[4] },
   // equal columns, equal inner padding: long labels wrap instead of touching the dividers

@@ -32,7 +32,7 @@ import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, refLabel, shareUrl, summary } from './services/venues';
-import { PAGE_CSP, turfPage, venueByCode } from './services/turf-link';
+import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -406,6 +406,18 @@ export async function buildApp() {
     const v = await venueByCode((req.params as { code: string }).code);
     if (!v) throw new ApiError('not_found', 'This turf link isn’t active.');
     return { id: v.id, name: v.name, ref: refLabel(v.ref_no), shortCode: v.short_code, shareUrl: shareUrl(v.short_code) };
+  });
+  // The share card (link previews): a 1200×630 JPEG of the turf. Versioned URL, so cache it long.
+  app.get('/t/:code/card.jpg', async (req, reply) => {
+    const v = await venueByCode((req.params as { code: string }).code);
+    if (!v) return reply.redirect(`${config.PUBLIC_URL.replace(/\/+$/, '')}/static/brand/og-default.png`);
+    try {
+      const jpg = await turfCard(v);
+      return reply.header('Cache-Control', 'public, max-age=604800, immutable').type('image/jpeg').send(jpg);
+    } catch (e) {
+      req.log.warn({ err: e }, 'share card failed');
+      return reply.redirect(`${config.PUBLIC_URL.replace(/\/+$/, '')}/static/brand/og-default.png`);
+    }
   });
   app.get('/t/:code', async (req, reply) => {
     const code = (req.params as { code: string }).code;
