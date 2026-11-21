@@ -249,7 +249,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
                 </View>
                 <Text variant="label" color={colors.textMuted} numberOfLines={1}>
                   {p.teamName
-                    ? `Captain ${p.name} · ${p.teamSize ?? '?'} players · ${levelLabel(p.level)}`
+                    ? `Captain ${p.name} · ${levelLabel(p.level)}`
                     : `${positionLabel(p.position)} · ${levelLabel(p.level)}`}
                 </Text>
                 <Text variant="caption" color={colors.textMuted}>
@@ -297,7 +297,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
                   </Text>
                   <Text variant="label" color={colors.textMuted} numberOfLines={1}>
                     {p.teamName
-                      ? `Captain ${p.name} · ${p.teamSize ?? '?'} players`
+                      ? `Captain ${p.name}`
                       : `${positionLabel(p.position)} · ${levelLabel(p.level)}`}
                   </Text>
                 </View>

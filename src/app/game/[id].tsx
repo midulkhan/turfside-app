@@ -217,7 +217,7 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
             </View>
             <TeamSide
               name={m.opponent?.teamName ?? (m.my === 'paid' ? 'Your team' : 'Your team?')}
-              caption={m.opponent ? `${m.opponent.size ?? Math.floor(m.playersTotal / 2)} players` : 'Waiting for a challenger'}
+              caption={m.opponent ? 'Confirmed' : 'Waiting for a challenger'}
               muted={!m.opponent}
             />
           </Card>

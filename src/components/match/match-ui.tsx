@@ -286,11 +286,10 @@ export function JoinSheet({ match, spots = 1, onClose }: { match: Match | null; 
   return <PlayerJoinSheet match={match} spots={spots} onClose={onClose} />;
 }
 
-/** Challenge an opponent post: your team's name, size and level. Your team pays only if accepted. */
+/** Challenge an opponent post: your team's name and level (a full side). Your team pays only if accepted. */
 function ChallengeSheet({ match, visible, onClose }: { match: Match; visible: boolean; onClose: () => void }) {
   const side = Math.floor(match.playersTotal / 2);
   const [teamName, setTeamName] = useState('');
-  const [size, setSize] = useState(side);
   const [level, setLevel] = useState<MatchLevel>(match.level);
   const [sharePhone, setSharePhone] = useState(false);
   const number = useNumberChoice();
@@ -299,7 +298,6 @@ function ChallengeSheet({ match, visible, onClose }: { match: Match; visible: bo
   if (visible !== wasOpen) {
     setWasOpen(visible);
     if (visible) {
-      setSize(side);
       setLevel(match.level);
       setSharePhone(false);
       number.reset();
@@ -310,7 +308,7 @@ function ChallengeSheet({ match, visible, onClose }: { match: Match; visible: bo
   const send = () => {
     if (!canSend) return;
     join.mutate(
-      { id: match.id, position: 'any', level, spots: 1, teamName: teamName.trim(), teamSize: size, contactPhone: number.value },
+      { id: match.id, position: 'any', level, spots: 1, teamName: teamName.trim(), teamSize: side, contactPhone: number.value },
       {
         onSuccess: () => {
           haptic.success();
@@ -333,19 +331,6 @@ function ChallengeSheet({ match, visible, onClose }: { match: Match; visible: bo
           </Text>
         </View>
         <Input label="Your team name" value={teamName} onChangeText={setTeamName} placeholder="E.g. Uttara Kings" maxLength={40} autoCapitalize="words" />
-        <View style={styles.stepRow}>
-          <View style={styles.flex}>
-            <Text variant="labelStrong">Players in your team</Text>
-            <Text variant="caption" color={colors.textMuted}>
-              Up to {side} for {match.format}
-            </Text>
-          </View>
-          <IconButton icon={Minus} label="Fewer players" variant="light" onPress={() => setSize((n) => Math.max(1, n - 1))} />
-          <Text variant="number" style={styles.stepValue}>
-            {size}
-          </Text>
-          <IconButton icon={Plus} label="More players" variant="light" onPress={() => setSize((n) => Math.min(side, n + 1))} />
-        </View>
         <Text variant="labelStrong">Your team’s level</Text>
         <View style={styles.choices}>
           {LEVELS.map((l) => (
