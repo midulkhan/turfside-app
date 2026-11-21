@@ -78,6 +78,29 @@ d('find an opponent', () => {
     expect(players).not.toContain(matchId);
   });
 
+  it('each request gets a turfsides.com share link with a page and a preview card', async () => {
+    const m = (await call('GET', `/v1/matches/${matchId}`, undefined, capA.accessToken)).json;
+    expect(m.shortCode).toMatch(/^[A-HJ-NP-Z2-9]{7}$/);
+    expect(m.shareUrl).toMatch(new RegExp(`/${m.shortCode}$`));
+    // The app resolves the code (any case) to the request; turf codes still resolve to turfs.
+    expect((await call('GET', `/v1/links/${m.shortCode.toLowerCase()}`)).json).toEqual({ kind: 'match', id: matchId });
+    const turf = (await call('GET', '/v1/venues/v_kickoff_uttara')).json;
+    expect((await call('GET', `/v1/links/${turf.shortCode}`)).json).toEqual({ kind: 'turf', id: 'v_kickoff_uttara' });
+    expect((await call('GET', '/v1/links/ZZZZZZZ')).status).toBe(404);
+    // The page people without the app see, with Open Graph tags for WhatsApp and others.
+    const page = await fetch(`${API}/t/${m.shortCode}`);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('Badda FC vs ?');
+    expect(html).toContain('Opponent wanted');
+    expect(html).toContain(`turfsides://t/${m.shortCode}`);
+    expect(html).not.toContain('Host Hasan'); // no personal details on the public page
+    const img = /<meta property="og:image" content="([^"]+)"/.exec(html)![1].replace(/^https?:\/\/[^/]+/, API!);
+    const card = await fetch(img);
+    expect(card.headers.get('content-type')).toBe('image/jpeg');
+    expect((await card.arrayBuffer()).byteLength).toBeGreaterThan(20_000);
+  });
+
   it('captains challenge with their team; the host accepts one; that captain pays; the game is set', async () => {
     // A challenge needs the team's name and a size that fits one side.
     expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true, teamSize: 5 }, capA.accessToken)).status).toBe(400);

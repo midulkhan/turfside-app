@@ -33,6 +33,7 @@ import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowCached, haversineKm, refLabel, searchMatch, shareUrl, summary } from './services/venues';
 import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
+import { matchCard, matchPage } from './services/match-link';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -410,11 +411,22 @@ export async function buildApp() {
     return { id: v.id, name: v.name, ref: refLabel(v.ref_no), shortCode: v.short_code, shareUrl: shareUrl(v.short_code) };
   });
   // The share card (link previews): a 1200×630 JPEG of the turf. Versioned URL, so cache it long.
+  // Any share code: a turf or a player/opponent request (one shared pool of codes).
+  app.get('/v1/links/:code', { preHandler: optionalUser }, async (req) => {
+    const code = (req.params as { code: string }).code;
+    const v = await venueByCode(code);
+    if (v) return { kind: 'turf', id: v.id };
+    const m = await matches.matchByCode(code);
+    if (m) return { kind: 'match', id: m.id };
+    throw new ApiError('not_found', 'This link isn’t active.');
+  });
   app.get('/t/:code/card.jpg', async (req, reply) => {
-    const v = await venueByCode((req.params as { code: string }).code);
-    if (!v) return reply.redirect(`${config.PUBLIC_URL.replace(/\/+$/, '')}/static/brand/og-default.png`);
+    const code = (req.params as { code: string }).code;
+    const v = await venueByCode(code);
+    const m = v ? null : await matches.matchByCode(code);
+    if (!v && !m) return reply.redirect(`${config.PUBLIC_URL.replace(/\/+$/, '')}/static/brand/og-default.png`);
     try {
-      const jpg = await turfCard(v);
+      const jpg = v ? await turfCard(v) : await matchCard(m!);
       return reply.header('Cache-Control', 'public, max-age=604800, immutable').type('image/jpeg').send(jpg);
     } catch (e) {
       req.log.warn({ err: e }, 'share card failed');
@@ -423,7 +435,9 @@ export async function buildApp() {
   });
   app.get('/t/:code', async (req, reply) => {
     const code = (req.params as { code: string }).code;
-    const page = turfPage(await venueByCode(code), code);
+    const v = await venueByCode(code);
+    const m = v ? null : await matches.matchByCode(code);
+    const page = m ? matchPage(m) : turfPage(v, code);
     reply.code(page.status).header('Content-Security-Policy', PAGE_CSP).header('Cache-Control', 'public, max-age=300').type('text/html; charset=utf-8');
     return page.html;
   });

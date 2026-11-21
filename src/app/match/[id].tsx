@@ -5,7 +5,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Share, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
-import { SquadBar, Tag, VersusCard, VsTag, clockLabel, isOpponent, matchTitle, levelLabel, positionLabel, versusLabel, whenLabel } from '@/components/match/match-ui';
+import { SquadBar, Tag, VersusCard, VsTag, clockLabel, isOpponent, matchTitle, levelLabel, positionLabel, shareMatchContent, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -116,12 +116,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
   // The team that's paid (or paying now) to play you.
   const opponentTeam = opp ? m.squad[0] : undefined;
 
-  const share = () =>
-    Share.share({
-      message: opp
-        ? `${m.teamName ?? 'My team'} is looking for an opponent: ${m.venue.name}, ${whenLabel(m)} (${versusLabel(m.format)}). Your team pays ${formatTaka(m.share)}. Open TurfSides → Join a squad → Opponents.`
-        : `Join my game: ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${m.spotsLeft} spot${m.spotsLeft === 1 ? '' : 's'} left, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
-    });
+  const share = () => Share.share(shareMatchContent(m, true));
 
   const answer = (p: MatchPerson, accept: boolean) => {
     haptic.select();

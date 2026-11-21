@@ -74,8 +74,8 @@ export async function turfCard(v: Linked) {
   return jpg;
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const PLAY = 'https://play.google.com/store/apps/details?id=app.turfsides';
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+export const PLAY = 'https://play.google.com/store/apps/details?id=app.turfsides';
 
 /** Content-Security-Policy for the page: our inline styles/script, images from anywhere https, app links. */
 export const PAGE_CSP =
@@ -86,19 +86,47 @@ const taka = (poisha: number) => Math.round(poisha / 100).toLocaleString('en-IN'
 export const fromLabel = (p: ReturnType<typeof startingPrice>) =>
   p.per === 'session' && p.minutes !== 60 ? `From ৳${taka(p.amount)} / ${p.minutes} min` : `From ৳${taka(p.amount)}/hr`;
 
-export function turfPage(v: (Row & { from: string }) | null, code: string) {
+/**
+ * The "Open in the TurfSides app" button, store links and the small script, shared by the turf and
+ * match pages. Android gets an intent link (opens the app, or the store if it isn't installed);
+ * in-app browsers (Facebook, Messenger…) get a hint, as they often refuse to open apps.
+ */
+export function openInApp(code: string, note: string) {
   const scheme = config.APP_SCHEME;
   const android = config.ANDROID_STORE_URL ?? null;
   const ios = config.IOS_STORE_URL ?? null;
+  const deep = `${scheme}://t/${code}`;
+  const intent = `intent://t/${code}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=app.turfsides;S.browser_fallback_url=${encodeURIComponent(android ?? PLAY)};end`;
+  const stores = [
+    android ? `<a class="store" href="${esc(android)}">Get it on Google Play</a>` : `<span class="store off">Google Play · coming soon</span>`,
+    ios ? `<a class="store" href="${esc(ios)}">Download on the App Store</a>` : `<span class="store off">App Store · coming soon</span>`,
+  ].join('');
+  return `<a class="btn" id="open" href="${esc(deep)}" data-intent="${esc(intent)}">Open in the TurfSides app</a>
+    <p class="note" id="note">${esc(note)}</p>
+    <div class="stores">${stores}</div>
+<script>
+  (function () {
+    var a = document.getElementById('open');
+    var ua = navigator.userAgent;
+    if (/Android/i.test(ua)) a.href = a.getAttribute('data-intent');
+    if (/FBAN|FBAV|FB_IAB|Instagram|Messenger|Line[/]|; wv[)]/i.test(ua)) {
+      document.getElementById('note').textContent = "If the app doesn't open, tap ⋮ and choose Open in browser, then tap the button again.";
+    }
+  })();
+</script>`;
+}
+
+export function turfPage(v: (Row & { from: string }) | null, code: string) {
+  void code;
   const site = config.SITE_URL.replace(/\/+$/, '');
 
   if (!v) {
     return {
       status: 404,
       html: shell({
-        title: 'Turf not found · TurfSides',
+        title: 'Link not found · TurfSides',
         og: { title: 'TurfSides', description: 'Book a turf. Find your squad.', image: `${config.PUBLIC_URL}/static/brand/og-default.png`, url: site },
-        body: `<main class="card empty"><h1>This turf link isn’t active</h1><p>The turf may have been removed or the link mistyped.</p>
+        body: `<main class="card empty"><h1>This link isn’t active</h1><p>The turf or game may have been removed, or the link was mistyped.</p>
 <a class="btn" href="${site}">Go to TurfSides</a></main>`,
       }),
     };
@@ -112,14 +140,6 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
     v.formats?.length ? v.formats.join(' · ') : null,
     v.from,
   ].filter(Boolean) as string[];
-  const deep = `${scheme}://t/${v.short_code}`;
-  // Android: an intent link opens the app if it's installed, otherwise the store page.
-  const intent = `intent://t/${v.short_code}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=app.turfsides;S.browser_fallback_url=${encodeURIComponent(android ?? PLAY)};end`;
-
-  const stores = [
-    android ? `<a class="store" href="${esc(android)}">Get it on Google Play</a>` : `<span class="store off">Google Play · coming soon</span>`,
-    ios ? `<a class="store" href="${esc(ios)}">Download on the App Store</a>` : `<span class="store off">App Store · coming soon</span>`,
-  ].join('');
 
   return {
     status: 200,
@@ -140,28 +160,14 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
     <h1>${esc(v.name)}</h1>
     <p class="place">${esc(place)}</p>
     <p class="facts">${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</p>
-    <a class="btn" id="open" href="${esc(deep)}" data-intent="${esc(intent)}">Open in the TurfSides app</a>
-    <p class="note" id="note">See times, prices and book in the app.</p>
-    <div class="stores">${stores}</div>
+    ${openInApp(v.short_code, 'See times, prices and book in the app.')}
   </div>
-</main>
-<script>
-  // Android browsers: use the intent link, which falls back to the store if the app isn't installed.
-  (function () {
-    var a = document.getElementById('open');
-    var ua = navigator.userAgent;
-    if (/Android/i.test(ua)) a.href = a.getAttribute('data-intent');
-    // Facebook, Instagram, Messenger and other in-app browsers often refuse to open apps.
-    if (/FBAN|FBAV|FB_IAB|Instagram|Messenger|Line[/]|; wv[)]/i.test(ua)) {
-      document.getElementById('note').textContent = "If the app doesn't open, tap ⋮ and choose Open in browser, then tap the button again.";
-    }
-  })();
-</script>`,
+</main>`,
     }),
   };
 }
 
-function shell(o: { title: string; og: { title: string; description: string; image: string; url: string; imageAlt?: string; card?: boolean }; body: string }) {
+export function shell(o: { title: string; og: { title: string; description: string; image: string; url: string; imageAlt?: string; card?: boolean }; body: string }) {
   // The generated card is a 1200×630 JPEG; saying so lets apps lay out the big preview straight away.
   const card = o.og.card
     ? `<meta property="og:image:secure_url" content="${esc(o.og.image)}"><meta property="og:image:type" content="image/jpeg">

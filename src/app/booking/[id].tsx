@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Share2, Ticket, X } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Ticket, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
+import { Linking, Pressable, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,18 +81,13 @@ export default function BookingTicket() {
     );
   }
 
-  const share = () =>
-    b &&
-    Share.share({
-      message: `Game on! ${b.venue.name}, ${weekday(b.day)} ${dayOfMonth(b.day)} · ${formatRange(b.start, b.end)}. Booking ${b.code} on TurfSides.`,
-    });
   const directions = () =>
     b && Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${b.venue.latitude},${b.venue.longitude}`);
 
   return (
     <View style={styles.root}>
       <StickyHeader progress={scrolled.progress}>
-        <ScreenHeader title="Your ticket" leftIcon={X} onBack={close} right={<IconButton icon={Share2} label="Share booking" onPress={share} />} />
+        <ScreenHeader title="Your ticket" leftIcon={X} onBack={close} />
       </StickyHeader>
       <ScrollView
         onScroll={scrolled.onScroll}

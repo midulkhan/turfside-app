@@ -170,6 +170,8 @@ export type Match = {
   format: string;
   status: 'open' | 'paused' | 'full' | 'closed' | 'cancelled';
   venue: { id: string; name: string; area: string; photo: string | null; city?: string; latitude?: number | null; longitude?: number | null };
+  /** turfsides.com/K7QM2XP: this request's share link (older servers: absent). */
+  shareUrl?: string | null;
   day: DayKey;
   start: number;
   end: number;

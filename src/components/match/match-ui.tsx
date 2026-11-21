@@ -61,6 +61,26 @@ export const versusLabel = (format: string) => {
   return n ? `${n} v ${n}` : format;
 };
 
+/**
+ * The message to share a player/opponent request: what it is, where, when, the price and its
+ * turfsides.com link (which opens it in the app, with a preview card in WhatsApp and others).
+ * `host`: the organiser sharing their own post.
+ */
+export function shareMatchContent(m: Match, host = false) {
+  const opp = isOpponent(m);
+  const team = m.teamName ?? (host ? 'My team' : 'A team');
+  const lines = [
+    opp ? `⚔️ ${team} is looking for an opponent` : `⚽ ${host ? 'Join my game' : 'Join'}: ${matchTitle(m)}`,
+    `📍 ${[m.venue.name, m.venue.area].filter(Boolean).join(', ')}`,
+    `🗓 ${formatDay(m.day as DayKey, { year: false })} · ${formatRange(m.start, m.end)} · ${versusLabel(m.format)}`,
+    opp ? `Your team pays ${formatTaka(m.share)}` : `${spotsLabel(m.spotsLeft)} · ${formatTaka(m.share)} per player`,
+  ];
+  const tail = m.shareUrl
+    ? `${opp ? 'Challenge them' : 'Join'} on TurfSides 👉 ${m.shareUrl}`
+    : `Open TurfSides → ${opp ? 'Join a squad → Opponents' : 'Find players'}`;
+  return { message: [...lines, '', tail].join('\n') };
+}
+
 /** Small grey pill (format, level). */
 export function Tag({ label }: { label: string }) {
   return (
@@ -155,7 +175,7 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
         />
       );
     case 'paid':
-      return state(opp ? 'Game on: your team plays' : "You're in the squad", true);
+      return state(opp ? 'Game On' : "You're in the squad", true);
     default: {
       if (full) return state(opp ? 'An opponent was found' : 'This game is full');
       if (m.status !== 'open') return state(opp ? 'Challenges are paused' : 'Requests are paused');

@@ -28,6 +28,12 @@ export type CardInput = {
   ref: string | null;
   /** The turf's photo (absolute URL), or null for the plain brand background. */
   photo: string | null;
+  /** Optional overrides (match cards): the lime line above the name, the top-right label, a plain
+   *  pill shown instead of the rating, and the call to action. */
+  eyebrow?: string;
+  badge?: string | null;
+  chip?: string | null;
+  cta?: string;
 };
 
 // public/og next to dist/ when bundled; two levels up from src/lib when run from source.
@@ -101,7 +107,9 @@ const INK = '#0E1213';
 function card(c: CardInput, photo: string | null): El {
   // The ৳ sign comes from its own font; everything else from Geist.
   const price = c.price.split('৳').flatMap((part, i) => [...(i ? [h('span', { fontFamily: 'Taka' }, '৳')] : []), ...(part ? [h('span', { whiteSpace: 'pre' }, part)] : [])]);
-  const eyebrow = ['Football', ...(c.formats.length ? [c.formats.join(' / ')] : [])].join(' · ').toUpperCase();
+  const eyebrow = (c.eyebrow ?? ['Football', ...(c.formats.length ? [c.formats.join(' / ')] : [])].join(' · ')).toUpperCase();
+  const badge = c.badge !== undefined ? c.badge : c.ref ? `Turf ID ${c.ref}` : null;
+  const pill = { alignItems: 'center', fontSize: 26, fontWeight: 700, padding: '12px 22px', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)' };
   return h(
     'div',
     { width: CARD_W, height: CARD_H, position: 'relative', backgroundColor: INK, fontFamily: 'Geist', color: '#FFFFFF' },
@@ -124,11 +132,11 @@ function card(c: CardInput, photo: string | null): El {
           h('div', { width: 22, height: 22, borderRadius: 11, backgroundColor: LIME }),
           h('div', { fontSize: 34, fontWeight: 700, letterSpacing: -0.5 }, 'TurfSides'),
         ]),
-        c.ref
+        badge
           ? h(
               'div',
               { fontSize: 22, fontWeight: 500, padding: '10px 18px', borderRadius: 999, backgroundColor: 'rgba(14,18,19,0.55)', border: '1px solid rgba(255,255,255,0.22)' },
-              `Turf ID ${c.ref}`,
+              badge,
             )
           : h('div', {}),
       ]),
@@ -139,15 +147,13 @@ function card(c: CardInput, photo: string | null): El {
         h('div', { fontSize: 28, fontWeight: 500, color: 'rgba(255,255,255,0.82)', marginTop: 12 }, c.place),
         h('div', { marginTop: 28, alignItems: 'center', gap: 14 }, [
           h('div', { alignItems: 'center', fontSize: 28, fontWeight: 700, color: INK, backgroundColor: LIME, padding: '12px 24px', borderRadius: 999 }, price),
-          c.rating > 0
-            ? h(
-                'div',
-                { alignItems: 'center', fontSize: 26, fontWeight: 700, padding: '12px 22px', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)' },
-                [star(), h('span', { marginLeft: 10 }, `${c.rating.toFixed(1)}${c.reviews ? `  (${c.reviews})` : ''}`)],
-              )
-            : h('div', {}),
+          c.chip
+            ? h('div', pill, c.chip)
+            : c.rating > 0
+              ? h('div', pill, [star(), h('span', { marginLeft: 10 }, `${c.rating.toFixed(1)}${c.reviews ? `  (${c.reviews})` : ''}`)])
+              : h('div', {}),
           h('div', { flex: 1 }),
-          h('div', { fontSize: 24, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }, 'Book on TurfSides →'),
+          h('div', { fontSize: 24, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }, c.cta ?? 'Book on TurfSides →'),
         ]),
       ]),
     ],

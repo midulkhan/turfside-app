@@ -104,6 +104,10 @@ export const getVenue = (id: string, signal?: AbortSignal) =>
 export const getVenueByCode = (code: string, signal?: AbortSignal) =>
   request<{ id: string; name: string }>('GET', `/v1/venues/code/${enc(code)}`, { auth: 'optional', signal });
 
+/** Any share link's code: a turf or a player/opponent request. */
+export const getLink = (code: string, signal?: AbortSignal) =>
+  request<{ kind: 'turf' | 'match'; id: string }>('GET', `/v1/links/${enc(code)}`, { auth: 'optional', signal });
+
 /**
  * `after`: the database transaction a realtime event reported. The server answers from its
  * cache only if that cache already includes the change, otherwise straight from the database.

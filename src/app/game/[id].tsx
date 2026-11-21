@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PinDrop } from '@/components/icons/pin-drop';
 import { ContactRow } from '@/components/match/contact-row';
 import { EntryPass } from '@/components/ticket/entry-pass';
-import { JoinSheet, MatchAction, SquadBar, Tag, VersusCard, VsTag, isOpponent, matchTitle, levelLabel, spotsLabel, statusPill, versusLabel, whenLabel } from '@/components/match/match-ui';
+import { JoinSheet, MatchAction, SquadBar, Tag, VersusCard, VsTag, isOpponent, matchTitle, levelLabel, shareMatchContent, statusPill, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
@@ -54,13 +54,7 @@ export default function GameDetails() {
   const opp = !!m && isOpponent(m);
   const spots = canAsk ? Math.min(Math.max(1, want), m.spotsLeft) : (m?.mySpots ?? 1);
 
-  const share = () =>
-    m &&
-    Share.share({
-      message: opp
-        ? `${m.teamName ?? 'A team'} is looking for an opponent at ${m.venue.name}, ${whenLabel(m)} (${versusLabel(m.format)}). Your team pays ${formatTaka(m.share)}. Open TurfSides → Join a squad → Opponents.`
-        : `Join ${m.title} at ${m.venue.name}, ${whenLabel(m)}. ${spotsLabel(m.spotsLeft)}, ${formatTaka(m.share)} per player. Open TurfSides → Find players.`,
-    });
+  const share = () => m && Share.share(shareMatchContent(m));
 
   return (
     <View style={styles.root}>

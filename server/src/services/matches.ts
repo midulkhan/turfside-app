@@ -5,7 +5,7 @@ import { ApiError } from '../errors';
 import { publicUrl, storageEnabled } from '../lib/storage';
 import { instant } from '../lib/time';
 
-import { getVenueRow, photoUrl } from './venues';
+import { getVenueRow, photoUrl, SHORT_CODE, shareUrl } from './venues';
 
 /**
  * Find players.
@@ -83,6 +83,7 @@ type Row = {
   /** The opponent team that paid (opponent posts only). */
   opp_team: string | null;
   opp_size: number | null;
+  short_code: string;
 };
 
 /** Shared select: a match with its live counts and the viewer's own status ($1 = viewer id or null). */
@@ -99,7 +100,8 @@ const SELECT = `
          o.name organiser_name, o.avatar_key organiser_avatar,
          r.type, r.team_name, r.opponent_percent,
          (select m.team_name from player_request_members m where m.request_id = r.id and m.status = 'paid' limit 1) opp_team,
-         (select m.team_size from player_request_members m where m.request_id = r.id and m.status = 'paid' limit 1) opp_size
+         (select m.team_size from player_request_members m where m.request_id = r.id and m.status = 'paid' limit 1) opp_size,
+         r.short_code
     from player_requests r
     join bookings b on b.id = r.booking_id
     join users o on o.id = r.user_id
@@ -149,6 +151,9 @@ async function shape(r: Row, viewerId: string | null) {
     reservedUntil: r.reserved_until ? new Date(r.reserved_until).getTime() : null,
     /** 'players': open spots for individuals. 'opponent': looking for one whole team. */
     type: r.type,
+    /** turfsides.com/K7QM2XP: opens this request in the app (or its page with a preview). */
+    shortCode: r.short_code,
+    shareUrl: shareUrl(r.short_code),
     ...(opponent
       ? {
           /** The host's team name. */
@@ -212,6 +217,14 @@ async function loadMatch(id: string, viewerId: string | null) {
   const r = await one<Row>(`${SELECT} where r.id = $2`, [viewerId, id]);
   if (!r || r.status === 'cancelled') throw new ApiError('not_found', 'This match is no longer available.');
   return r;
+}
+
+/** The request behind a share code (any viewer, never cancelled ones). Null when there's none. */
+export async function matchByCode(raw: string, viewerId: string | null = null) {
+  const code = raw.trim().toUpperCase();
+  if (!SHORT_CODE.test(code)) return null;
+  const r = await one<Row>(`${SELECT} where r.short_code = $2 and r.status <> 'cancelled'`, [viewerId, code]);
+  return r ? shape(r, viewerId) : null;
 }
 
 export async function getMatch(viewerId: string | null, id: string) {

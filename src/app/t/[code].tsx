@@ -17,7 +17,8 @@ import { colors, gutter, space } from '@/theme/tokens';
 const CODE = /^[A-HJ-NP-Z2-9]{7}$/;
 
 /**
- * A turf share link (turfsides.com/FDJV346 → /t/FDJV346): looks the code up and opens the turf.
+ * A share link (turfsides.com/FDJV346 → /t/FDJV346): looks the code up and opens the turf, or the
+ * player/opponent request, it belongs to.
  * Signed out: keeps the code while they sign in or sign up, then the start screen brings them here.
  */
 export default function TurfLink() {
@@ -26,8 +27,8 @@ export default function TurfLink() {
   const { user } = useSession();
   const valid = CODE.test(code);
   const look = useQuery({
-    queryKey: ['venue-code', code],
-    queryFn: ({ signal }) => api.getVenueByCode(code, signal),
+    queryKey: ['link', code],
+    queryFn: ({ signal }) => api.getLink(code, signal),
     enabled: !!user && valid,
     retry: (n, e) => !(e instanceof ApiError && e.code === 'not_found') && n < 2,
     staleTime: 60_000,
@@ -36,11 +37,12 @@ export default function TurfLink() {
 
   useEffect(() => {
     if (!look.data) return;
+    const to = look.data.kind === 'match' ? (`/game/${look.data.id}` as const) : (`/venue/${look.data.id}` as const);
     // Opened from a link: put Explore underneath so back (button or swipe) lands somewhere useful.
-    if (router.canGoBack()) router.replace(`/venue/${look.data.id}`);
+    if (router.canGoBack()) router.replace(to);
     else {
       router.replace('/explore');
-      router.push(`/venue/${look.data.id}`);
+      router.push(to);
     }
   }, [look.data]);
 
@@ -61,8 +63,8 @@ export default function TurfLink() {
         {notFound ? (
           <EmptyState
             icon={MapPinOff}
-            title="This turf link isn’t active"
-            body="The turf may have been removed, or the link was mistyped."
+            title="This link isn’t active"
+            body="The turf or game may have been removed, or the link was mistyped."
             action="Explore turfs"
             onAction={() => router.replace('/explore')}
           />
@@ -72,7 +74,7 @@ export default function TurfLink() {
           <View style={{ alignItems: 'center', gap: space[3] }}>
             <ActivityIndicator color={colors.text} />
             <Text variant="caption" color={colors.textMuted}>
-              Opening turf…
+              Opening…
             </Text>
           </View>
         )}
