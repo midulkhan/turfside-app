@@ -1005,12 +1005,13 @@ const DetailsTab = memo(function DetailsTab({ v, onDirections }: { v: VenueDetai
  * turf's own link on its last line. The link (turfsides.com/CODE) carries the preview card: photo,
  * name, area, price and turf ID.
  */
-function shareContent(v: { name: string; area: string; city?: string; formats?: string[]; hourlyFrom: number; rating?: number; reviewCount?: number; shareUrl?: string | null }) {
+function shareContent(v: VenueDetail) {
+  const start = startingPriceOf(v);
   const place = [v.area, v.city].filter(Boolean).join(', ');
   const lines = [
     `⚽ ${v.name}`,
     `📍 ${place}`,
-    [v.formats?.length ? v.formats.join(' / ') : null, `from ${formatTaka(v.hourlyFrom)}/hr`, v.rating && v.reviewCount ? `★ ${v.rating.toFixed(1)}` : null]
+    [v.formats?.length ? v.formats.join(' / ') : null, `from ${formatTaka(start.amount)}/${priceUnit(start)}`, v.rating && v.reviewCount ? `★ ${v.rating.toFixed(1)}` : null]
       .filter(Boolean)
       .join(' · '),
     '',

@@ -21,7 +21,8 @@ export type CardInput = {
   name: string;
   place: string;
   formats: string[];
-  from: number; // taka per hour
+  /** The starting price as the app shows it: "From ৳1,800/hr" or "From ৳2,000 · 2 hr session". */
+  price: string;
   rating: number;
   reviews: number;
   ref: string | null;
@@ -98,7 +99,8 @@ const star = (): El => ({
 const INK = '#0E1213';
 
 function card(c: CardInput, photo: string | null): El {
-  const taka = (n: number) => [h('span', { fontFamily: 'Taka' }, '৳'), h('span', {}, n.toLocaleString('en-IN'))];
+  // The ৳ sign comes from its own font; everything else from Geist.
+  const price = c.price.split('৳').flatMap((part, i) => [...(i ? [h('span', { fontFamily: 'Taka' }, '৳')] : []), ...(part ? [h('span', { whiteSpace: 'pre' }, part)] : [])]);
   const eyebrow = ['Football', ...(c.formats.length ? [c.formats.join(' / ')] : [])].join(' · ').toUpperCase();
   return h(
     'div',
@@ -136,11 +138,7 @@ function card(c: CardInput, photo: string | null): El {
         h('div', { fontSize: c.name.length > 26 ? 56 : 68, fontWeight: 700, lineHeight: 1.05, marginTop: 14, letterSpacing: -1.5 }, c.name),
         h('div', { fontSize: 28, fontWeight: 500, color: 'rgba(255,255,255,0.82)', marginTop: 12 }, c.place),
         h('div', { marginTop: 28, alignItems: 'center', gap: 14 }, [
-          h('div', { alignItems: 'center', fontSize: 28, fontWeight: 700, color: INK, backgroundColor: LIME, padding: '12px 24px', borderRadius: 999 }, [
-            h('span', { marginRight: 8 }, 'From'),
-            ...taka(c.from),
-            h('span', { fontWeight: 500, marginLeft: 4 }, '/hr'),
-          ]),
+          h('div', { alignItems: 'center', fontSize: 28, fontWeight: 700, color: INK, backgroundColor: LIME, padding: '12px 24px', borderRadius: 999 }, price),
           c.rating > 0
             ? h(
                 'div',

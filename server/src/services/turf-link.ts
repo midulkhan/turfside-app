@@ -44,14 +44,14 @@ export async function venueByCode(raw: string) {
   return { ...v, from: row ? fromLabel(startingPrice(row)) : `From ৳${taka(v.hourly)}/hr` };
 }
 
-type Linked = Row & { from: number };
+type Linked = Row & { from: string };
 
 /** What the card shows; its hash goes in the image URL so apps re-fetch when it changes. */
 const cardInput = (v: Linked) => ({
   name: v.name,
   place: [v.area, v.city].filter(Boolean).join(', '),
   formats: v.formats ?? [],
-  from: v.from,
+  price: v.from,
   rating: Number(v.rating) || 0,
   reviews: v.review_count ?? 0,
   ref: refLabel(v.ref_no),
@@ -130,7 +130,7 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
         title: `${v.name} · ${place}`,
         description: `${facts.join(' · ')}. ${refLabel(v.ref_no) ? `Turf ID ${refLabel(v.ref_no)}. ` : ''}See times and book on TurfSides.`,
         image: cardUrl(v),
-        imageAlt: `${v.name}, ${place}. From ৳${from} per hour on TurfSides.`,
+        imageAlt: `${v.name}, ${place}. ${v.from} on TurfSides.`,
         card: true,
         url: shareUrl(v.short_code)!,
       },
