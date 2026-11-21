@@ -55,10 +55,14 @@ d('owner turfs', () => {
     // Edit, then hide.
     const edited = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...demo[0], name: 'Banani Arena Fresh', pricing: { hourly: 2200 } }, o.accessToken);
     expect(edited.json.pricing).toEqual({ hourly: 2200, byWeekday: {}, specialDates: {} });
-    // The very next player read shows the change: turf page and slots, no cache delay.
-    expect((await call('GET', `/v1/venues/${banani.id}`)).json.name).toBe('Banani Arena Fresh');
+    // Saving clears that turf's cache: the very next read shows the change, with a new version.
+    const after = (await call('GET', `/v1/venues/${banani.id}`)).json;
+    expect(after.name).toBe('Banani Arena Fresh');
+    expect(after.version).not.toBe(v.version);
+    expect((await call('GET', `/v1/venues/${banani.id}`)).json.version).toBe(after.version); // cached, not rebuilt
     const fresh = (await call('GET', `/v1/venues/${banani.id}/slots?day=${tomorrow()}`)).json.slots;
     expect(fresh.some((x: Json) => x.price === 220_000)).toBe(true);
+    expect((await call('GET', `/v1/venues/${banani.id}/slots?day=${tomorrow()}`)).json.turfVersion).toBe(after.version);
     expect((await call('DELETE', `/v1/owner/venues/${made[3].id}`, undefined, o.accessToken)).status).toBe(200);
     expect((await call('GET', `/v1/venues/${made[3].id}`)).status).toBe(404);
   });

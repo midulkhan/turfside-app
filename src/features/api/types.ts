@@ -30,6 +30,8 @@ export type VenueSummary = {
 };
 
 export type VenueDetail = VenueSummary & {
+  /** When the server built this copy; changes whenever the owner saves the turf. */
+  version?: number;
   address: string;
   latitude: number;
   longitude: number;
@@ -70,7 +72,8 @@ export type SlotStatus = 'available' | 'booked' | 'blocked' | 'held' | 'mine';
 /** `opponent`: the organiser is looking for a whole opposing team (not single players). */
 export type SlotSquad = { id: string; spotsLeft: number; host?: boolean; opponent?: boolean };
 export type Slot = { id: string; start: number; end: number; price: Poisha; status: SlotStatus; holdId?: string; squad?: SlotSquad };
-export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number };
+/** `turfVersion`: the turf's current details version (see VenueDetail.version). */
+export type DaySlots = { venueId: string; day: DayKey; slots: Slot[]; fetchedAt: number; turfVersion?: number };
 
 export type QuoteLine = { label: string; detail?: string; amount: Poisha };
 export type Hold = {

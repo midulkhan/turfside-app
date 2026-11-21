@@ -31,7 +31,7 @@ import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
-import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowFresh, haversineKm, refLabel, shareUrl, summary } from './services/venues';
+import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowCached, haversineKm, refLabel, shareUrl, summary } from './services/venues';
 import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
 
 declare module 'fastify' {
@@ -428,9 +428,9 @@ export async function buildApp() {
 
   app.get('/v1/venues/:id', { preHandler: optionalUser }, async (req) => {
     const { id } = req.params as { id: string };
-    const v = await getVenueRowFresh(id);
+    const v = await getVenueRowCached(id);
     const saved = req.user ? !!(await one('select 1 from saved_venues where user_id = $1 and venue_id = $2', [req.user.userId, id])) : false;
-    return detail(v, saved);
+    return { ...detail(v, saved), version: v.version };
   });
 
   app.get('/v1/venues/:id/slots', { preHandler: optionalUser }, async (req, reply) => {
@@ -444,13 +444,14 @@ export async function buildApp() {
       }),
       req.query,
     );
-    const venue = await getVenueRowFresh(id);
+    const venue = await getVenueRowCached(id);
     reply.header('Cache-Control', 'no-store');
     // `fresh` / `v` are accepted from older apps but no longer matter: every answer is live.
     void fresh;
     void since;
     const slots = await daySlots(venue, day, req.user?.userId);
-    return { venueId: id, day, slots, fetchedAt: Date.now() };
+    // turfVersion: the app re-fetches the turf's details only when this differs from its copy.
+    return { venueId: id, day, slots, fetchedAt: Date.now(), turfVersion: venue.version };
   });
 
   // Public reviews, plus (signed in) whether you can review this turf and your own review.

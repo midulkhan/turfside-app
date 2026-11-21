@@ -10,8 +10,8 @@ import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, Explore
 
 /**
  * Query keys + cache policy in one place.
- * - Turf info: persisted to disk so it shows instantly, then refreshed whenever the turf is
- *   opened (staleTime 10 s), so owner changes from the dashboard show up straight away.
+ * - Turf info: persisted to disk and kept. It is re-fetched only when the server says it changed
+ *   (an owner saved it): the live slots carry the turf's version, and realtime signals a save.
  * - Slot availability is never cached: always loaded live (see useSlots).
  */
 export const qk = {
@@ -48,7 +48,7 @@ export function useExplore(p: ExploreParams, enabled = true) {
 }
 
 export function useVenue(id: string) {
-  return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: 10_000 });
+  return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: Infinity });
 }
 
 /**
@@ -57,10 +57,25 @@ export function useVenue(id: string) {
  * change; polling is a safety net (fast if realtime is down).
  * The previous day's grid is kept only as a layout placeholder: it renders as loading, never as status.
  */
+/**
+ * The owner saved this turf since our copy was made: re-fetch its details once. Called with
+ * every slots answer (they are always live), so a change shows the next time the turf is
+ * opened, without asking for the details on every visit.
+ */
+export function syncTurfVersion(qc: QueryClient, venueId: string, version?: number) {
+  const mine = qc.getQueryData<VenueDetail>(qk.venue(venueId))?.version;
+  if (version != null && mine !== version) void qc.invalidateQueries({ queryKey: qk.venue(venueId), exact: true });
+}
+
 export function useSlots(id: string, day: DayKey, live = false) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: qk.slots(id, day),
-    queryFn: ({ signal }) => api.getSlots(id, day, signal),
+    queryFn: async ({ signal }) => {
+      const d = await api.getSlots(id, day, signal);
+      syncTurfVersion(qc, id, d.turfVersion);
+      return d;
+    },
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: 'always',
@@ -91,7 +106,7 @@ export function markSlots(qc: QueryClient, venueId: string, ids: string[], statu
 
 /** Warm the cache when the user starts pressing a card — the detail screen opens instantly. */
 export function prefetchVenue(qc: QueryClient, v: VenueSummary) {
-  qc.prefetchQuery({ queryKey: qk.venue(v.id), queryFn: ({ signal }) => api.getVenue(v.id, signal), staleTime: 10_000 });
+  qc.prefetchQuery({ queryKey: qk.venue(v.id), queryFn: ({ signal }) => api.getVenue(v.id, signal), staleTime: Infinity });
   if (typeof v.photo === 'string') Image.prefetch(v.photo, 'memory-disk');
 }
 

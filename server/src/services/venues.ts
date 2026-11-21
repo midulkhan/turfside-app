@@ -1,4 +1,4 @@
-import { cacheDel, cacheGet, cacheIncr, cacheSet, l1Del, l1Get, l1Set, sharedReadable, singleflight } from '../cache';
+import { cacheDel, cacheGet, cacheIncr, cacheSet, cached, sharedReadable, singleflight } from '../cache';
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
@@ -123,14 +123,14 @@ export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minute
 // ── Catalog: every published venue, the source for explore, search and turf pages ──────────
 /**
  * One shared copy in Redis (`venues:all`, tagged with `catalog:ver`), one parsed copy per
- * process. A process re-checks the tiny version key at most every 20 s; owner edits bump it, so
- * lists everywhere pick up a change within 20 s and the editing process instantly. The turf page
- * and its slots don't wait for that: they read the one turf fresh (getVenueRowFresh).
+ * process. Each request checks the tiny version key (bursts share one check per second); a save
+ * in the owner dashboard bumps it, so every process drops its copy on the next request.
+ * The turf page and its slots use their own per-turf key instead (getVenueRowCached).
  * Prices that money depends on are never read from here: holds read the venue from Postgres.
  */
 type Catalog = { ver: string; rows: VenueRow[]; byId: Map<string, VenueRow>; checkedAt: number; builtAt: number };
 let catalog: Catalog | null = null;
-const CATALOG_CHECK_MS = 20_000;
+const CATALOG_CHECK_MS = 1_000;
 const CATALOG_TTL_S = 15 * 60;
 
 const build = (ver: string, rows: VenueRow[]): Catalog => ({
@@ -187,30 +187,34 @@ export async function getOwnedVenueRow(ownerId: string, id: string) {
 }
 
 /**
- * The turf page and its slots: this one turf straight from Postgres, so a dashboard change
- * (prices, schedule, photos, pause) shows on the very next open, on every server process.
- * Kept 3 s per process so a burst of requests for one turf is still a single query.
+ * The turf page and its slots: one Redis key per turf (`venue:<id>`), filled from Postgres on
+ * the first request and served from Redis after that. A save in the owner dashboard deletes the
+ * key (invalidateVenue), so the next request rebuilds it once with the new data. Nothing expires
+ * it on a timer; the 24 h TTL only bounds edits made outside the API (e.g. straight in SQL).
  */
-const FRESH_MS = 3_000;
-const freshKey = (id: string) => `venue:fresh:${id}`;
-export async function getVenueRowFresh(id: string) {
-  const hit = l1Get<VenueRow>(freshKey(id));
-  if (hit) return hit;
-  return singleflight(freshKey(id), async () => {
-    const v = await getVenueRowExact(id);
-    l1Set(freshKey(id), v, FRESH_MS);
-    return v;
-  });
-}
+const TURF_TTL_S = 24 * 3600;
+const turfKey = (id: string) => `venue:${id}`;
+/** `version`: when this copy was built. Apps compare it to know their saved turf is out of date. */
+export const getVenueRowCached = (id: string) =>
+  cached(turfKey(id), TURF_TTL_S, async () => ({ ...(await getVenueRowExact(id)), version: Date.now() }));
+
+/** `slot_updates` day that means "this turf's details changed" (not a real booking day). */
+export const TURF_INFO_DAY = '2000-01-01';
 
 /**
- * After any venue edit (details, schedule, prices, photos, listing, pause). Drops the shared
- * Redis copy and bumps the version, so no server process serves the old turf again.
+ * After any save in the owner dashboard (details, schedule, prices, photos, pause, listing),
+ * a new turf, a removed turf or a new review. Deletes that turf's Redis key and the shared
+ * list copy, then tells open apps through realtime that the turf changed so they re-fetch it.
  */
 export async function invalidateVenue(id?: string) {
   catalog = null;
-  if (id) l1Del(freshKey(id));
-  await Promise.all([cacheIncr('catalog:ver'), cacheDel('venues:all')]);
+  await Promise.all([cacheIncr('catalog:ver'), cacheDel('venues:all', ...(id ? [turfKey(id)] : []))]);
+  if (id)
+    await q(
+      `insert into slot_updates(venue_id, day, xid) values ($1, $2, pg_current_xact_id())
+       on conflict (venue_id, day) do update set updated_at = now(), xid = excluded.xid`,
+      [id, TURF_INFO_DAY],
+    ).catch(() => {}); // the cache is already cleared; a missed signal only delays open apps
 }
 
 /**

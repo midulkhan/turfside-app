@@ -6,7 +6,7 @@ import { AppState } from 'react-native';
 import type { DayKey } from '@/lib/time';
 
 import * as api from './client';
-import { qk } from './queries';
+import { qk, syncTurfVersion } from './queries';
 import type { AppConfig } from './types';
 
 /**
@@ -18,6 +18,9 @@ import type { AppConfig } from './types';
  * data) and refetch the day's slots from our API the moment something changes.
  * If realtime isn't configured (or the socket is down), useSlots polls every 5 s instead.
  */
+/** Not a booking day: the server writes it when the owner saves the turf (TURF_INFO_DAY on the server). */
+const TURF_INFO_DAY = '2000-01-01';
+
 let client: RealtimeClient | null = null;
 function getClient(cfg: NonNullable<AppConfig['realtime']>) {
   client ??= new RealtimeClient(`${cfg.url.replace(/^http/, 'ws').replace(/\/+$/, '')}/realtime/v1`, {
@@ -51,9 +54,15 @@ async function refreshDay(qc: QueryClient, venueId: string, day: string, xid?: s
   // A load already under way may have started before this change: cancel it rather than
   // reuse it, or the change could be missed until the next event or poll.
   await qc.cancelQueries({ queryKey: key, exact: true });
-  qc.fetchQuery({ queryKey: key, queryFn: ({ signal }) => api.getSlots(venueId, day as DayKey, signal, after), staleTime: 0 }).catch(
-    () => {},
-  );
+  qc.fetchQuery({
+    queryKey: key,
+    queryFn: async ({ signal }) => {
+      const d = await api.getSlots(venueId, day as DayKey, signal, after);
+      syncTurfVersion(qc, venueId, d.turfVersion);
+      return d;
+    },
+    staleTime: 0,
+  }).catch(() => {});
 }
 
 /**
@@ -77,6 +86,12 @@ export function useLiveSlots(venueId: string, day: DayKey) {
       .on('postgres_changes', { event: '*', schema: 'public', table: rt.table, filter: `venue_id=eq.${venueId}` }, (payload) => {
         const row = (payload.new ?? null) as { day?: string; xid?: string | number } | null;
         const changedDay = row?.day ?? (payload.old as { day?: string } | null)?.day;
+        // The owner saved this turf in the dashboard: its details (and maybe its prices) changed.
+        if (changedDay === TURF_INFO_DAY) {
+          void qc.invalidateQueries({ queryKey: qk.venue(venueId), exact: true });
+          void qc.invalidateQueries({ queryKey: ['slots', venueId] });
+          return;
+        }
         if (changedDay) void refreshDay(qc, venueId, changedDay, row?.xid != null ? String(row.xid) : undefined);
         else qc.invalidateQueries({ queryKey: ['slots', venueId] });
       })
