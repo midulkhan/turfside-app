@@ -35,6 +35,7 @@ export type VenueRow = {
   booking_paused?: boolean | null;
   short_code?: string | null;
   ref_no?: number | null;
+  map_url?: string | null;
   slot_sets?: SessionSetRow[] | null;
   booking_notice?: string | null;
   photos: string[] | null;
@@ -46,7 +47,7 @@ const VENUE_SELECT = `
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
          p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice, v.short_code, v.ref_no,
+         s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
   from venues v
@@ -406,6 +407,8 @@ export function detail(v: VenueRow, saved: boolean) {
     openingHours: `Daily, ${fmt(v.open_min)} – ${fmt(v.close_min)}`,
     latitude: v.lat,
     longitude: v.lng,
+    /** The owner's Google Maps link for the turf, if set: open this for directions (exact place). */
+    mapUrl: v.map_url ?? null,
     photos: (v.photos ?? []).map(photoUrl),
     amenities: v.amenities,
     rules: v.rules,

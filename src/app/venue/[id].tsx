@@ -319,7 +319,8 @@ export default function VenueScreen() {
   );
 
   const openMap = useCallback(
-    () => v && Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${v.latitude},${v.longitude}`),
+    // The owner's own Google Maps link points at the exact place; otherwise the saved coordinates.
+    () => v && Linking.openURL(v.mapUrl || `https://www.google.com/maps/search/?api=1&query=${v.latitude},${v.longitude}`),
     [v],
   );
 

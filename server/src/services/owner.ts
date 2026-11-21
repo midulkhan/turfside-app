@@ -4,6 +4,7 @@ import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 
+import { isGoogleMapsHost, resolveLocation } from './geo';
 import { invalidateVenue, photoUrl, refLabel, shareUrl } from './venues';
 
 /**
@@ -28,6 +29,21 @@ export const venueInput = z.object({
   address: z.string().trim().min(5).max(200),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
+  /**
+   * The turf's Google Maps link, pasted by the owner (optional; '' or null clears it). Saved as is;
+   * when it changes, the API reads the turf's coordinates from it and uses them for lat/lng.
+   */
+  mapUrl: z.preprocess(
+    (x) => (typeof x === 'string' && !x.trim() ? null : x),
+    z
+      .string()
+      .trim()
+      .max(500)
+      .url()
+      .refine((u) => /^https:\/\//i.test(u) && isGoogleMapsHost(new URL(u).hostname), 'Use a Google Maps link (Share → Copy link in Google Maps).')
+      .nullable()
+      .optional(),
+  ),
   formats: z.array(z.enum(['5-a-side', '6-a-side', '7-a-side'])).min(1).max(3),
   floodlit: z.boolean().default(false),
   amenities: z.array(z.string().trim().min(2).max(40)).max(20).default([]),
@@ -186,6 +202,7 @@ type OwnerRow = {
   booking_notice: string | null;
   short_code: string;
   ref_no: number;
+  map_url: string | null;
   photos: string[] | null;
 };
 
@@ -193,7 +210,7 @@ const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no,
+         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
 
@@ -211,6 +228,7 @@ function shape(r: OwnerRow) {
     address: r.address,
     lat: r.lat,
     lng: r.lng,
+    mapUrl: r.map_url,
     formats: r.formats,
     floodlit: r.floodlit,
     amenities: r.amenities,
@@ -290,14 +308,29 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
   for (const [i, u] of v.photos.entries()) await c.query('insert into venue_photos (venue_id, url, position) values ($1,$2,$3)', [id, storedPhoto(u), i]);
 }
 
+/**
+ * Coordinates from the owner's Google Maps link, if it carries them (short links are followed).
+ * Never fails a save: no point found, or Google too slow, just keeps the coordinates sent.
+ */
+async function pointFromMapUrl(url: string | null | undefined) {
+  if (!url) return null;
+  const found = await Promise.race([
+    resolveLocation(url).catch(() => null),
+    new Promise<null>((r) => setTimeout(() => r(null), 7000)),
+  ]);
+  return found && 'lat' in found ? { lat: found.lat, lng: found.lng } : null;
+}
+
 export async function createVenue(ownerId: string, v: VenueInput) {
+  const point = await pointFromMapUrl(v.mapUrl);
+  if (point) v = { ...v, ...point };
   const id = await tx(async (c) => {
     const count = (await c.query<{ n: number }>("select count(*)::int n from venues where owner_id = $1 and status <> 'suspended'", [ownerId])).rows[0].n;
     if (count >= 25) throw new ApiError('conflict', 'You can list up to 25 turfs. Contact support for more.');
     const r = await c.query<{ id: string }>(
-      `insert into venues (owner_id, name, area, city, address, lat, lng, formats, floodlit, amenities, rules, about, cancellation_policy, status)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,coalesce($13, 'Free cancellation up to 24 hours before kick-off.'),$14) returning id`,
-      [ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status],
+      `insert into venues (owner_id, name, area, city, address, lat, lng, formats, floodlit, amenities, rules, about, cancellation_policy, status, map_url)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,coalesce($13, 'Free cancellation up to 24 hours before kick-off.'),$14,$15) returning id`,
+      [ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status, v.mapUrl ?? null],
     );
     const vid = r.rows[0].id;
     await c.query('insert into pitches (venue_id) values ($1)', [vid]);
@@ -309,12 +342,21 @@ export async function createVenue(ownerId: string, v: VenueInput) {
 }
 
 export async function updateVenue(ownerId: string, id: string, v: VenueInput) {
+  // A new or changed link: take the coordinates from it. Left out (older dashboards): unchanged.
+  if (v.mapUrl !== undefined) {
+    const cur = await one<{ map_url: string | null }>('select map_url from venues where id = $1 and owner_id = $2', [id, ownerId]);
+    if (v.mapUrl && v.mapUrl !== cur?.map_url) {
+      const point = await pointFromMapUrl(v.mapUrl);
+      if (point) v = { ...v, ...point };
+    }
+  }
   await tx(async (c) => {
     const r = await c.query(
       `update venues set name=$3, area=$4, city=$5, address=$6, lat=$7, lng=$8, formats=$9, floodlit=$10, amenities=$11, rules=$12, about=$13,
-              cancellation_policy=coalesce($14, cancellation_policy), status=$15
+              cancellation_policy=coalesce($14, cancellation_policy), status=$15,
+              map_url = case when $16::boolean then $17 else map_url end
         where id = $1 and owner_id = $2 and status <> 'suspended'`,
-      [id, ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status],
+      [id, ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status, v.mapUrl !== undefined, v.mapUrl ?? null],
     );
     if (!r.rowCount) throw new ApiError('not_found', 'Turf not found.');
     await writeDetails(c, id, v);

@@ -43,6 +43,8 @@ export type VenueDetail = VenueSummary & {
   cancellationPolicy: string;
   /** Set while the owner has paused bookings: why, in the owner's words. */
   bookingNotice?: string | null;
+  /** The owner's Google Maps link for the turf (exact place). Open it for directions when set. */
+  mapUrl?: string | null;
   /** "TS-5356": the turf's public reference number. Older servers omit it. */
   ref?: string | null;
   /** turfsides.com/FDJV346: the turf's share link (opens the app when installed). */

@@ -116,6 +116,30 @@ d('turf links and reference numbers', () => {
     expect((await fetch(`${API}/t/ZZZZZZZ/card.jpg`, { redirect: 'manual' })).status).toBe(302);
   });
 
+  it('the owner\'s Google Maps link is saved as is, and its pin becomes the coordinates', async () => {
+    const v = made[0]!.json;
+    const link = 'https://www.google.com/maps/place/Link+Arena/@23.84,90.25,17z/data=!3d23.845801!4d90.257712';
+    const u = await call('PUT', `/v1/owner/venues/${v.id}`, { ...venue('Link Arena 1'), mapUrl: link }, t);
+    expect(u.status, JSON.stringify(u.json)).toBe(200);
+    expect([u.json.mapUrl, u.json.lat, u.json.lng]).toEqual([link, 23.845801, 90.257712]);
+    const pub = (await call('GET', `/v1/venues/${v.id}`)).json;
+    expect([pub.mapUrl, pub.latitude, pub.longitude]).toEqual([link, 23.845801, 90.257712]);
+
+    // Saving again without mapUrl (older dashboards) keeps the link; '' clears it, coordinates stay.
+    const keep = await call('PUT', `/v1/owner/venues/${v.id}`, { ...venue('Link Arena 1'), lat: 23.845801, lng: 90.257712 }, t);
+    expect(keep.json.mapUrl).toBe(link);
+    const clear = await call('PUT', `/v1/owner/venues/${v.id}`, { ...venue('Link Arena 1'), lat: 23.845801, lng: 90.257712, mapUrl: '' }, t);
+    expect([clear.json.mapUrl, clear.json.lat]).toEqual([null, 23.845801]);
+
+    // Only Google Maps links (players will open it).
+    const bad = await call('PUT', `/v1/owner/venues/${v.id}`, { ...venue('Link Arena 1'), mapUrl: 'https://evil.example/x' }, t);
+    expect(bad.status).toBe(400);
+    // A short link the server can't read still saves: the link is what players open.
+    const short = await call('PUT', `/v1/owner/venues/${v.id}`, { ...venue('Link Arena 1'), lat: 23.845801, lng: 90.257712, mapUrl: 'https://maps.app.goo.gl/2m5QmFohHo5xcnkQA' }, t);
+    expect(short.status, JSON.stringify(short.json)).toBe(200);
+    expect(short.json.mapUrl).toBe('https://maps.app.goo.gl/2m5QmFohHo5xcnkQA');
+  }, 20_000);
+
   it('seeded turfs got codes from the migration', async () => {
     const list = (await call('GET', '/v1/venues/explore?lat=23.78&lng=90.41')).json;
     const id = (list.near?.[0] ?? list.further?.[0])?.id as string;
