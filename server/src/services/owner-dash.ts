@@ -8,6 +8,7 @@ import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import { addDays, dhakaToday, instant, isDayKey, priceFor, sessionsFor, type SessionSetRow } from '../lib/time';
 
+import { sendWalkinTicket } from './booking-emails';
 import { ticketBookingIds } from './bookings';
 import { onBookingCancelled } from './matches';
 import { getOwnedVenueRow, photoUrl, rules, slotRules, type VenueRow } from './venues';
@@ -80,12 +81,13 @@ type BookingRow = {
   user_phone: string | null;
   guest_name: string | null;
   guest_phone: string | null;
+  guest_email: string | null;
   note: string | null;
 };
 const BOOKING_SELECT = `
   select b.id, b.code, b.venue_id, v.name venue_name, b.day::text, b.start_min, b.end_min, b.status, b.source, b.total,
          b.created_at, b.confirmed_at, b.cancelled_at, b.checked_in_at, b.order_id, b.user_id,
-         u.name user_name, u.phone user_phone, b.guest_name, b.guest_phone, b.note
+         u.name user_name, u.phone user_phone, b.guest_name, b.guest_phone, b.guest_email, b.note
     from bookings b join venues v on v.id = b.venue_id left join users u on u.id = b.user_id`;
 
 function bookingOut(b: BookingRow) {
@@ -100,9 +102,19 @@ function bookingOut(b: BookingRow) {
     status: b.status === 'confirmed' && ended ? 'completed' : b.status,
     source: b.source as 'app' | 'link' | 'walkin',
     amount: taka(b.total),
-    customer: b.user_id
-      ? { name: b.user_name ?? 'Player', phone: b.user_phone ? `+880${b.user_phone}` : null, guest: false }
-      : { name: b.guest_name ?? 'Walk-in', phone: b.guest_phone, guest: true },
+    // Walk-ins keep the name, phone and email the turf took, even when they matched a player's
+    // account (guest: false = the booking is also in that player's app).
+    customer:
+      b.source === 'walkin'
+        ? {
+            name: b.guest_name ?? b.user_name ?? 'Walk-in',
+            phone: b.guest_phone ?? (b.user_phone ? `+880${b.user_phone}` : null),
+            email: b.guest_email,
+            guest: !b.user_id,
+          }
+        : b.user_id
+          ? { name: b.user_name ?? 'Player', phone: b.user_phone ? `+880${b.user_phone}` : null, email: null, guest: false }
+          : { name: b.guest_name ?? 'Walk-in', phone: b.guest_phone, email: b.guest_email, guest: true },
     note: b.note,
     orderId: b.order_id,
     createdAt: b.created_at,
@@ -294,17 +306,51 @@ export async function daySheet(ownerId: string, venueId: string, day: string) {
 
 // ── Walk-in / phone bookings ─────────────────────────────────────────────────────────────
 
+/** A Bangladesh mobile number in any usual form → "+8801XXXXXXXXX". */
+const guestPhone = z
+  .string({ message: 'Enter the customer’s phone number.' })
+  .max(30)
+  .transform((v) => {
+    let d = v.replace(/\D/g, '');
+    if (d.startsWith('880')) d = d.slice(3);
+    if (d.startsWith('0')) d = d.slice(1);
+    return d;
+  })
+  .refine((d) => /^1[3-9]\d{8}$/.test(d), 'Enter a valid Bangladesh mobile number, like 01712345678.')
+  .transform((d) => `+880${d}`);
+const guestEmail = z
+  .string({ message: 'Enter the customer’s email.' })
+  .trim()
+  .toLowerCase()
+  .max(254)
+  .email('Enter a valid email address.');
+
 export const walkinInput = z.object({
   venueId: z.string().max(60),
   day: dayKey,
   /** Session starts (minutes) from the day sheet; back-to-back or not, up to 8. */
   starts: z.array(z.number().int().min(0).max(2880)).min(1).max(8),
   guestName: z.string().trim().min(2).max(80),
-  guestPhone: z.string().trim().max(20).optional(),
+  /** Both required: the ticket is emailed, and a matching TurfSides account gets the booking. */
+  guestPhone,
+  guestEmail,
   /** Total actually charged, in taka (discounts); left out = the listed prices. */
   amount: z.number().min(0).max(1_000_000).optional(),
   note: z.string().trim().max(300).optional(),
 });
+
+/**
+ * The TurfSides player this walk-in is for, if they have an account: matched by phone number first
+ * (verified on sign-up), then by email. Null = a guest; they still get the ticket by email.
+ */
+async function playerFor(c: PoolClient | null, phone: string | null, email: string | null) {
+  const sql = `select id from users where deleted_at is null and (
+                 ($1::text is not null and phone = $1) or ($2::text is not null and lower(email) = $2))
+               order by (phone = $1) desc nulls last limit 1`;
+  const args = [phone ? phone.replace(/^\+880/, '') : null, email ? email.toLowerCase() : null];
+  const r = c ? (await c.query<{ id: string }>(sql, args)).rows[0] : await one<{ id: string }>(sql, args);
+  return r?.id ?? null;
+}
 
 async function newCode(c: PoolClient, day: string) {
   for (let i = 0; i < 5; i++) {
@@ -336,6 +382,7 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
 
   const ids = await tx(async (c) => {
     await c.query('select pg_advisory_xact_lock(hashtext($1))', [`pitch:${v.pitch_id}`]);
+    const player = await playerFor(c, b.guestPhone, b.guestEmail);
     const out: string[] = [];
     for (const [i, p] of picks.entries()) {
       await c.query(
@@ -352,8 +399,8 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
       try {
         const r = await c.query<{ id: string }>(
           `insert into bookings (code, user_id, venue_id, pitch_id, day, start_min, end_min, during, status, source, price_lines, total,
-                                 confirmed_at, guest_name, guest_phone, note, created_by)
-           values ($1, null, $2, $3, $4, $5, $6, tstzrange($7, $8), 'confirmed', 'walkin', $9, $10, now(), $11, $12, $13, $14) returning id`,
+                                 confirmed_at, guest_name, guest_phone, note, created_by, guest_email)
+           values ($1, $16, $2, $3, $4, $5, $6, tstzrange($7, $8), 'confirmed', 'walkin', $9, $10, now(), $11, $12, $13, $14, $15) returning id`,
           [
             code,
             v.id,
@@ -366,9 +413,11 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
             JSON.stringify([{ label: 'Walk-in booking', amount: shares[i] }]),
             shares[i],
             b.guestName,
-            b.guestPhone || null,
+            b.guestPhone,
             b.note || null,
             ownerId,
+            b.guestEmail,
+            player,
           ],
         );
         out.push(r.rows[0]!.id);
@@ -378,9 +427,11 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
         throw e;
       }
     }
-    await audit(c, ownerId, 'booking.walkin', 'venue', v.id, { day: b.day, starts: picks.map((p) => p.start), amount: charged / 100 });
+    await audit(c, ownerId, 'booking.walkin', 'venue', v.id, { day: b.day, starts: picks.map((p) => p.start), amount: charged / 100, player: !!player });
     return out;
   });
+  // The customer's ticket email (with the PDF): in the background, so the owner isn't kept waiting.
+  void sendWalkinTicket(ids);
   return { bookings: await Promise.all(ids.map((id) => getBooking(ownerId, id))) };
 }
 
@@ -391,7 +442,8 @@ export async function createWalkin(ownerId: string, b: z.infer<typeof walkinInpu
 export const walkinEditInput = z
   .object({
     guestName: z.string().trim().min(2).max(80).optional(),
-    guestPhone: z.string().trim().max(20).optional(),
+    guestPhone: guestPhone.optional(),
+    guestEmail: guestEmail.optional(),
     note: z.string().trim().max(300).optional(),
     /** Amount charged, in taka. */
     amount: z.number().min(0).max(1_000_000).optional(),
@@ -410,6 +462,8 @@ export async function updateWalkin(ownerId: string, id: string, e: z.infer<typeo
   if (moving && b.status === 'checked_in') throw new ApiError('conflict', 'This booking is checked in, so its time can’t change.');
 
   const v = await getOwnedVenueRow(ownerId, b.venue.id);
+  // A new phone or email: the booking follows whichever TurfSides account they now belong to.
+  const contactChanged = (e.guestPhone !== undefined && e.guestPhone !== b.customer.phone) || (e.guestEmail !== undefined && e.guestEmail !== b.customer.email);
   let slot: { start: number; end: number; from: Date; to: Date } | null = null;
   if (moving) {
     const today = dhakaToday();
@@ -440,6 +494,8 @@ export async function updateWalkin(ownerId: string, id: string, e: z.infer<typeo
         `update bookings b set
             guest_name  = coalesce($3, guest_name),
             guest_phone = case when $4::boolean then nullif($5, '') else guest_phone end,
+            guest_email = case when $14::boolean then $15 else guest_email end,
+            user_id     = case when $16::boolean then $17::uuid else b.user_id end,
             note        = case when $6::boolean then nullif($7, '') else note end,
             total       = coalesce($8::int, total),
             price_lines = case when $8::int is null then price_lines else jsonb_build_array(jsonb_build_object('label', 'Walk-in booking', 'amount', $8::int)) end,
@@ -463,6 +519,10 @@ export async function updateWalkin(ownerId: string, id: string, e: z.infer<typeo
           slot?.end ?? null,
           slot?.from ?? null,
           slot?.to ?? null,
+          e.guestEmail !== undefined,
+          e.guestEmail ?? null,
+          contactChanged,
+          contactChanged ? await playerFor(c, e.guestPhone ?? b.customer.phone, e.guestEmail ?? b.customer.email) : null,
         ],
       );
       if (!r.rowCount) throw new ApiError('conflict', 'This booking can no longer be edited.');

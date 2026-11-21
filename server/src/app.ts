@@ -21,7 +21,9 @@ import { isExpoToken, kickPush, pushStatus, sentForTests } from './lib/push';
 import QRCode from 'qrcode';
 
 import { qrLinkOk, verifyAccess, verifyAnyPass } from './lib/tokens';
-import { emailsForTests } from './services/booking-emails';
+import { emailsForTests, pdfOf } from './services/booking-emails';
+import { TICKET_HEADERS, ticketPage } from './services/ticket-page';
+import { pdfName, ticketByToken } from './services/tickets';
 import * as account from './services/account';
 import * as auth from './services/auth';
 import type { Realm } from './services/auth';
@@ -440,6 +442,26 @@ export async function buildApp() {
     const page = m ? matchPage(m) : turfPage(v, code);
     reply.code(page.status).header('Content-Security-Policy', PAGE_CSP).header('Cache-Control', 'public, max-age=300').type('text/html; charset=utf-8');
     return page.html;
+  });
+
+  // ── Ticket links: api.turfsides.com/ticket/<23-character token> ──────────────────────────
+  // The page and its PDF. The PDF is built on each request and never stored. Tight per-IP limits:
+  // a token can't be guessed anyway, and this keeps anyone from trying.
+  const ticketLimit = { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } };
+  app.get('/ticket/:token', ticketLimit, async (req, reply) => {
+    const t = await ticketByToken((req.params as { token: string }).token);
+    const page = ticketPage(t);
+    reply.code(page.status).headers(TICKET_HEADERS).type('text/html; charset=utf-8');
+    return page.html;
+  });
+  app.get('/ticket/:token/:file', ticketLimit, async (req, reply) => {
+    const { token, file } = req.params as { token: string; file: string };
+    const t = /\.pdf$/i.test(file) ? await ticketByToken(token) : null;
+    if (!t?.pass) throw new ApiError('not_found', 'This ticket isn’t available.');
+    const pdf = await pdfOf([t]);
+    reply.headers({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
+    reply.header('Content-Disposition', `inline; filename="${pdfName(t.code)}"`).type('application/pdf');
+    return reply.send(pdf);
   });
 
   app.get('/v1/venues/:id', { preHandler: optionalUser }, async (req) => {
@@ -866,7 +888,9 @@ export async function buildApp() {
     if (!pass) throw new ApiError('invalid', 'This pass is not valid or has expired.');
     const where = 'bookingId' in pass ? 'b.id = $1' : 'b.code = $1';
     const b = await one<{ id: string; code: string; status: string; day: string; start_min: number; end_min: number; total: number; venue_id: string; owner_id: string; name: string; phone: string }>(
-      `select b.id, b.code, b.status, b.day::text, b.start_min, b.end_min, b.total, b.venue_id, v.owner_id, u.name, u.phone
+      `select b.id, b.code, b.status, b.day::text, b.start_min, b.end_min, b.total, b.venue_id, v.owner_id,
+              coalesce(case when b.source = 'walkin' then b.guest_name end, u.name, b.guest_name) as name,
+              coalesce(case when b.source = 'walkin' then regexp_replace(b.guest_phone, '^\\+880', '') end, u.phone, b.guest_phone) as phone
          from bookings b join venues v on v.id = b.venue_id left join users u on u.id = b.user_id where ${where}`,
       ['bookingId' in pass ? pass.bookingId : pass.code],
     );

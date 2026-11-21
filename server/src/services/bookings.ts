@@ -11,7 +11,7 @@ import { signPass, signPass2 } from '../lib/tokens';
 import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules, slotRules } from './venues';
 
-const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id, note,
+const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id, note, source,
   (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
 
 /** One slot of a booking made of several (same order / payment). */
@@ -92,6 +92,8 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '
 
 type BookingRow = {
   pitch_name?: string | null;
+  /** app / link = paid in the app; walkin = added by the turf (matched to this player's account). */
+  source?: string | null;
   note?: string | null;
   order_id?: string | null;
   id: string;
@@ -402,7 +404,8 @@ export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] =
     start,
     end,
     amountPaid: paid,
-    method: 'bKash' as const,
+    // Walk-ins were booked (and paid, if at all) at the turf: the app shows "via the turf".
+    method: (b.source === 'walkin' ? 'the turf' : 'bKash') as 'bKash',
     status,
     /** How many booked slots this ticket covers (back-to-back slots merge into one ticket). */
     slotCount: merged ? run.length : 1,
@@ -427,7 +430,7 @@ export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] =
               name: holder.name,
               phone: maskPhone(holder.phone),
               paid: Math.round(paid / 100),
-              via: 'bKash',
+              via: b.source === 'walkin' ? 'At the turf' : 'bKash',
               exp: Math.floor(endAt / 1000) + 6 * 3600,
             })
           : signPass(b.id, Math.floor(endAt / 1000) + 6 * 3600)
@@ -506,8 +509,9 @@ function shapeTicket(r: BookingRow, holder: Holder, runs: Awaited<ReturnType<typ
 export async function cancelBooking(userId: string, id: string) {
   if (!isUuid(id)) throw new ApiError('not_found', 'Booking not found.');
   const res = await tx(async (c) => {
-    const b = (await c.query<BookingRow>('select id, venue_id, day::text, start_min, status, order_id from bookings where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
+    const b = (await c.query<BookingRow>('select id, venue_id, day::text, start_min, status, order_id, source from bookings where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
     if (!b || b.status !== 'confirmed') throw new ApiError('not_found', 'Booking not found.');
+    if (b.source === 'walkin') throw new ApiError('forbidden', 'The turf booked this for you. Contact the turf to change or cancel it.');
     // A ticket of back-to-back slots is cancelled as a whole.
     const run = (await runsFor(userId, [b])).byId.get(b.id) ?? [];
     const ids = run.length ? run.filter((x) => x.status === 'confirmed').map((x) => x.id) : [id];

@@ -108,13 +108,26 @@ d('booking confirmation emails', () => {
     // No QR in the email: the entry pass lives in the app.
     expect(player.html).not.toContain('/qr.png');
 
-    // Walk-ins the owner adds don't email anyone.
+    // The emails have the dark logo header, not the old banner; the player's links to the ticket.
+    expect(player.html).toContain('/static/brand/email-wordmark.png');
+    expect(player.html).not.toContain('email-booking-player.png');
+    expect(owner.html).not.toContain('email-booking-owner.png');
+    expect(player.html).toMatch(/\/ticket\/[A-Za-z0-9]{23}/);
+
+    // A walk-in the owner adds: only the customer is emailed (the owner made it), with the ticket PDF.
     const before = (await emails()).length;
-    const w = await call('POST', '/v1/owner/bookings', { venueId: v.json.id, day, starts: [slots[4].start], guestName: 'Walk In', amount: 3000 }, o.accessToken, {
-      'Idempotency-Key': randomUUID(),
-    });
+    const w = await call(
+      'POST',
+      '/v1/owner/bookings',
+      { venueId: v.json.id, day, starts: [slots[4].start], guestName: 'Walk In', guestPhone: '01799000111', guestEmail: 'walkin.guest@test.turfsides.dev', amount: 3000 },
+      o.accessToken,
+      { 'Idempotency-Key': randomUUID() },
+    );
     expect(w.status, JSON.stringify(w.json)).toBe(200);
-    await new Promise((r) => setTimeout(r, 300));
-    expect((await emails()).length).toBe(before);
+    const walk = (await until(async () => (await emails()).slice(before).find((m) => m.kind === 'walkin')))!;
+    expect(walk.to).toBe('walkin.guest@test.turfsides.dev');
+    expect(walk.attachments).toHaveLength(1);
+    expect(walk.attachments[0].filename).toMatch(/^TurfSides-ticket-TS-\d{6}-\d{4}\.pdf$/);
+    expect((await emails()).slice(before).filter((m) => m.kind === 'owner')).toHaveLength(0);
   });
 });

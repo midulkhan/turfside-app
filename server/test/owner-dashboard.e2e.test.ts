@@ -180,7 +180,7 @@ d('owner dashboard', () => {
     const walk = await call(
       'POST',
       '/v1/owner/bookings',
-      { venueId: v.id, day, starts: [420, 510], guestName: 'Rahim', guestPhone: '01711000000', amount: 3000 },
+      { venueId: v.id, day, starts: [420, 510], guestName: 'Rahim', guestPhone: '01711000000', guestEmail: 'rahim@walkin.test', amount: 3000 },
       o.accessToken,
     );
     expect(walk.status, JSON.stringify(walk.json)).toBe(200);
@@ -191,7 +191,7 @@ d('owner dashboard', () => {
     const p = await newUser('player');
     expect((await call('POST', '/v1/holds', { slotIds: [slots[0].id] }, p.accessToken)).status).toBe(409);
     expect(
-      (await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [420], guestName: 'Karim' }, o.accessToken)).status,
+      (await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [420], guestName: 'Karim', guestPhone: '01711000001', guestEmail: 'karim@walkin.test' }, o.accessToken)).status,
     ).toBe(409);
 
     // A player pays for 13:00 in the app.
@@ -262,7 +262,7 @@ d('owner dashboard', () => {
     expect((await call('GET', `/v1/owner/stats?venueId=${v.id}&from=${day}&to=${day}`, undefined, x.accessToken)).status).toBe(404);
     expect((await call('POST', `/v1/owner/bookings/${w.id}/cancel`, {}, x.accessToken)).status).toBe(404);
     expect(
-      (await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [600], guestName: 'Intruder' }, x.accessToken)).status,
+      (await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [600], guestName: 'Intruder', guestPhone: '01711000002', guestEmail: 'x@walkin.test' }, x.accessToken)).status,
     ).toBe(404);
     expect((await call('GET', '/v1/owner/bookings', undefined, p.accessToken)).status).toBe(401);
   });
@@ -543,14 +543,14 @@ d('owner dashboard', () => {
     const o = await newUser('owner');
     const v = (await call('POST', '/v1/owner/venues', base, o.accessToken)).json;
     const day = dayIn(6);
-    const w = await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [420], guestName: 'Rahim' }, o.accessToken);
+    const w = await call('POST', '/v1/owner/bookings', { venueId: v.id, day, starts: [420], guestName: 'Rahim', guestPhone: '01711000003', guestEmail: 'rahim3@walkin.test' }, o.accessToken);
     expect(w.status, JSON.stringify(w.json)).toBe(200);
     const id = w.json.bookings[0].id as string;
 
     // Details and amount.
     const e1 = await call('PATCH', `/v1/owner/bookings/${id}`, { guestName: 'Rahim Uddin', guestPhone: '01711222333', note: 'Pays cash', amount: 1500 }, o.accessToken);
     expect(e1.status, JSON.stringify(e1.json)).toBe(200);
-    expect(e1.json).toMatchObject({ amount: 1500, customer: { name: 'Rahim Uddin', phone: '01711222333' }, note: 'Pays cash', start: 420 });
+    expect(e1.json).toMatchObject({ amount: 1500, customer: { name: 'Rahim Uddin', phone: '+8801711222333' }, note: 'Pays cash', start: 420 });
 
     // Move to 13:00: players see 07:00 free and 13:00 taken.
     const e2 = await call('PATCH', `/v1/owner/bookings/${id}`, { day, start: 780 }, o.accessToken);

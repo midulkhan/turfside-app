@@ -26,14 +26,25 @@ const transport = () =>
     socketTimeout: 15_000,
   }));
 
-async function sendSmtp(m: { to: string; toName?: string; subject: string; html: string; text: string }) {
+/**
+ * A file to attach. Built in memory for SMTP (content); the Sender API only takes links, so it gets
+ * the url, where the same file is built on request. Nothing is stored either way.
+ */
+export type Attachment = { filename: string; content: () => Promise<Buffer>; url: string; contentType?: string };
+type Message = { to: string; toName?: string; subject: string; html: string; text: string; attachments?: Attachment[] };
+
+async function sendSmtp(m: Message) {
   try {
+    const attachments = m.attachments?.length
+      ? await Promise.all(m.attachments.map(async (a) => ({ filename: a.filename, content: await a.content(), contentType: a.contentType ?? 'application/pdf' })))
+      : undefined;
     const info = await transport().sendMail({
       from: { name: config.EMAIL_FROM_NAME, address: config.EMAIL_FROM },
       to: m.toName ? { name: m.toName, address: m.to } : m.to,
       subject: m.subject,
       html: m.html,
       text: m.text,
+      attachments,
     });
     lastSend = { at: new Date().toISOString(), ok: true, detail: `smtp ${String(info.response ?? '').slice(0, 80)}` };
   } catch (e) {
@@ -51,7 +62,7 @@ const headers = () => ({
   Accept: 'application/json',
 });
 
-export async function sendEmail(m: { to: string; toName?: string; subject: string; html: string; text: string }) {
+export async function sendEmail(m: Message) {
   if (!emailEnabled()) throw new ApiError('not_configured', 'Email is not configured yet.');
   if (smtpReady()) return sendSmtp(m);
   const res = await fetch(`${config.SENDER_API_URL}/message/send`, {
@@ -63,8 +74,9 @@ export async function sendEmail(m: { to: string; toName?: string; subject: strin
       subject: m.subject,
       html: m.html,
       text: m.text,
+      ...(m.attachments?.length ? { attachments: Object.fromEntries(m.attachments.map((a) => [a.filename, a.url])) } : {}),
     }),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(20_000),
   }).catch(() => null);
   const raw = (await res?.text().catch(() => '')) ?? '';
   let body: { success?: boolean; message?: string; errors?: unknown } | null = null;

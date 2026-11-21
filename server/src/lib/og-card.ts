@@ -63,6 +63,9 @@ function setup() {
   return ready;
 }
 
+/** The renderer and Geist fonts, ready (shared with the ticket PDF). */
+export const brandFonts = async () => (await setup()).fonts;
+
 /** The photo as a data URL (satori can't fetch). Null if it can't be had quickly. */
 async function photoData(url: string | null) {
   if (!url) return null;

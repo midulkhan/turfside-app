@@ -1,7 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
+import { ApiError } from '../errors';
+import { sendWalkinTicket } from '../services/booking-emails';
 import * as dash from '../services/owner-dash';
+import { ticketForOwner } from '../services/tickets';
+import { qrSvgMarkup } from '../lib/ticket-pdf';
 import { resolveLocation } from '../services/geo';
 
 /**
@@ -57,6 +61,21 @@ export function registerOwnerRoutes(app: FastifyInstance, { requireOwner, parse 
   app.get('/v1/owner/venues/:id/blocks', owner, async (req) => {
     const p = parse(z.object({ from: dash.dayKey, to: dash.dayKey }), req.query);
     return dash.listBlocks(me(req), parse(venueParam, req.params).id, p.from, p.to);
+  });
+  // A booking's ticket: the QR players show at reception (the same pass as their app) and the
+  // ticket link. Walk-ins can have the ticket emailed again (e.g. after fixing the address).
+  app.get('/v1/owner/bookings/:id/ticket', owner, async (req) => {
+    const t = await ticketForOwner(me(req), id(req));
+    return { code: t.code, status: t.status, url: t.url, email: t.email, pass: t.pass || null, qrSvg: t.pass ? qrSvgMarkup(t.pass, 240) : null };
+  });
+  app.post('/v1/owner/bookings/:id/ticket/send', { preHandler: requireOwner, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+    const t = await ticketForOwner(me(req), id(req));
+    if (t.source !== 'walkin') throw new ApiError('forbidden', 'App bookings already have their ticket in the player’s app.');
+    if (!t.pass) throw new ApiError('conflict', 'This booking has no valid ticket any more.');
+    if (!t.email) throw new ApiError('invalid', 'Add the customer’s email first (Edit).');
+    const sent = await sendWalkinTicket([t.id]);
+    if (!sent) throw new ApiError('internal', 'We couldn’t send the email. Try again in a moment.');
+    return { sent: true, to: t.email };
   });
   app.post('/v1/owner/blocks', write, async (req) => dash.createBlocks(me(req), parse(dash.blockInput, req.body)));
   app.delete('/v1/owner/blocks/:id', write, async (req) => dash.deleteBlock(me(req), id(req)));
