@@ -82,10 +82,9 @@ export const PAGE_CSP =
   "default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const taka = (poisha: number) => Math.round(poisha / 100).toLocaleString('en-IN');
-const hours = (min: number) => (min % 60 === 0 ? `${min / 60} hr` : min > 60 ? `${Math.floor(min / 60)} hr ${min % 60} min` : `${min} min`);
-/** "From ৳2,000 · 2 hr session" (custom sessions) or "From ৳1,800/hr". */
+/** "From ৳2,000 / 120 min" (custom sessions, always in minutes) or "From ৳1,800/hr". */
 export const fromLabel = (p: ReturnType<typeof startingPrice>) =>
-  p.per === 'session' ? `From ৳${taka(p.amount)} · ${hours(p.minutes)} session` : `From ৳${taka(p.amount)}/hr`;
+  p.per === 'session' ? `From ৳${taka(p.amount)} / ${p.minutes} min` : `From ৳${taka(p.amount)}/hr`;
 
 export function turfPage(v: (Row & { from: string }) | null, code: string) {
   const scheme = config.APP_SCHEME;

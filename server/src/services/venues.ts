@@ -91,7 +91,7 @@ function hourlyFrom7(v: VenueRow) {
  * "Starting at": the cheapest thing a player can actually book in the next 7 days (from now; sessions
  * that have already started today don't count), so it doesn't change from one day to the next.
  *  - Custom sessions (owner prices each session): the cheapest session's own price and its length,
- *    e.g. ৳2,000 for a 2-hour session. Never an hourly figure nobody can pay.
+ *    e.g. ৳2,000 for a 120-min session. Never an hourly figure nobody can pay.
  *  - Same-length sessions: the lowest price per hour.
  * Amounts in poisha.
  */

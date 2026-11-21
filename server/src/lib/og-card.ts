@@ -21,7 +21,7 @@ export type CardInput = {
   name: string;
   place: string;
   formats: string[];
-  /** The starting price as the app shows it: "From ৳1,800/hr" or "From ৳2,000 · 2 hr session". */
+  /** The starting price as the app shows it: "From ৳1,800/hr" or "From ৳2,000 / 120 min". */
   price: string;
   rating: number;
   reviews: number;
