@@ -35,7 +35,13 @@ export default function TurfLink() {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    if (look.data) router.replace(`/venue/${look.data.id}`);
+    if (!look.data) return;
+    // Opened from a link: put Explore underneath so back (button or swipe) lands somewhere useful.
+    if (router.canGoBack()) router.replace(`/venue/${look.data.id}`);
+    else {
+      router.replace('/explore');
+      router.push(`/venue/${look.data.id}`);
+    }
   }, [look.data]);
 
   if (!user) {
