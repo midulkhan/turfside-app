@@ -219,8 +219,19 @@ d('find players', () => {
     expect(Array.isArray((await call('GET', '/v1/me/bookings', undefined, org.accessToken)).json)).toBe(true);
   });
 
-  it('push respects the notifications switch and stops at logout', async () => {
+  it('push keeps working after the login refreshes, respects the notifications switch and stops at logout', async () => {
     const count = async () => ((await call('GET', '/v1/test/pushes')).json.sent as Json[]).filter((p) => p.to === pushToken).length;
+    // The app refreshes its login every few minutes (a new session each time). The phone's push
+    // registration must follow, or pushes silently stop.
+    const r = await call('POST', '/v1/auth/refresh', { refreshToken: (org as Json).refreshToken });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    org = { ...org, accessToken: r.json.accessToken, refreshToken: r.json.refreshToken } as typeof org;
+    const pre = await count();
+    await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken);
+    expect((await call('POST', `/v1/matches/${matchId}/join`, { position: 'defender', level: 'casual', sharePhone: true }, p3.accessToken)).status).toBe(200);
+    await new Promise((res) => setTimeout(res, 300));
+    expect(await count()).toBeGreaterThan(pre);
+    await call('DELETE', `/v1/matches/${matchId}/join`, undefined, p3.accessToken);
     const before = await count();
     // Switched off: news is still listed in the app, but the phone isn't buzzed.
     expect((await call('PUT', '/v1/me/settings', { notifications: false }, org.accessToken)).status).toBe(200);

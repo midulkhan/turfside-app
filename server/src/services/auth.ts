@@ -256,6 +256,9 @@ export async function refresh(token: string, meta: { ip: string; ua?: string; de
   const next = await createSession(u, meta, realm);
   const nextId = await one<{ id: string }>(`select id from ${S} where refresh_hash = $1`, [sha256(next.refreshToken)]);
   await q(`update ${S} set replaced_by = $2, revoked_at = now() where id = $1`, [s.id, nextId!.id]);
+  // The phone's push registration belongs to the login, not to one rotation of it: carry it over,
+  // or pushes stop a few minutes after opening the app (the old session reads as signed out).
+  if (realm === 'player') await q('update push_tokens set session_id = $2 where session_id = $1', [s.id, nextId!.id]);
   return next;
 }
 
