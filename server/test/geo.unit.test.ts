@@ -57,3 +57,62 @@ describe('only Google is ever fetched', () => {
     expect(await resolveLocation(' 23.8458, 90.2577 ')).toEqual({ lat: 23.8458, lng: 90.2577 });
   });
 });
+
+describe('links shared from the Google Maps phone app', () => {
+  const realFetch = globalThis.fetch;
+  const route = (map: Record<string, { status: number; location?: string; body?: string }>) => {
+    globalThis.fetch = (async (input: string | URL) => {
+      const u = String(input);
+      const hit = Object.entries(map).find(([k]) => u.startsWith(k))?.[1];
+      if (!hit) throw new Error('offline');
+      return new Response(hit.body ?? '', { status: hit.status, headers: hit.location ? { location: hit.location } : {} });
+    }) as typeof fetch;
+  };
+  const restore = () => {
+    globalThis.fetch = realFetch;
+  };
+
+  it('a short link to ?q=<name, address> with Google answering a check page gives the place to look up', async () => {
+    route({
+      'https://maps.app.goo.gl/': { status: 302, location: 'https://maps.google.com/?q=KickOff+Turf+Savar,+Bank+Colony+Rd,+Savar&ftid=0x1:0x2&entry=gps&g_st=ic' },
+      'https://maps.google.com/': { status: 302, location: 'https://www.google.com/sorry/index?continue=x' },
+    });
+    try {
+      expect(await resolveLocation('https://maps.app.goo.gl/YTRojxSy8butnuB4A')).toEqual({ query: 'KickOff Turf Savar, Bank Colony Rd, Savar', name: 'KickOff Turf Savar' });
+    } finally {
+      restore();
+    }
+  });
+
+  it('a short link straight to a place with a pin gives the exact point (no more fetching)', async () => {
+    route({ 'https://maps.app.goo.gl/': { status: 302, location: 'https://www.google.com/maps/place/KickOff+Turf/@23.84,90.25,17z/data=!3d23.845801!4d90.257712' } });
+    try {
+      expect(await resolveLocation('https://maps.app.goo.gl/abc')).toEqual({ lat: 23.845801, lng: 90.257712, name: 'KickOff Turf' });
+    } finally {
+      restore();
+    }
+  });
+
+  it('a page that redirects with JavaScript to a place with a pin is followed', async () => {
+    route({
+      'https://maps.app.goo.gl/': {
+        status: 200,
+        body: '<script>window.location.replace("https:\\/\\/www.google.com\\/maps\\/place\\/X\\/@1,1,17z\\/data=!3d23.8458!4d90.2577")</script>',
+      },
+    });
+    try {
+      expect(await resolveLocation('https://maps.app.goo.gl/js')).toEqual({ lat: 23.8458, lng: 90.2577, name: 'X' });
+    } finally {
+      restore();
+    }
+  });
+
+  it('Google unreachable and nothing in the link: a clear error', async () => {
+    route({});
+    try {
+      await expect(resolveLocation('https://maps.app.goo.gl/none')).rejects.toThrow(/no location/);
+    } finally {
+      restore();
+    }
+  });
+});

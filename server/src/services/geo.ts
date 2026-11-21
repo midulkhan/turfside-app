@@ -99,8 +99,51 @@ async function get(url: string) {
   }).catch(() => null);
 }
 
-/** Pasted text from the owner: coordinates, or anything containing a Google Maps link. */
-export async function resolveLocation(input: string): Promise<Point> {
+/** The place a link names when it carries no coordinates (shares from the Google Maps phone app). */
+export function queryFromMapsUrl(raw: string): { query: string; name?: string } | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const clean = (x: string | null | undefined) => (x ?? '').replace(/\+/g, ' ').replace(/\s+/g, ' ').trim();
+  const path = (() => {
+    try {
+      return decodeURIComponent(u.pathname);
+    } catch {
+      return u.pathname;
+    }
+  })();
+  const name = clean(/\/place\/([^/@]+)/.exec(path)?.[1]) || undefined;
+  for (const k of ['q', 'query', 'destination', 'daddr']) {
+    const v = clean(u.searchParams.get(k)).replace(/^loc:/i, '');
+    if (v && !coordsFromText(v)) return { query: v, name: name ?? v.split(',')[0]!.trim() };
+  }
+  const search = clean(/\/search\/([^/@]+)/.exec(path)?.[1]);
+  if (search && !coordsFromText(search)) return { query: search, name: name ?? search.split(',')[0]!.trim() };
+  return name && !coordsFromText(name) ? { query: name, name } : null;
+}
+
+/** Google Maps URLs written inside a page (interstitials, meta refresh, canonical links). */
+function mapsUrlsIn(html: string) {
+  const out: string[] = [];
+  for (const m of html.matchAll(/https?:(?:\\\/|\/){2}(?:www\.|maps\.)?google\.[a-z.]+(?:\\\/|\/)maps(?:\\\/|[^"'<>\s\\])*/gi)) {
+    out.push(m[0].replace(/\\\//g, '/').replace(/&amp;/g, '&'));
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+export type Resolved = Point | { query: string; name?: string };
+
+/**
+ * Pasted text from the owner: coordinates, or anything containing a Google Maps link.
+ * Returns the exact point, or, when Google won't show us one (links shared from the phone app name
+ * the place instead, and Google often answers servers with a check page), the place's name and
+ * address as `query`, which the dashboard looks up with Google Places in the owner's browser.
+ */
+export async function resolveLocation(input: string): Promise<Resolved> {
   const text = input.trim().slice(0, 2000);
   const direct = coordsFromText(text);
   if (direct) return direct;
@@ -115,10 +158,11 @@ export async function resolveLocation(input: string): Promise<Point> {
   }
   if (!isGoogleMapsHost(url.hostname)) throw new ApiError('invalid', 'Use a Google Maps link (Share → Copy link in Google Maps).');
 
-  let name: string | undefined;
+  let named: { query: string; name?: string } | null = null;
   for (let hop = 0; hop < 6; hop++) {
     const found = coordsFromMapsUrl(url.toString());
-    if (found) return { ...found, name: found.name ?? name };
+    if (found) return { ...found, name: found.name ?? named?.name };
+    named = queryFromMapsUrl(url.toString()) ?? named;
     // Consent / interstitial pages carry the real URL in ?continue=.
     const cont = url.searchParams.get('continue');
     if (cont) {
@@ -132,22 +176,34 @@ export async function resolveLocation(input: string): Promise<Point> {
         /* fall through */
       }
     }
-    name ??= /\/place\/([^/@]+)/.exec(decodeURIComponent(url.pathname).replace(/\+/g, ' '))?.[1];
     const res = await get(url.toString());
-    if (!res) throw new ApiError('internal', 'Couldn’t reach Google Maps. Try again, or drop the pin on the map.');
+    if (!res) break;
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
-      const next = new URL(loc, url);
+      let next: URL;
+      try {
+        next = new URL(loc, url);
+      } catch {
+        break;
+      }
       if (!isGoogleMapsHost(next.hostname)) break;
       url = next;
       continue;
     }
     if (res.ok) {
       const html = (await res.text().catch(() => '')).slice(0, 3_000_000);
+      // A page that points on to the place (e.g. a JavaScript redirect): read that URL first, it
+      // carries the place's name too; then any coordinates written in the page itself.
+      for (const u of mapsUrlsIn(html)) {
+        const c = coordsFromMapsUrl(u);
+        if (c) return { ...c, name: c.name ?? named?.name };
+        named ??= queryFromMapsUrl(u);
+      }
       const p = coordsFromHtml(html);
-      if (p) return { ...p, name };
+      if (p) return { ...p, name: named?.name };
     }
     break;
   }
-  throw new ApiError('invalid', 'That link has no exact location. In Google Maps, open the turf itself, tap Share → Copy link, and paste it here.');
+  if (named) return named;
+  throw new ApiError('invalid', 'That link has no location in it. In Google Maps, open the turf itself, tap Share → Copy link, and paste it here.');
 }
