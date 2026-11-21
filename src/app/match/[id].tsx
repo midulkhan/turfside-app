@@ -5,7 +5,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Share, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
-import { SquadBar, Tag, VsTag, clockLabel, isOpponent, levelLabel, positionLabel, versusLabel, whenLabel } from '@/components/match/match-ui';
+import { SquadBar, Tag, VersusCard, VsTag, clockLabel, isOpponent, matchTitle, levelLabel, positionLabel, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -113,6 +113,8 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
   const reserved = m.squad.filter((s) => !s.paid).length;
   const canPause = m.status === 'open' || m.status === 'paused';
   const opp = isOpponent(m);
+  // The team that's paid (or paying now) to play you.
+  const opponentTeam = opp ? m.squad[0] : undefined;
 
   const share = () =>
     Share.share({
@@ -177,18 +179,20 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
       <Card style={styles.matchCard}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${m.title}`} onPress={onEditTitle} style={styles.titleRow} hitSlop={6}>
           <Text variant="h2" numberOfLines={1} style={styles.titleText}>
-            {m.title}
+            {matchTitle(m)}
           </Text>
           <Pencil size={18} color={colors.ink} strokeWidth={1.8} />
         </Pressable>
         {opp ? (
-          <View style={styles.stats}>
-            <Stat text value={m.teamName ?? 'Your team'} label="Your team" />
-            <View style={styles.vr} />
-            <Stat text value={m.opponent?.teamName ?? (reserved ? 'Paying…' : '—')} label="Opponent" />
-            <View style={styles.vr} />
-            <Stat value={formatTaka(m.share)} label={`They pay (${m.opponentPercent ?? 50}%)`} />
-          </View>
+          <VersusCard
+            bare
+            left={{ name: m.teamName ?? 'Your team', caption: 'Your team', avatar: m.faces[0] }}
+            right={
+              opponentTeam
+                ? { name: opponentTeam.teamName ?? opponentTeam.name, caption: opponentTeam.paid ? `Captain ${opponentTeam.name}` : 'Paying now…', avatar: opponentTeam }
+                : { name: 'Opponent?', caption: m.requests.length ? `${m.requests.length} challenge${m.requests.length === 1 ? '' : 's'} waiting` : 'Waiting for challenges', muted: true }
+            }
+          />
         ) : (
           <>
             <View style={styles.stats}>

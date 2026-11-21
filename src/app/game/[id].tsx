@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PinDrop } from '@/components/icons/pin-drop';
 import { ContactRow } from '@/components/match/contact-row';
 import { EntryPass } from '@/components/ticket/entry-pass';
-import { JoinSheet, MatchAction, SquadBar, Tag, VsTag, isOpponent, levelLabel, spotsLabel, statusPill, versusLabel, whenLabel } from '@/components/match/match-ui';
+import { JoinSheet, MatchAction, SquadBar, Tag, VersusCard, VsTag, isOpponent, matchTitle, levelLabel, spotsLabel, statusPill, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
@@ -117,7 +117,7 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
 
       {/* Title */}
       <View style={styles.titleBlock}>
-        <Text variant="h1">{m.title}</Text>
+        <Text variant="h1">{matchTitle(m)}</Text>
         <View style={styles.tags}>
           {isOpponent(m) ? <VsTag /> : null}
           <Tag label={isOpponent(m) ? versusLabel(m.format) : m.format} />
@@ -210,17 +210,14 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
       {isOpponent(m) ? (
         <View style={styles.section}>
           <Text variant="h3">Teams</Text>
-          <Card style={styles.versus}>
-            <TeamSide name={m.teamName ?? 'Host team'} caption={`${m.faces[0]?.name ?? 'Host'} · ${levelLabel(m.level)}`} avatar={m.faces[0]} />
-            <View style={styles.vsBadge}>
-              <Swords size={18} color={colors.charcoal} strokeWidth={2.2} />
-            </View>
-            <TeamSide
-              name={m.opponent?.teamName ?? (m.my === 'paid' ? 'Your team' : 'Your team?')}
-              caption={m.opponent ? 'Confirmed' : 'Waiting for a challenger'}
-              muted={!m.opponent}
-            />
-          </Card>
+          <VersusCard
+            left={{ name: m.teamName ?? 'Host team', caption: `${m.faces[0]?.name ?? 'Host'} · ${levelLabel(m.level)}`, avatar: m.faces[0] }}
+            right={
+              m.opponent
+                ? { name: m.opponent.teamName, caption: m.my === 'paid' ? 'Your team' : 'Confirmed', avatar: m.faces[1] ?? null }
+                : { name: 'Your team?', caption: 'Waiting for a challenger', muted: true }
+            }
+          />
         </View>
       ) : null}
       <View style={[styles.section, isOpponent(m) && styles.hidden]}>
@@ -294,27 +291,6 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
   );
 }
 
-function TeamSide({ name, caption, avatar, muted }: { name: string; caption: string; avatar?: { name: string; avatar: string | null }; muted?: boolean }) {
-  return (
-    <View style={styles.teamSide}>
-      {avatar ? (
-        <Avatar name={avatar.name} uri={avatar.avatar} size={48} />
-      ) : (
-        <View style={[styles.teamBlank, muted && styles.teamBlankMuted]}>
-          <Text variant="title" color={muted ? colors.textMuted : colors.ink}>
-            ?
-          </Text>
-        </View>
-      )}
-      <Text variant="labelStrong" numberOfLines={1} align="center" color={muted ? colors.textMuted : colors.ink}>
-        {name}
-      </Text>
-      <Text variant="caption" color={colors.textMuted} numberOfLines={1} align="center">
-        {caption}
-      </Text>
-    </View>
-  );
-}
 
 function Point({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   return (
@@ -461,11 +437,6 @@ const styles = createStyles(() => ({
   barLine: { width: 1, height: 36, backgroundColor: colors.border },
   counter: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   hidden: { display: 'none' },
-  versus: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  teamSide: { flex: 1, alignItems: 'center', gap: 4, minWidth: 0 },
-  teamBlank: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
-  teamBlankMuted: { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong },
-  vsBadge: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   count: { minWidth: 32, textAlign: 'center', fontVariant: ['tabular-nums'] },
   timer: { flexDirection: 'row', alignItems: 'center', gap: space[2], backgroundColor: colors.limeSoft, borderRadius: radius.md, paddingHorizontal: space[3], paddingVertical: space[2] },
   timerUrgent: { backgroundColor: colors.dangerSoft },

@@ -52,6 +52,9 @@ export const whenLabel = (m: Pick<Match, 'day' | 'start' | 'end'>) => `${dayLabe
 export const spotsLabel = (n: number) => (n === 1 ? '1 spot left' : `${n} spots left`);
 /** Looking for a whole opposing team (not single players). */
 export const isOpponent = (m: Pick<Match, 'type'>) => m.type === 'opponent';
+/** Opponent posts read "Badda FC vs Uttara Kings" once a team has paid (the default title ends "vs ?"). */
+export const matchTitle = (m: Pick<Match, 'title' | 'type' | 'opponent'>) =>
+  m.type === 'opponent' && m.opponent && /\bvs \?$/.test(m.title) ? m.title.replace(/\?$/, m.opponent.teamName) : m.title;
 /** "5-a-side" → "5 v 5". */
 export const versusLabel = (format: string) => {
   const n = /^(\d+)-a-side$/.exec(format)?.[1];
@@ -210,6 +213,51 @@ function TeamLine({ m }: { m: Match }) {
   );
 }
 
+type Side = { name: string; caption: string; avatar?: { name: string; avatar: string | null } | null; muted?: boolean };
+
+/** Team vs Team: both sides facing each other with a VS badge between them. */
+/** `bare`: no card of its own (when it already sits inside one). */
+export function VersusCard({ left, right, bare }: { left: Side; right: Side; bare?: boolean }) {
+  const Wrap = bare ? View : Card;
+  return (
+    <Wrap style={[styles.versus, bare && styles.versusBare]}>
+      <VersusSide {...left} />
+      <View style={styles.vsCol}>
+        <View style={styles.vsLine} />
+        <View style={styles.vsBadge}>
+          <Text variant="title" style={styles.vsBadgeText} maxFontSizeMultiplier={1.2}>
+            VS
+          </Text>
+        </View>
+        <View style={styles.vsLine} />
+      </View>
+      <VersusSide {...right} />
+    </Wrap>
+  );
+}
+
+function VersusSide({ name, caption, avatar, muted }: Side) {
+  return (
+    <View style={styles.vsSide}>
+      {avatar ? (
+        <Avatar name={avatar.name} uri={avatar.avatar} size={64} ring={colors.lime} />
+      ) : (
+        <View style={styles.vsBlank}>
+          <Text variant="h2" color={colors.textMuted}>
+            ?
+          </Text>
+        </View>
+      )}
+      <Text variant="title" numberOfLines={2} align="center" color={muted ? colors.textMuted : colors.ink} style={styles.vsName}>
+        {name}
+      </Text>
+      <Text variant="caption" color={colors.textMuted} numberOfLines={1} align="center">
+        {caption}
+      </Text>
+    </View>
+  );
+}
+
 /** Players see the match details; the organiser goes straight to managing their match. */
 const openDetails = (id: string, owner = false) =>
   owner ? router.push({ pathname: '/match/[id]', params: { id } }) : router.push({ pathname: '/game/[id]', params: { id } });
@@ -227,7 +275,7 @@ export const MatchCard = memo(function MatchCard({ m }: { m: Match }) {
         <View style={styles.info}>
           <View style={styles.titleRow}>
             <Text variant="title" numberOfLines={1} style={styles.titleText}>
-              {m.title}
+              {matchTitle(m)}
             </Text>
             <View style={[styles.spots, muted && styles.spotsMuted]}>
               <Text variant="caption" style={styles.spotsText} color={muted ? colors.textMuted : colors.limeText}>
@@ -748,6 +796,25 @@ const styles = createStyles(() => ({
   tagText: { color: colors.text },
   vsTag: { gap: 5, backgroundColor: colors.lime },
   vsText: { color: colors.charcoal, fontFamily: font.semibold },
+  versus: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[5] },
+  versusBare: { paddingVertical: space[2] },
+  vsSide: { flex: 1, alignItems: 'center', gap: 6, minWidth: 0 },
+  vsBlank: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceMuted,
+  },
+  vsName: { marginTop: 4 },
+  vsCol: { alignItems: 'center', alignSelf: 'stretch', gap: 6 },
+  vsLine: { flex: 1, width: 1, backgroundColor: colors.border },
+  vsBadge: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  vsBadgeText: { color: colors.charcoal, fontFamily: font.bold, fontSize: 17, lineHeight: 20, letterSpacing: 0.3 },
   teamText: { flexShrink: 1, minWidth: 0, maxWidth: 170 },
   spots: { flexShrink: 0, paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.limeSoft },
   spotsText: { fontFamily: font.semibold },
