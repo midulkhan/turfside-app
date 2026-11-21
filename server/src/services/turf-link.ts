@@ -114,7 +114,7 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
   ].filter(Boolean) as string[];
   const deep = `${scheme}://t/${v.short_code}`;
   // Android: an intent link opens the app if it's installed, otherwise the store page.
-  const intent = `intent://t/${v.short_code}#Intent;scheme=${scheme};package=app.turfsides;S.browser_fallback_url=${encodeURIComponent(android ?? PLAY)};end`;
+  const intent = `intent://t/${v.short_code}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=app.turfsides;S.browser_fallback_url=${encodeURIComponent(android ?? PLAY)};end`;
 
   const stores = [
     android ? `<a class="store" href="${esc(android)}">Get it on Google Play</a>` : `<span class="store off">Google Play · coming soon</span>`,
@@ -141,7 +141,7 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
     <p class="place">${esc(place)}</p>
     <p class="facts">${facts.map((f) => `<span>${esc(f)}</span>`).join('')}</p>
     <a class="btn" id="open" href="${esc(deep)}" data-intent="${esc(intent)}">Open in the TurfSides app</a>
-    <p class="note">See times, prices and book in the app.</p>
+    <p class="note" id="note">See times, prices and book in the app.</p>
     <div class="stores">${stores}</div>
   </div>
 </main>
@@ -149,7 +149,12 @@ export function turfPage(v: (Row & { from: string }) | null, code: string) {
   // Android browsers: use the intent link, which falls back to the store if the app isn't installed.
   (function () {
     var a = document.getElementById('open');
-    if (/Android/i.test(navigator.userAgent)) a.href = a.getAttribute('data-intent');
+    var ua = navigator.userAgent;
+    if (/Android/i.test(ua)) a.href = a.getAttribute('data-intent');
+    // Facebook, Instagram, Messenger and other in-app browsers often refuse to open apps.
+    if (/FBAN|FBAV|FB_IAB|Instagram|Messenger|Line[/]|; wv[)]/i.test(ua)) {
+      document.getElementById('note').textContent = "If the app doesn't open, tap ⋮ and choose Open in browser, then tap the button again.";
+    }
   })();
 </script>`,
     }),
