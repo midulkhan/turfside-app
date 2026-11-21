@@ -100,6 +100,10 @@ export const explore = (p: ExploreParams, signal?: AbortSignal, page?: { cursor:
 export const getVenue = (id: string, signal?: AbortSignal) =>
   request<VenueDetail>('GET', `/v1/venues/${enc(id)}`, { auth: 'optional', signal });
 
+/** A share link's code (turfsides.com/FDJV346) → the turf it points to. */
+export const getVenueByCode = (code: string, signal?: AbortSignal) =>
+  request<{ id: string; name: string }>('GET', `/v1/venues/code/${enc(code)}`, { auth: 'optional', signal });
+
 /**
  * `after`: the database transaction a realtime event reported. The server answers from its
  * cache only if that cache already includes the change, otherwise straight from the database.

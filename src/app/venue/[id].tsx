@@ -548,7 +548,13 @@ export default function VenueScreen() {
               variant={btnVariant}
               blurTarget={blurTarget}
               size={HERO_BTN}
-              onPress={() => v && Share.share({ message: `${v.name}, ${v.area} — book on TurfSides: https://turfsides.app/v/${v.id}` })}
+              onPress={() =>
+                v &&
+                Share.share({
+                  // The short link opens this turf in the app (or a page with the turf and store links).
+                  message: v.shareUrl ? `${v.name}, ${v.area}. Book on TurfSides: ${v.shareUrl}` : `${v.name}, ${v.area}. Book on TurfSides.`,
+                })
+              }
             />
             <IconButton
               icon={Heart}

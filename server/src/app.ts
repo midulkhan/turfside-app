@@ -31,7 +31,8 @@ import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
-import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, summary } from './services/venues';
+import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, refLabel, shareUrl, summary } from './services/venues';
+import { PAGE_CSP, turfPage, venueByCode } from './services/turf-link';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -397,6 +398,20 @@ export async function buildApp() {
     const saved = new Set((await q<{ venue_id: string }>('select venue_id from saved_venues where user_id = $1', [req.user.userId])).map((r) => r.venue_id));
     const mark = (v: { id: string }) => ({ ...v, isSaved: saved.has(v.id) });
     return { ...base, near: base.near.map(mark), further: base.further.map(mark) };
+  });
+
+  // Share links: turfsides.com/FDJV346. The app resolves the code to the turf; people without the
+  // app (and link-preview bots) get the page at /t/:code, which turfsides.com forwards to.
+  app.get('/v1/venues/code/:code', async (req) => {
+    const v = await venueByCode((req.params as { code: string }).code);
+    if (!v) throw new ApiError('not_found', 'This turf link isn’t active.');
+    return { id: v.id, name: v.name, ref: refLabel(v.ref_no), shortCode: v.short_code, shareUrl: shareUrl(v.short_code) };
+  });
+  app.get('/t/:code', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const page = turfPage(await venueByCode(code), code);
+    reply.code(page.status).header('Content-Security-Policy', PAGE_CSP).header('Cache-Control', 'public, max-age=300').type('text/html; charset=utf-8');
+    return page.html;
   });
 
   app.get('/v1/venues/:id', { preHandler: optionalUser }, async (req) => {

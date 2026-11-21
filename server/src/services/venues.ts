@@ -33,6 +33,8 @@ export type VenueRow = {
   bands?: PriceBand[] | null;
   /** Migration 021: the owner paused new bookings (missing on older cached rows = not paused). */
   booking_paused?: boolean | null;
+  short_code?: string | null;
+  ref_no?: number | null;
   slot_sets?: SessionSetRow[] | null;
   booking_notice?: string | null;
   photos: string[] | null;
@@ -44,7 +46,7 @@ const VENUE_SELECT = `
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
          p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice,
+         s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice, v.short_code, v.ref_no,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
   from venues v
@@ -317,6 +319,17 @@ export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?:
   };
 }
 
+/** "TS-5356", the turf's public reference number. */
+export const refLabel = (n: number | null | undefined) => (n ? `TS-${n}` : null);
+/** turfsides.com/FDJV346, the turf's share link (opens the app when it's installed). */
+export const shareUrl = (code: string | null | undefined) => (code ? `${config.SITE_URL.replace(/\/+$/, '')}/${code}` : null);
+export const SHORT_CODE = /^[A-HJ-NP-Z2-9]{7}$/;
+const turfIds = (v: { short_code?: string | null; ref_no?: number | null }) => ({
+  ref: refLabel(v.ref_no),
+  shortCode: v.short_code ?? null,
+  shareUrl: shareUrl(v.short_code),
+});
+
 export function detail(v: VenueRow, saved: boolean) {
   const fmt = (m: number) => {
     const mm = ((m % 1440) + 1440) % 1440;
@@ -336,6 +349,7 @@ export function detail(v: VenueRow, saved: boolean) {
     about: v.about,
     sessionLengthMin: v.session_min,
     cancellationPolicy: v.cancellation_policy,
+    ...turfIds(v),
     /** Shown on the turf page while the owner has paused bookings. */
     bookingNotice: v.booking_paused ? v.booking_notice || 'This turf is not taking new bookings right now.' : null,
   };

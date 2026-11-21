@@ -190,6 +190,12 @@ the `slot_updates` realtime feed. The API connects as the DB owner.
 5. Phone numbers in squads follow the consent rules in §6.
 6. Codes (OTP) go by **email**; SMS only for changing a phone number or accounts without email.
    Sign-in 2FA is per user (`Enable 2FA` switch, off by default).
+7. **Turf IDs and share links** are made by the database when a turf is created and never change:
+   `ref_no` → shown as `TS-5356` (4 digits, random, unique; continues at 10000 if all 9,000 are used)
+   and `short_code` → `turfsides.com/FDJV346` (7 capitals/digits, no 0/O/1/I). The app opens these
+   links through `src/app/+native-intent.tsx` → `/t/[code]` (kept through sign-in). Without the
+   app, turfsides.com forwards to `api.turfsides.com/t/<code>` (page + link preview). The files
+   turfsides.com needs live in `site/` (upload by hand; see its README).
 
 ---
 

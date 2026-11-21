@@ -82,6 +82,8 @@ function RootNavigator() {
           }}>
           <Stack.Screen name="index" options={{ animation: 'none' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade', statusBarStyle: 'light' }} />
+          {/* Turf share links: open for everyone; it holds the link while a signed-out person signs in. */}
+          <Stack.Screen name="t/[code]" options={{ animation: 'fade' }} />
           <Stack.Protected guard={!user} redirectTo="/">
             <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
           </Stack.Protected>

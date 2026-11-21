@@ -1,0 +1,14 @@
+# ── TurfSides share links ─────────────────────────────────────────────────────
+# turfsides.com/FDJV346 (7 capitals/digits) → the turf page on the API.
+# With the TurfSides app installed, Android opens the app before this ever runs.
+# Only exact 7-character codes match; real files and folders on this site are untouched.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([A-HJ-NP-Z2-9]{7})/?$ https://api.turfsides.com/t/$1 [R=302,L]
+
+# App-link verification file: must be served as JSON, with no redirect.
+<Files "assetlinks.json">
+  ForceType application/json
+</Files>
+# ── end TurfSides share links ─────────────────────────────────────────────────

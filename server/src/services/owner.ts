@@ -4,7 +4,7 @@ import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 
-import { invalidateVenue, photoUrl } from './venues';
+import { invalidateVenue, photoUrl, refLabel, shareUrl } from './venues';
 
 /**
  * Owner-side turf management (used by the owner app, and by Postman for demo data).
@@ -184,6 +184,8 @@ type OwnerRow = {
   slot_sets: { id: string; name: string; live: boolean; days?: number[] | null; slots: { start: number; end: number; price: number | null }[] }[] | null;
   booking_paused: boolean;
   booking_notice: string | null;
+  short_code: string;
+  ref_no: number;
   photos: string[] | null;
 };
 
@@ -191,13 +193,17 @@ const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates,
-         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice,
+         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
 
 function shape(r: OwnerRow) {
   return {
     id: r.id,
+    /** "TS-5356" and the share link turfsides.com/FDJV346: given by the database when the turf is created. */
+    ref: refLabel(r.ref_no),
+    shortCode: r.short_code,
+    shareUrl: shareUrl(r.short_code),
     status: r.status,
     name: r.name,
     area: r.area,

@@ -16,6 +16,11 @@ const schema = z.object({
   PORT: z.coerce.number().int().default(3000),
   PUBLIC_URL: z.string().url().default('https://api.turfsides.com'),
   APP_SCHEME: z.string().default('turfsides'),
+  /** Public website: turf share links are SITE_URL/<short code> (turfsides.com/FDJV346). */
+  SITE_URL: z.string().url().default('https://turfsides.com'),
+  /** Store pages for the share-link page. Unset = shown as "coming soon". */
+  ANDROID_STORE_URL: z.string().url().optional(),
+  IOS_STORE_URL: z.string().url().optional(),
   CORS_ORIGINS: z.string().default('https://turfsides.com,https://www.turfsides.com'),
   TRUST_PROXY: bool.default(true),
 

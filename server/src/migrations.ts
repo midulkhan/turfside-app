@@ -24,6 +24,7 @@ import m017 from '../db/migrations/017_two_factor.sql';
 import m020 from '../db/migrations/020_owner_dashboard.sql';
 import m021 from '../db/migrations/021_session_sets_pause.sql';
 import m024 from '../db/migrations/024_push_tokens_follow_session.sql';
+import m025 from '../db/migrations/025_venue_codes.sql';
 import m023 from '../db/migrations/023_opponents.sql';
 import m022 from '../db/migrations/022_owner_accounts.sql';
 
@@ -52,6 +53,7 @@ const MIGRATIONS: [string, string][] = [
   ['022_owner_accounts', m022],
   ['023_opponents', m023],
   ['024_push_tokens_follow_session', m024],
+  ['025_venue_codes', m025],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */
