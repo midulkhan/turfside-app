@@ -429,7 +429,7 @@ const styles = createStyles(() => ({
   },
   heroPillMuted: { backgroundColor: 'rgba(255,255,255,0.92)' },
   titleBlock: { gap: space[3], marginTop: -space[1] },
-  tags: { flexDirection: 'row', gap: space[2], flexWrap: 'wrap' },
+  tags: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[4], paddingVertical: space[4] },
   divider: { marginHorizontal: space[4] },
   section: { gap: space[3] },

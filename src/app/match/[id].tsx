@@ -399,7 +399,7 @@ const styles = createStyles(() => ({
   stats: { flexDirection: 'row', alignItems: 'center' },
   stat: { flex: 1, alignItems: 'center', gap: 2, minWidth: 0 },
   vr: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
-  tags: { flexDirection: 'row', gap: space[2] },
+  tags: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   buttons: { flexDirection: 'row', gap: space[3] },
   section: { marginTop: space[3] },
   person: { flexDirection: 'row', alignItems: 'center', gap: space[3] },

@@ -62,7 +62,8 @@ export const versusLabel = (format: string) => {
 export function Tag({ label }: { label: string }) {
   return (
     <View style={styles.tag}>
-      <Text variant="caption" style={styles.tagText}>
+      {/* One line, and capped growth with large system text, so pills stay even. */}
+      <Text variant="caption" style={styles.tagText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {label}
       </Text>
     </View>
@@ -184,7 +185,7 @@ export function VsTag() {
   return (
     <View style={[styles.tag, styles.vsTag]}>
       <Swords size={12} color={colors.charcoal} strokeWidth={2.2} />
-      <Text variant="caption" style={styles.vsText}>
+      <Text variant="caption" style={styles.vsText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         Team vs Team
       </Text>
     </View>
@@ -747,10 +748,20 @@ const styles = createStyles(() => ({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   titleText: { flex: 1, minWidth: 0 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tags: { flexDirection: 'row', gap: space[2], marginTop: 3, flexWrap: 'wrap' },
-  tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
+  tags: { flexDirection: 'row', alignItems: 'center', gap: space[2], marginTop: 3, flexWrap: 'wrap' },
+  // Every pill the same height (with or without an icon), never squeezed into two lines.
+  tag: {
+    flexShrink: 0,
+    minHeight: 28,
+    paddingHorizontal: 11,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tagText: { color: colors.text },
-  vsTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.lime },
+  vsTag: { gap: 5, backgroundColor: colors.lime },
   vsText: { color: colors.charcoal, fontFamily: font.semibold },
   teamText: { flexShrink: 1, minWidth: 0, maxWidth: 170 },
   spots: { flexShrink: 0, paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.limeSoft },
