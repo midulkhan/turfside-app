@@ -6,7 +6,7 @@ import {
   ArrowUpRight,
   Check,
   Copy,
-  Hash,
+  IdCard,
   Bath,
   CalendarDays,
   CirclePause,
@@ -1039,9 +1039,9 @@ function TurfId({ value }: { value: string }) {
   };
   return (
     <View style={styles.metaRow}>
-      <Hash size={16} color={colors.textMuted} strokeWidth={1.7} />
+      <IdCard size={16} color={colors.textMuted} strokeWidth={1.7} />
       <Text variant="body" color={colors.textMuted} style={styles.address} numberOfLines={1}>
-        Turf ID{'  '}
+        ID:{' '}
         <Text variant="bodyStrong" color={colors.text} selectable>
           {value}
         </Text>
@@ -1050,12 +1050,9 @@ function TurfId({ value }: { value: string }) {
         accessibilityRole="button"
         accessibilityLabel={copied ? 'Turf ID copied' : `Copy turf ID ${value}`}
         onPress={copy}
-        hitSlop={10}
-        style={[styles.copyPill, copied && styles.copyPillDone]}>
-        {copied ? <Check size={14} color={colors.limeText} strokeWidth={2.6} /> : <Copy size={14} color={colors.ink} strokeWidth={2} />}
-        <Text variant="caption" color={copied ? colors.limeText : colors.ink} style={styles.copyText}>
-          {copied ? 'Copied' : 'Copy'}
-        </Text>
+        hitSlop={12}
+        style={({ pressed }) => [styles.copyIcon, pressed && styles.copyPressed]}>
+        {copied ? <Check size={16} color={colors.limeText} strokeWidth={2.6} /> : <Copy size={16} color={colors.textMuted} strokeWidth={1.8} />}
       </Pressable>
     </View>
   );
@@ -1133,19 +1130,8 @@ const styles = createStyles(() => ({
   address: { fontSize: 13.5, lineHeight: 18 },
   dateNum: { fontSize: 16, lineHeight: 20 },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: space[2] },
-  copyPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    height: 26,
-    paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  copyPillDone: { borderColor: colors.lime, backgroundColor: colors.limeSoft },
-  copyText: { fontFamily: font.semibold },
+  copyIcon: { padding: 2, marginLeft: 2 },
+  copyPressed: { opacity: 0.5 },
 
   strip: { flexDirection: 'row', paddingVertical: space[4] },
   // equal columns, equal inner padding: long labels wrap instead of touching the dividers
