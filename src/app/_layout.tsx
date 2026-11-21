@@ -11,9 +11,9 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -26,9 +26,8 @@ import { DialogHost } from '@/components/ui/dialog';
 import { PushManager } from '@/features/notifications/push';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
-import { colors } from '@/theme/tokens';
+import { colors, palettes } from '@/theme/tokens';
 import { ThemeProvider, themedScreen, useTheme } from '@/theme/theme-provider';
-import { createStyles } from '@/theme/styles';
 
 installNavGuard(); // one tap = one screen, even on a fast double tap
 installDeviceLabel();
@@ -152,16 +151,20 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
 export default function RootLayout() {
   return (
+    // No colour here: this renders once, before the theme loads, so it would stay light forever.
+    // The page colour comes from ThemedRoot below, which follows the theme.
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
           <SessionProvider>
             <ThemeProvider>
               <ThemedStatusBar />
-              {/* whole app = Android blur source; full-screen overlays render above it */}
-              <OverlayProvider>
-                <RootNavigator />
-              </OverlayProvider>
+              <ThemedRoot>
+                {/* whole app = Android blur source; full-screen overlays render above it */}
+                <OverlayProvider>
+                  <RootNavigator />
+                </OverlayProvider>
+              </ThemedRoot>
               {/* The app's own popups (replaces the system alert), above everything. */}
               <DialogHost />
             </ThemeProvider>
@@ -172,4 +175,14 @@ export default function RootLayout() {
   );
 }
 
-const styles = createStyles(() => ({ root: { flex: 1, backgroundColor: colors.bg } }));
+/**
+ * The page colour behind every screen. It shows whenever a screen's content is gone before its
+ * native slide ends (Android removes the leaving screen's content early), so it must always be
+ * the current theme's background, never the light one from before the theme loaded.
+ */
+function ThemedRoot({ children }: { children: ReactNode }) {
+  const { scheme } = useTheme();
+  return <View style={[styles.root, { backgroundColor: palettes[scheme].bg }]}>{children}</View>;
+}
+
+const styles = StyleSheet.create({ root: { flex: 1 } });
