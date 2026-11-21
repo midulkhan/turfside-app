@@ -421,7 +421,7 @@ export default function VenueScreen() {
                     <Text variant="bodyStrong" style={styles.fromPrice}>
                       {formatTaka(startingPriceOf(v).amount)}
                     </Text>{' '}
-                    / {priceUnit(startingPriceOf(v), 'long')}
+                    / {priceUnit(startingPriceOf(v))}
                   </Text>
                 </View>
                 {v.ref ? <TurfId value={v.ref} /> : null}

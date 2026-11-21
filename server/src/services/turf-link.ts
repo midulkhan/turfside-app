@@ -84,7 +84,7 @@ export const PAGE_CSP =
 const taka = (poisha: number) => Math.round(poisha / 100).toLocaleString('en-IN');
 /** "From ৳2,000 / 120 min" (custom sessions, always in minutes) or "From ৳1,800/hr". */
 export const fromLabel = (p: ReturnType<typeof startingPrice>) =>
-  p.per === 'session' ? `From ৳${taka(p.amount)} / ${p.minutes} min` : `From ৳${taka(p.amount)}/hr`;
+  p.per === 'session' && p.minutes !== 60 ? `From ৳${taka(p.amount)} / ${p.minutes} min` : `From ৳${taka(p.amount)}/hr`;
 
 export function turfPage(v: (Row & { from: string }) | null, code: string) {
   const scheme = config.APP_SCHEME;

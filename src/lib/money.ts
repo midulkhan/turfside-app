@@ -24,8 +24,8 @@ export type StartingPrice = { per: 'session'; amount: Poisha; minutes: number } 
 export const startingPriceOf = (v: { startingPrice?: StartingPrice | null; hourlyFrom: Poisha }): StartingPrice =>
   v.startingPrice ?? { per: 'hour', amount: v.hourlyFrom };
 
-/** What the price is for, sessions always in minutes. Short: "hr", "90 min", "120 min". Long: "hour", "90-min session". */
+/** What the price is for: one hour is "hr", any other session length in minutes. Short: "hr", "90 min", "120 min". Long: "hour", "90-min session". */
 export function priceUnit(p: StartingPrice, style: 'short' | 'long' = 'short') {
-  if (p.per === 'hour') return style === 'short' ? 'hr' : 'hour';
+  if (p.per === 'hour' || p.minutes === 60) return style === 'short' ? 'hr' : 'hour'; // a 1-hour session reads as /hr
   return style === 'short' ? `${p.minutes} min` : `${p.minutes}-min session`;
 }
