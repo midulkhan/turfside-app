@@ -75,7 +75,7 @@ import { useSession } from '@/features/session/session';
 import { formatDistance } from '@/lib/geo';
 import { haptic } from '@/lib/haptics';
 import { newIdempotencyKey } from '@/lib/ids';
-import { formatTaka } from '@/lib/money';
+import { formatTaka, priceUnit, startingPriceOf } from '@/lib/money';
 import {
   addDays,
   dayOfMonth,
@@ -415,9 +415,9 @@ export default function VenueScreen() {
                   <Text variant="body" color={colors.textMuted} style={styles.address} numberOfLines={1}>
                     Starting at{'  '}
                     <Text variant="bodyStrong" style={styles.fromPrice}>
-                      {formatTaka(v.hourlyFrom)}
+                      {formatTaka(startingPriceOf(v).amount)}
                     </Text>{' '}
-                    / hour
+                    / {priceUnit(startingPriceOf(v), 'long')}
                   </Text>
                 </View>
               </View>
@@ -778,6 +778,15 @@ const BookPane = memo(function BookPane({
   noneOpen: boolean;
 }) {
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Session length of the day shown (custom sessions can differ by day): "60 min each" / "60–120 min".
+  const lengthLabel = useMemo(() => {
+    if (state !== 'ready') return null;
+    const lens = Object.values(grouped).flatMap((list) => list.map((s) => s.end - s.start));
+    if (!lens.length) return null;
+    const lo = Math.min(...lens);
+    const hi = Math.max(...lens);
+    return lo === hi ? `${lo} min each` : `${lo}–${hi} min`;
+  }, [grouped, state]);
   return (
     <>
       <Card style={styles.bookCard}>
@@ -799,9 +808,9 @@ const BookPane = memo(function BookPane({
         {/* Choose a time */}
         <View style={[styles.cardHead, styles.mtLg]}>
           <Text variant="title">Choose a time</Text>
-          {v ? (
+          {lengthLabel ? (
             <Text variant="label" color={colors.textMuted}>
-              {v.sessionLengthMin} min each
+              {lengthLabel}
             </Text>
           ) : null}
         </View>

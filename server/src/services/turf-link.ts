@@ -9,8 +9,7 @@
  */
 import { config } from '../config';
 import { one } from '../db';
-import { dhakaToday } from '../lib/time';
-import { getVenueRow, hourlyFromFor, photoUrl, refLabel, SHORT_CODE, shareUrl } from './venues';
+import { getVenueRow, photoUrl, refLabel, SHORT_CODE, shareUrl, startingPrice } from './venues';
 
 type Row = {
   id: string;
@@ -38,9 +37,9 @@ export async function venueByCode(raw: string) {
     [code],
   );
   if (!v) return null;
-  // "From ৳…/hr": the same figure the app shows (today's cheapest session), not just the standard rate.
+  // "From …": the same rule as the app (startingPrice), not just the standard rate.
   const row = await getVenueRow(v.id).catch(() => null);
-  return { ...v, from: Math.round((row ? hourlyFromFor(row, dhakaToday()) : v.hourly) / 100) }; // poisha → taka
+  return { ...v, from: row ? fromLabel(startingPrice(row)) : `From ৳${taka(v.hourly)}/hr` };
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -50,7 +49,13 @@ const PLAY = 'https://play.google.com/store/apps/details?id=app.turfsides';
 export const PAGE_CSP =
   "default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function turfPage(v: (Row & { from: number }) | null, code: string) {
+const taka = (poisha: number) => Math.round(poisha / 100).toLocaleString('en-IN');
+const hours = (min: number) => (min % 60 === 0 ? `${min / 60} hr` : min > 60 ? `${Math.floor(min / 60)} hr ${min % 60} min` : `${min} min`);
+/** "From ৳2,000 · 2 hr session" (custom sessions) or "From ৳1,800/hr". */
+export const fromLabel = (p: ReturnType<typeof startingPrice>) =>
+  p.per === 'session' ? `From ৳${taka(p.amount)} · ${hours(p.minutes)} session` : `From ৳${taka(p.amount)}/hr`;
+
+export function turfPage(v: (Row & { from: string }) | null, code: string) {
   const scheme = config.APP_SCHEME;
   const android = config.ANDROID_STORE_URL ?? null;
   const ios = config.IOS_STORE_URL ?? null;
@@ -70,12 +75,11 @@ export function turfPage(v: (Row & { from: number }) | null, code: string) {
 
   const photo = v.photo ? photoUrl(v.photo) : `${config.PUBLIC_URL}/static/brand/og-default.png`;
   const place = [v.area, v.city].filter(Boolean).join(', ');
-  const from = v.from.toLocaleString('en-IN');
   const rating = Number(v.rating);
   const facts = [
     rating > 0 ? `★ ${rating.toFixed(1)} (${v.review_count})` : null,
     v.formats?.length ? v.formats.join(' · ') : null,
-    `From ৳${from}/hr`,
+    v.from,
   ].filter(Boolean) as string[];
   const deep = `${scheme}://t/${v.short_code}`;
   // Android: an intent link opens the app if it's installed, otherwise the store page.

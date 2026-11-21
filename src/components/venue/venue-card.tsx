@@ -14,7 +14,7 @@ import { useIsSaved } from '@/features/api/saved-store';
 import type { VenueSummary } from '@/features/api/types';
 import { haptic } from '@/lib/haptics';
 import { formatDistance } from '@/lib/geo';
-import { formatTaka } from '@/lib/money';
+import { formatTaka, priceUnit, startingPriceOf } from '@/lib/money';
 import { colors, font, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
@@ -23,6 +23,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
   const qc = useQueryClient();
   const toggle = useToggleSaved();
   const saved = useIsSaved(venue.id, venue.isSaved);
+  const from = startingPriceOf(venue);
   const open = () => router.push({ pathname: '/venue/[id]', params: { id: venue.id } });
 
   return (
@@ -32,7 +33,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
         onPressIn={() => prefetchVenue(qc, venue)}
         onPress={open}
         accessibilityRole="button"
-        accessibilityLabel={`${venue.name}, ${venue.area}, ${formatTaka(venue.hourlyFrom)} per hour`}>
+        accessibilityLabel={`${venue.name}, ${venue.area}, from ${formatTaka(from.amount)} per ${priceUnit(from, 'long')}`}>
         <Card padded={false} elevated style={styles.card}>
           <View>
             <Photo source={venue.photo} style={styles.photo} recyclingKey={venue.id} />
@@ -57,9 +58,9 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
               </View>
               <View style={styles.price}>
                 <Text variant="bodyStrong" numberOfLines={1}>
-                  {formatTaka(venue.hourlyFrom)}
+                  {formatTaka(from.amount)}
                   <Text variant="caption" color={colors.textMuted}>
-                    {' '}/hrs
+                    {' '}/{priceUnit(from)}
                   </Text>
                 </Text>
               </View>

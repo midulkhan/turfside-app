@@ -71,12 +71,52 @@ export const slotRules = (v: VenueRow): SlotRules => ({
   custom: v.custom_slots,
   sets: v.slot_sets,
 });
-/** Lowest price per hour on `day`, for "from ৳…/hr" on cards. */
+/** Lowest price per hour on `day` (poisha). Kept for `hourlyFrom`, which older app builds show. */
 export function hourlyFromFor(v: VenueRow, day: string) {
   const r = rules(v);
   if (!r.bands.length && v.slot_mode !== 'custom') return hourlyFor(r, day);
   const per = sessionsFor(slotRules(v), day).map((s) => Math.round((priceFor(r, day, s) * 60) / Math.max(1, s.end - s.start)));
   return per.length ? Math.min(...per) : hourlyFor(r, day);
+}
+
+export const STARTING_DAYS = 7;
+
+/** Lowest per-hour price over the next 7 days, for the legacy `hourlyFrom` field. */
+function hourlyFrom7(v: VenueRow) {
+  const today = dhakaToday();
+  return Math.min(...Array.from({ length: STARTING_DAYS }, (_, i) => hourlyFromFor(v, addDays(today, i))));
+}
+
+/**
+ * "Starting at": the cheapest thing a player can actually book in the next 7 days (from now; sessions
+ * that have already started today don't count), so it doesn't change from one day to the next.
+ *  - Custom sessions (owner prices each session): the cheapest session's own price and its length,
+ *    e.g. ৳2,000 for a 2-hour session. Never an hourly figure nobody can pay.
+ *  - Same-length sessions: the lowest price per hour.
+ * Amounts in poisha.
+ */
+export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minutesNowInDhaka()):
+  | { per: 'session'; amount: number; minutes: number }
+  | { per: 'hour'; amount: number } {
+  const r = rules(v);
+  const sr = slotRules(v);
+  const custom = v.slot_mode === 'custom';
+  let best: { amount: number; minutes: number; hourly: number } | null = null;
+  for (let i = 0; i < STARTING_DAYS; i++) {
+    const day = addDays(today, i);
+    for (const s of sessionsFor(sr, day)) {
+      if (i === 0 && s.start < nowMin) continue;
+      const minutes = Math.max(1, s.end - s.start);
+      const amount = priceFor(r, day, s);
+      const hourly = Math.round((amount * 60) / minutes);
+      const better = custom
+        ? !best || amount < best.amount || (amount === best.amount && minutes > best.minutes)
+        : !best || hourly < best.hourly;
+      if (better) best = { amount, minutes, hourly };
+    }
+  }
+  if (!best) return { per: 'hour', amount: hourlyFor(r, today) };
+  return custom ? { per: 'session', amount: best.amount, minutes: best.minutes } : { per: 'hour', amount: best.hourly };
 }
 
 // ── Catalog: every published venue, the source for explore, search and turf pages ──────────
@@ -300,7 +340,6 @@ export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: numb
 }
 
 export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?: boolean; availableToday?: boolean }) {
-  const day = dhakaToday();
   return {
     id: v.id,
     name: v.name,
@@ -311,7 +350,9 @@ export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?:
     reviewCount: v.review_count,
     formats: v.formats,
     floodlit: v.floodlit,
-    hourlyFrom: hourlyFromFor(v, day),
+    // Older app builds show this as "৳… / hour"; it now covers the next 7 days like startingPrice.
+    hourlyFrom: hourlyFrom7(v),
+    startingPrice: startingPrice(v),
     availableToday: opts.availableToday ?? true,
     photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null,
     isSaved: !!opts.saved,

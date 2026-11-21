@@ -1,4 +1,4 @@
-import type { Poisha } from '@/lib/money';
+import type { Poisha, StartingPrice } from '@/lib/money';
 import type { DayKey } from '@/lib/time';
 
 /**
@@ -18,7 +18,10 @@ export type VenueSummary = {
   reviewCount: number;
   formats: PitchFormat[];
   floodlit: boolean;
+  /** Per hour. Kept for older builds; use `startingPrice` (via startingPriceOf). */
   hourlyFrom: Poisha;
+  /** The cheapest bookable in the next 7 days; per session for custom-session turfs. Older servers omit it. */
+  startingPrice?: StartingPrice | null;
   availableToday: boolean;
   photo: string | null; // absolute URL served by the API
   isSaved: boolean;
