@@ -205,7 +205,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             <SquadBar total={m.playersTotal} inCount={m.playersIn} reserved={reserved} />
           </>
         )}
-        <View style={styles.tags}>
+        <View style={[styles.tags, opp && styles.tagsCentered]}>
           {opp ? <VsTag /> : null}
           <Tag label={levelLabel(m.level)} />
           <Tag label={opp ? versusLabel(m.format) : m.format} />
@@ -404,6 +404,8 @@ const styles = createStyles(() => ({
   stat: { flex: 1, alignItems: 'center', gap: 2, minWidth: 0 },
   vr: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
   tags: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
+  // Under the VS card the pills sit in the middle, lined up with the badge.
+  tagsCentered: { justifyContent: 'center' },
   buttons: { flexDirection: 'row', gap: space[3] },
   section: { marginTop: space[3] },
   person: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
