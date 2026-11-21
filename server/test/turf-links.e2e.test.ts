@@ -140,6 +140,22 @@ d('turf links and reference numbers', () => {
     expect(short.json.mapUrl).toBe('https://maps.app.goo.gl/2m5QmFohHo5xcnkQA');
   }, 20_000);
 
+  it('search finds a turf by its ID: TS-####, just the digits, or the share code', async () => {
+    const v = made[1].json; // Code Lookup Arena
+    const digits = v.ref.slice(3);
+    const ids = (r: Record<string, any>) => [...r.json.near, ...r.json.further].map((x: Record<string, any>) => x.id);
+    for (const query of [v.ref, v.ref.toLowerCase().replace('-', ''), digits, `ts ${digits}`, v.shortCode]) {
+      const r = await call('GET', `/v1/venues/explore?lat=23.79&lng=90.40&q=${encodeURIComponent(query)}&limit=10`);
+      expect(r.status).toBe(200);
+      expect(ids(r)[0], query).toBe(v.id); // an exact ID match comes first
+    }
+    const first = [...(await call('GET', `/v1/venues/explore?lat=23.79&lng=90.40&q=${encodeURIComponent(v.ref)}`)).json.near][0];
+    expect(first?.ref ?? null).toBe(v.ref); // list items carry the ID
+    // Drafts stay hidden, even by ID; one or two digits don't match IDs.
+    expect(ids(await call('GET', `/v1/venues/explore?lat=23.79&lng=90.40&q=${encodeURIComponent(draft.ref)}`))).not.toContain(draft.id);
+    expect(ids(await call('GET', `/v1/venues/explore?lat=23.79&lng=90.40&q=${digits.slice(0, 2)}`))).not.toContain(v.id);
+  });
+
   it('seeded turfs got codes from the migration', async () => {
     const list = (await call('GET', '/v1/venues/explore?lat=23.78&lng=90.41')).json;
     const id = (list.near?.[0] ?? list.further?.[0])?.id as string;

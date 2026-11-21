@@ -30,12 +30,20 @@ const NO_ANCHOR = { disabled: true };
  * Search, kept light on the server the way big apps do it:
  * - debounced (300 ms), nothing under 2 letters, each new query aborts the last;
  * - queries are normalised (trim + lowercase) so "Bad" and "bad" share one cache entry;
- * - narrowing is local: the server matches `name + area` containing the text, so once
+ * - narrowing is local: the server matches `name + area` (or the turf ID) containing the text, so once
  *   "bad" is fetched, "badd", "badda"… are a subset of it and are filtered on the phone
  *   instantly, with no request (and no debounce wait);
  * - React Query caches each query, so going back to a previous one costs nothing.
  */
 const norm = (s: string) => s.trim().toLowerCase();
+
+/** Same rule as the server: name or area, or the turf ID ("TS-5741", "5741", "574"). */
+const matches = (v: VenueSummary, q: string) => {
+  if (`${v.name} ${v.area}`.toLowerCase().includes(q)) return true;
+  const id = q.replace(/[\s-]/g, '');
+  const ref = v.ref ? v.ref.toLowerCase().replace(/[\s-]/g, '') : '';
+  return !!ref && id.length >= 3 && /\d/.test(id) && (ref.includes(id) || `ts${id}` === ref);
+};
 
 export default function Search() {
   const insets = useSafeAreaInsets();
@@ -48,7 +56,8 @@ export default function Search() {
   // Last full answer from the server; any longer query containing its text is a subset of it.
   // Only a complete answer (every page loaded) can be narrowed on the phone.
   const [base, setBase] = useState<{ q: string; place: string; venues: VenueSummary[]; complete: boolean } | null>(null);
-  const covers = (s: string) => !!base && base.complete && base.place === placeKey && s.length >= 2 && s.includes(base.q);
+  // Not for digits: an ID only matches from 3 characters ("57" → nothing, "574" → TS-5741).
+  const covers = (s: string) => !!base && base.complete && base.place === placeKey && s.length >= 2 && s.includes(base.q) && !/\d/.test(s);
 
   const enabled = q.length >= 2 && !covers(q); // no request until there's a query, or when we can narrow locally
   const params = useMemo(
@@ -66,7 +75,7 @@ export default function Search() {
   const searching = !local && typed.length >= 2 && ((isFetching && !isFetchingNextPage && (isPlaceholderData || !data)) || typed !== q);
   const scrolled = useScrolled();
   const results = local
-    ? base!.venues.filter((v) => `${v.name} ${v.area}`.toLowerCase().includes(typed))
+    ? base!.venues.filter((v) => matches(v, typed))
     : enabled && data && !searching && !isError
       ? [...data.near, ...data.further]
       : [];
@@ -82,7 +91,7 @@ export default function Search() {
           <Input
             containerStyle={styles.flex}
             icon={SearchIcon}
-            placeholder="Search turfs or areas"
+            placeholder="Search turfs, areas or turf ID"
             value={text}
             onChangeText={setText}
             autoFocus

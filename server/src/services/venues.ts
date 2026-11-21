@@ -384,7 +384,23 @@ export function summary(v: VenueRow, opts: { lat?: number; lng?: number; saved?:
     photo: v.photos?.[0] ? photoUrl(v.photos[0]) : null,
     isSaved: !!opts.saved,
     bookingPaused: !!v.booking_paused,
+    ref: refLabel(v.ref_no),
   };
+}
+
+/**
+ * Search: by name or area ("banani"), or by the turf's ID: "TS-5741", "ts5741", "5741" or the
+ * first digits of it ("574"), or its 7-character share code. IDs need 3+ characters so a single
+ * digit doesn't match half the list. `exact` puts a full ID match first.
+ */
+export function searchMatch(v: { name: string; area: string; ref_no?: number | null; short_code?: string | null }, query: string) {
+  const ql = query.trim().toLowerCase();
+  if (`${v.name} ${v.area}`.toLowerCase().includes(ql)) return { hit: true, exact: false };
+  const id = ql.replace(/[\s-]/g, '');
+  const ref = v.ref_no ? `ts${v.ref_no}` : '';
+  if (ref && id.length >= 3 && /\d/.test(id) && (ref === id || `ts${id}` === ref || ref.includes(id))) return { hit: true, exact: ref === id || `ts${id}` === ref };
+  if (v.short_code && id.toUpperCase() === v.short_code) return { hit: true, exact: true };
+  return { hit: false, exact: false };
 }
 
 /** "TS-5356", the turf's public reference number. */

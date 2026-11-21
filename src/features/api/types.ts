@@ -27,6 +27,8 @@ export type VenueSummary = {
   isSaved: boolean;
   /** The owner paused new bookings (missing from older APIs = not paused). */
   bookingPaused?: boolean;
+  /** The turf's ID, "TS-5741" (null for turfs without one). */
+  ref?: string | null;
 };
 
 export type VenueDetail = VenueSummary & {

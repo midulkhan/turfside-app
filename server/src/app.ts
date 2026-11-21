@@ -31,7 +31,7 @@ import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
-import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowCached, haversineKm, refLabel, shareUrl, summary } from './services/venues';
+import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowCached, haversineKm, refLabel, searchMatch, shareUrl, summary } from './services/venues';
 import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
 
 declare module 'fastify' {
@@ -372,9 +372,11 @@ export async function buildApp() {
     const rows = (await allVenueRows())
       .filter((v) => (p.format === 'any' ? true : v.formats.includes(p.format)))
       .filter((v) => (p.floodlit === 'true' ? v.floodlit : true))
-      .filter((v) => (ql ? `${v.name} ${v.area}`.toLowerCase().includes(ql) : true))
-      .map((v) => ({ v, d: haversineKm(lat, lng, v.lat, v.lng) }))
-      .sort((a, b) => a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
+      .map((v) => ({ v, m: ql ? searchMatch(v, ql) : { hit: true, exact: false } }))
+      .filter((x) => x.m.hit)
+      .map(({ v, m }) => ({ v, exact: m.exact, d: haversineKm(lat, lng, v.lat, v.lng) }))
+      // A full turf ID match comes first, then nearest.
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || a.d - b.d || Number(b.v.rating) - Number(a.v.rating));
     let radiusKm = p.radius ?? RADIUS_STEPS[RADIUS_STEPS.length - 1];
     if (!p.radius) for (const r of RADIUS_STEPS) {
       if (rows.filter((x) => x.d <= r).length >= MIN_RESULTS) {
