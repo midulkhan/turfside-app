@@ -10,7 +10,8 @@ import type { Booking, BookingFilter, BookingPage, DaySlots, SlotStatus, Explore
 
 /**
  * Query keys + cache policy in one place.
- * - Venue info changes rarely → long staleTime, persisted to disk for instant start.
+ * - Turf info: persisted to disk so it shows instantly, then refreshed whenever the turf is
+ *   opened (staleTime 10 s), so owner changes from the dashboard show up straight away.
  * - Slot availability is never cached: always loaded live (see useSlots).
  */
 export const qk = {
@@ -47,7 +48,7 @@ export function useExplore(p: ExploreParams, enabled = true) {
 }
 
 export function useVenue(id: string) {
-  return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: 5 * 60_000 });
+  return useQuery({ queryKey: qk.venue(id), queryFn: ({ signal }) => api.getVenue(id, signal), staleTime: 10_000 });
 }
 
 /**
@@ -90,7 +91,7 @@ export function markSlots(qc: QueryClient, venueId: string, ids: string[], statu
 
 /** Warm the cache when the user starts pressing a card — the detail screen opens instantly. */
 export function prefetchVenue(qc: QueryClient, v: VenueSummary) {
-  qc.prefetchQuery({ queryKey: qk.venue(v.id), queryFn: ({ signal }) => api.getVenue(v.id, signal), staleTime: 5 * 60_000 });
+  qc.prefetchQuery({ queryKey: qk.venue(v.id), queryFn: ({ signal }) => api.getVenue(v.id, signal), staleTime: 10_000 });
   if (typeof v.photo === 'string') Image.prefetch(v.photo, 'memory-disk');
 }
 

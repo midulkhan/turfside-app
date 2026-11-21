@@ -53,8 +53,12 @@ d('owner turfs', () => {
     expect([...near.json.near, ...near.json.further].map((x: Json) => x.id)).toContain(banani.id);
 
     // Edit, then hide.
-    const edited = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...demo[0], pricing: { hourly: 2200 } }, o.accessToken);
+    const edited = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...demo[0], name: 'Banani Arena Fresh', pricing: { hourly: 2200 } }, o.accessToken);
     expect(edited.json.pricing).toEqual({ hourly: 2200, byWeekday: {}, specialDates: {} });
+    // The very next player read shows the change: turf page and slots, no cache delay.
+    expect((await call('GET', `/v1/venues/${banani.id}`)).json.name).toBe('Banani Arena Fresh');
+    const fresh = (await call('GET', `/v1/venues/${banani.id}/slots?day=${tomorrow()}`)).json.slots;
+    expect(fresh.some((x: Json) => x.price === 220_000)).toBe(true);
     expect((await call('DELETE', `/v1/owner/venues/${made[3].id}`, undefined, o.accessToken)).status).toBe(200);
     expect((await call('GET', `/v1/venues/${made[3].id}`)).status).toBe(404);
   });

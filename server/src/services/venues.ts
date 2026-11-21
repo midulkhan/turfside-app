@@ -1,4 +1,4 @@
-import { cacheGet, cacheIncr, cacheSet, sharedReadable, singleflight } from '../cache';
+import { cacheDel, cacheGet, cacheIncr, cacheSet, l1Del, l1Get, l1Set, sharedReadable, singleflight } from '../cache';
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
@@ -122,13 +122,14 @@ export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minute
 // ── Catalog: every published venue, the source for explore, search and turf pages ──────────
 /**
  * One shared copy in Redis (`venues:all`, tagged with `catalog:ver`), one parsed copy per
- * process. A process re-checks the tiny version key at most once a minute; owner edits bump
- * it, so every process picks up a change within a minute and the editing process instantly.
+ * process. A process re-checks the tiny version key at most every 20 s; owner edits bump it, so
+ * lists everywhere pick up a change within 20 s and the editing process instantly. The turf page
+ * and its slots don't wait for that: they read the one turf fresh (getVenueRowFresh).
  * Prices that money depends on are never read from here: holds read the venue from Postgres.
  */
 type Catalog = { ver: string; rows: VenueRow[]; byId: Map<string, VenueRow>; checkedAt: number; builtAt: number };
 let catalog: Catalog | null = null;
-const CATALOG_CHECK_MS = 60_000;
+const CATALOG_CHECK_MS = 20_000;
 const CATALOG_TTL_S = 15 * 60;
 
 const build = (ver: string, rows: VenueRow[]): Catalog => ({
@@ -184,10 +185,31 @@ export async function getOwnedVenueRow(ownerId: string, id: string) {
   return v;
 }
 
-/** After any venue edit (details, schedule, prices, photos, listing). */
-export async function invalidateVenue(_id?: string) {
+/**
+ * The turf page and its slots: this one turf straight from Postgres, so a dashboard change
+ * (prices, schedule, photos, pause) shows on the very next open, on every server process.
+ * Kept 3 s per process so a burst of requests for one turf is still a single query.
+ */
+const FRESH_MS = 3_000;
+const freshKey = (id: string) => `venue:fresh:${id}`;
+export async function getVenueRowFresh(id: string) {
+  const hit = l1Get<VenueRow>(freshKey(id));
+  if (hit) return hit;
+  return singleflight(freshKey(id), async () => {
+    const v = await getVenueRowExact(id);
+    l1Set(freshKey(id), v, FRESH_MS);
+    return v;
+  });
+}
+
+/**
+ * After any venue edit (details, schedule, prices, photos, listing, pause). Drops the shared
+ * Redis copy and bumps the version, so no server process serves the old turf again.
+ */
+export async function invalidateVenue(id?: string) {
   catalog = null;
-  await cacheIncr('catalog:ver');
+  if (id) l1Del(freshKey(id));
+  await Promise.all([cacheIncr('catalog:ver'), cacheDel('venues:all')]);
 }
 
 /**

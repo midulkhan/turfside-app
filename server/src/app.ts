@@ -31,7 +31,7 @@ import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
 import { registerOwnerRoutes } from './routes/owner';
-import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, haversineKm, refLabel, shareUrl, summary } from './services/venues';
+import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowFresh, haversineKm, refLabel, shareUrl, summary } from './services/venues';
 import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
 
 declare module 'fastify' {
@@ -428,7 +428,7 @@ export async function buildApp() {
 
   app.get('/v1/venues/:id', { preHandler: optionalUser }, async (req) => {
     const { id } = req.params as { id: string };
-    const v = await getVenueRow(id);
+    const v = await getVenueRowFresh(id);
     const saved = req.user ? !!(await one('select 1 from saved_venues where user_id = $1 and venue_id = $2', [req.user.userId, id])) : false;
     return detail(v, saved);
   });
@@ -444,7 +444,7 @@ export async function buildApp() {
       }),
       req.query,
     );
-    const venue = await getVenueRow(id);
+    const venue = await getVenueRowFresh(id);
     reply.header('Cache-Control', 'no-store');
     // `fresh` / `v` are accepted from older apps but no longer matter: every answer is live.
     void fresh;
@@ -488,7 +488,7 @@ export async function buildApp() {
   const venueId = (req: FastifyRequest) => parse(z.object({ id: z.string().regex(/^v_[A-Za-z0-9_]{1,40}$/, 'Unknown turf.') }), req.params).id;
   app.get('/v1/owner/venues', { preHandler: requireOwner }, async (req) => owner.listOwnerVenues(req.user!.userId));
   app.get('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.getOwnerVenue(req.user!.userId, venueId(req)));
-  app.post('/v1/owner/venues', { preHandler: requireOwner, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) =>
+  app.post('/v1/owner/venues', { preHandler: requireOwner, config: { rateLimit: { max: 20, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) =>
     owner.createVenue(req.user!.userId, parse(owner.venueInput, req.body)),
   );
   app.put('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.updateVenue(req.user!.userId, venueId(req), parse(owner.venueInput, req.body)));
