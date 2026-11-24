@@ -25,6 +25,7 @@ type Row = {
   ref_no: number;
   photo: string | null;
   hourly: number;
+  price_per: string;
 };
 
 /** The turf behind a short code, if it's listed. Codes are matched case-insensitively. */
@@ -32,7 +33,7 @@ export async function venueByCode(raw: string) {
   const code = raw.trim().toUpperCase();
   if (!SHORT_CODE.test(code)) return null;
   const v = await one<Row>(
-    `select v.id, v.name, v.area, v.city, v.rating, v.review_count, v.formats, v.short_code, v.ref_no, p.standard_hourly as hourly,
+    `select v.id, v.name, v.area, v.city, v.rating, v.review_count, v.formats, v.short_code, v.ref_no, p.standard_hourly as hourly, p.price_per,
             (select url from venue_photos ph where ph.venue_id = v.id order by position limit 1) as photo
        from venues v join venue_pricing p on p.venue_id = v.id
       where v.short_code = $1 and v.status = 'published'`,
@@ -41,7 +42,7 @@ export async function venueByCode(raw: string) {
   if (!v) return null;
   // "From …": the same rule as the app (startingPrice), not just the standard rate.
   const row = await getVenueRow(v.id).catch(() => null);
-  return { ...v, from: row ? fromLabel(startingPrice(row)) : `From ৳${taka(v.hourly)}/hr` };
+  return { ...v, from: row ? fromLabel(startingPrice(row)) : `From ৳${taka(v.hourly)}${v.price_per === 'slot' ? '' : '/hr'}` };
 }
 
 type Linked = Row & { from: string };

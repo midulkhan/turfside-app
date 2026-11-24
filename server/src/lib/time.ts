@@ -37,7 +37,15 @@ export function generateSessions({ openMin, closeMin, lengthMin, breakMin }: Ses
   return out;
 }
 
-export type PriceRules = { standardHourly: number; weekdayHourly: Record<string, number>; specialDates: Record<string, number> };
+/**
+ * A turf's rates (integer poisha). `per`: 'hour' (the original model: a session costs rate × its
+ * length) or 'slot' (each rate is the price of one session, whatever its length). Missing = 'hour'.
+ * The field names say "hourly" for history; they hold the rate in the turf's unit.
+ */
+export type PriceRules = { standardHourly: number; weekdayHourly: Record<string, number>; specialDates: Record<string, number>; per?: 'hour' | 'slot' | string | null };
+
+/** What one session of `lengthMin` costs at `rate` under these rules. */
+export const rateFor = (r: Pick<PriceRules, 'per'>, rate: number, lengthMin: number) => (r.per === 'slot' ? rate : sessionPrice(rate, lengthMin));
 
 /** Precedence: special date → weekday rule → standard rate. Money is integer poisha. */
 export function hourlyFor(r: PriceRules, day: string) {
@@ -86,10 +94,10 @@ export function sessionsFor(r: SlotRules, day?: string): CustomSlot[] {
 export function priceFor(r: PriceRules & { bands?: PriceBand[] | null }, day: string, s: CustomSlot) {
   const len = s.end - s.start;
   const special = r.specialDates[day];
-  if (special != null) return sessionPrice(special, len);
+  if (special != null) return rateFor(r, special, len);
   if (s.price != null) return s.price;
   const dow = dayOfWeek(day);
   const band = (r.bands ?? []).find((b) => s.start >= b.from && s.start < b.to && (!b.days?.length || b.days.includes(dow)));
-  if (band) return sessionPrice(band.hourly, len);
-  return sessionPrice(hourlyFor(r, day), len);
+  if (band) return rateFor(r, band.hourly, len);
+  return rateFor(r, hourlyFor(r, day), len);
 }

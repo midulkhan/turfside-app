@@ -54,7 +54,28 @@ d('owner turfs', () => {
 
     // Edit, then hide.
     const edited = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...demo[0], name: 'Banani Arena Fresh', pricing: { hourly: 2200 } }, o.accessToken);
-    expect(edited.json.pricing).toEqual({ hourly: 2200, byWeekday: {}, specialDates: {} });
+    expect(edited.json.pricing).toEqual({ hourly: 2200, per: 'hour', byWeekday: {}, specialDates: {} });
+
+    // Prices per slot: each session costs the rate, whatever its length; later saves that don't
+    // say keep it per slot. Decimals are refused in plain words.
+    const perSlot = { ...demo[0], schedule: { ...demo[0].schedule, sessionMinutes: 120, breakMinutes: 0 }, pricing: { hourly: 3400, per: 'slot', byWeekday: { fri: 4000 } } };
+    const ps = await call('PUT', `/v1/owner/venues/${banani.id}`, perSlot, o.accessToken);
+    expect(ps.status, JSON.stringify(ps.json)).toBe(200);
+    expect(ps.json.pricing).toMatchObject({ hourly: 3400, per: 'slot' });
+    const tue = (() => { const x = new Date(Date.now() + 6 * 3600_000); x.setUTCDate(x.getUTCDate() + ((9 - x.getUTCDay()) % 7 || 7)); return x.toISOString().slice(0, 10); })();
+    const fri = (() => { const x = new Date(Date.now() + 6 * 3600_000); x.setUTCDate(x.getUTCDate() + ((12 - x.getUTCDay()) % 7 || 7)); return x.toISOString().slice(0, 10); })();
+    const tueSlots = (await call('GET', `/v1/venues/${banani.id}/slots?day=${tue}`)).json.slots;
+    expect(tueSlots[0].end - tueSlots[0].start).toBe(120);
+    expect(new Set(tueSlots.map((x: Json) => x.price))).toEqual(new Set([340000]));
+    expect((await call('GET', `/v1/venues/${banani.id}/slots?day=${fri}`)).json.slots[0].price).toBe(400000);
+    expect((await call('GET', `/v1/venues/${banani.id}`)).json.startingPrice).toEqual({ per: 'session', amount: 340000, minutes: 120 });
+    const kept = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...perSlot, pricing: { hourly: 3000 } }, o.accessToken);
+    expect(kept.json.pricing).toMatchObject({ hourly: 3000, per: 'slot' });
+    const dec = await call('PUT', `/v1/owner/venues/${banani.id}`, { ...perSlot, pricing: { hourly: 3000.5, per: 'slot' } }, o.accessToken);
+    expect(dec.status).toBe(400);
+    expect(dec.json.error).toMatchObject({ message: 'Standard price: Use whole taka only, with no decimals (e.g. 1500).', field: 'pricing.hourly' });
+    // Back to per hour for the checks below.
+    expect((await call('PUT', `/v1/owner/venues/${banani.id}`, { ...demo[0], name: 'Banani Arena Fresh', pricing: { hourly: 2200, per: 'hour' } }, o.accessToken)).status).toBe(200);
     // Saving clears that turf's cache: the very next read shows the change, with a new version.
     const after = (await call('GET', `/v1/venues/${banani.id}`)).json;
     expect(after.name).toBe('Banani Arena Fresh');
@@ -77,7 +98,7 @@ d('owner turfs', () => {
     expect((await call('DELETE', `/v1/owner/venues/${t.id}`, undefined, b.accessToken)).status).toBe(404);
     const bad = await call('POST', '/v1/owner/venues', { ...demo[0], schedule: { ...demo[0].schedule, opens: '6am' } }, a.accessToken);
     expect(bad.status).toBe(400);
-    expect(bad.json.error.message).toMatch(/^schedule\.opens: /);
+    expect(bad.json.error.message).toMatch(/^Opening time: /);
     const foreignPhoto = await call('POST', '/v1/owner/venues', { ...demo[0], photos: ['https://evil.example/x.jpg'] }, a.accessToken);
     expect(foreignPhoto.status).toBe(400);
   });

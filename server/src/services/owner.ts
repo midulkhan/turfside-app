@@ -15,7 +15,11 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour time like "06:00" or "23:30".');
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const fromMin = (m: number) => `${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-const taka = z.number().int().min(100, 'Prices are in taka, at least ৳100.').max(100_000);
+const taka = z
+  .number({ message: 'Enter a price in taka.' })
+  .int('Use whole taka only, with no decimals (e.g. 1500).')
+  .min(100, 'Prices must be at least ৳100.')
+  .max(100_000, 'Prices can be at most ৳100,000.');
 
 /** Photos: our own uploads (images.turfsides.com) or the bundled demo pictures. */
 const photo = z.string().refine((u) => /^\/static\/seed\/[a-z0-9-]+\.webp$/.test(u) || (!!config.R2_PUBLIC_URL && u.startsWith(`${config.R2_PUBLIC_URL.replace(/\/+$/, '')}/venues/`)), {
@@ -58,7 +62,10 @@ export const venueInput = z.object({
     breakMinutes: z.number().int().min(0).max(60).default(0),
   }),
   pricing: z.object({
+    /** The standard rate: per hour, or per session (slot) when `per` is 'slot'. */
     hourly: taka,
+    /** 'slot' = every rate here and in priceBands is the price of one session. Left out = unchanged ('hour' for new turfs). */
+    per: z.enum(['hour', 'slot']).optional(),
     /** Different hourly rate on some weekdays, e.g. { "fri": 1800, "sat": 1800 } */
     byWeekday: z.partialRecord(z.enum(DAYS), taka).default({}),
     /** Rate for specific dates, e.g. { "2026-12-16": 2500 } */
@@ -104,7 +111,7 @@ const dayMin = (t: string, open: number) => (toMin(t) < open ? toMin(t) + 1440 :
 
 type SlotIn = { start: string; end: string; price?: number | null };
 
-function customSlots(v: VenueInput, input: SlotIn[] = v.slots?.custom ?? [], label = 'slots.custom') {
+function customSlots(v: VenueInput, input: SlotIn[] = v.slots?.custom ?? [], label = 'Sessions') {
   const open = toMin(v.schedule.opens);
   const list = input
     .map((x) => {
@@ -121,14 +128,14 @@ function customSlots(v: VenueInput, input: SlotIn[] = v.slots?.custom ?? [], lab
     const prev = list[i - 1];
     if (prev && x.start < prev.end) throw new ApiError('invalid', `${label}: ${fromMin(prev.start)}–${fromMin(prev.end)} overlaps ${fromMin(x.start)}–${fromMin(x.end)}.`);
   }
-  if (list[0]!.start >= 1440) throw new ApiError('invalid', `${label}: The first session must start on the day itself (set "opens" to it).`);
+  if (list[0]!.start >= 1440) throw new ApiError('invalid', `${label}: The first session must start on the day itself (set "Day starts at" to it).`);
   return list;
 }
 
 /** Validated session sets (minutes, poisha) and the live one's sessions. */
 function sessionSetsJson(v: VenueInput) {
   const sets = v.sessionSets ?? [];
-  if (new Set(sets.map((x) => x.id)).size !== sets.length) throw new ApiError('invalid', 'sessionSets: Each set needs its own id.');
+  if (new Set(sets.map((x) => x.id)).size !== sets.length) throw new ApiError('invalid', 'Two session sets got mixed up. Refresh the page and try again.');
   const live = sets.filter((x) => x.live);
   if (live.filter((x) => !x.days.length).length > 1)
     throw new ApiError('invalid', 'Only one live session set can run on all other days. Pick days for the others.');
@@ -194,6 +201,7 @@ type OwnerRow = {
   standard_hourly: number;
   weekday_hourly: Record<string, number>;
   special_dates: Record<string, number>;
+  price_per: string;
   slot_mode: string;
   custom_slots: { start: number; end: number; price: number | null }[] | null;
   bands: { from: number; to: number; hourly: number; days: number[] | null }[] | null;
@@ -209,7 +217,7 @@ type OwnerRow = {
 const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
-         s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates,
+         s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates, p.price_per,
          s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
@@ -240,6 +248,7 @@ function shape(r: OwnerRow) {
     schedule: { opens: fromMin(r.open_min), closes: fromMin(r.close_min), sessionMinutes: r.session_min, breakMinutes: r.break_min },
     pricing: {
       hourly: r.standard_hourly / 100,
+      per: r.price_per === 'slot' ? ('slot' as const) : ('hour' as const),
       byWeekday: Object.fromEntries(Object.entries(r.weekday_hourly).map(([d, v]) => [DAYS[Number(d)], v / 100])),
       specialDates: Object.fromEntries(Object.entries(r.special_dates).map(([d, v]) => [d, v / 100])),
     },
@@ -299,9 +308,10 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
   if (v.slots) await c.query('update venue_schedule set slot_mode = $2, custom_slots = $3 where venue_id = $1', [id, v.slots.mode, custom ? JSON.stringify(custom) : null]);
   if (sets) await c.query('update venue_schedule set slot_sets = $2 where venue_id = $1', [id, JSON.stringify(sets)]);
   await c.query(
-    `insert into venue_pricing (venue_id, standard_hourly, weekday_hourly, special_dates) values ($1,$2,$3,$4)
-       on conflict (venue_id) do update set standard_hourly = excluded.standard_hourly, weekday_hourly = excluded.weekday_hourly, special_dates = excluded.special_dates`,
-    [id, v.pricing.hourly * 100, JSON.stringify(weekdayJson(v.pricing.byWeekday)), JSON.stringify(specialJson(v.pricing.specialDates))],
+    `insert into venue_pricing (venue_id, standard_hourly, weekday_hourly, special_dates, price_per) values ($1,$2,$3,$4, coalesce($5::text, 'hour'))
+       on conflict (venue_id) do update set standard_hourly = excluded.standard_hourly, weekday_hourly = excluded.weekday_hourly,
+         special_dates = excluded.special_dates, price_per = coalesce($5::text, venue_pricing.price_per)`,
+    [id, v.pricing.hourly * 100, JSON.stringify(weekdayJson(v.pricing.byWeekday)), JSON.stringify(specialJson(v.pricing.specialDates)), v.pricing.per ?? null],
   );
   if (v.priceBands) await c.query('update venue_pricing set bands = $2 where venue_id = $1', [id, JSON.stringify(bandsJson(v))]);
   await c.query('delete from venue_photos where venue_id = $1', [id]);

@@ -27,6 +27,8 @@ export type VenueRow = {
   standard_hourly: number;
   weekday_hourly: Record<string, number>;
   special_dates: Record<string, number>;
+  /** Migration 029: 'slot' = rates are per session. Missing on rows cached before it = 'hour' (what they were). */
+  price_per?: string | null;
   /** Owner dashboard settings (migration 020). Missing on rows cached before it: treated as the defaults. */
   slot_mode?: string | null;
   custom_slots?: CustomSlot[] | null;
@@ -46,7 +48,7 @@ const VENUE_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min,
-         p.standard_hourly, p.weekday_hourly, p.special_dates,
+         p.standard_hourly, p.weekday_hourly, p.special_dates, p.price_per,
          s.slot_mode, s.custom_slots, s.slot_sets, p.bands, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) as photos,
          (select id from pitches pi where pi.venue_id = v.id order by name limit 1) as pitch_id
@@ -61,6 +63,7 @@ export const rules = (v: VenueRow): PriceRules & { bands: PriceBand[] } => ({
   weekdayHourly: v.weekday_hourly,
   specialDates: v.special_dates,
   bands: v.bands ?? [],
+  per: v.price_per === 'slot' ? 'slot' : 'hour',
 });
 /** The venue's sessions for any day (fixed lengths or the owner's custom list). */
 export const slotRules = (v: VenueRow): SlotRules => ({
@@ -75,9 +78,10 @@ export const slotRules = (v: VenueRow): SlotRules => ({
 /** Lowest price per hour on `day` (poisha). Kept for `hourlyFrom`, which older app builds show. */
 export function hourlyFromFor(v: VenueRow, day: string) {
   const r = rules(v);
-  if (!r.bands.length && v.slot_mode !== 'custom') return hourlyFor(r, day);
+  const asHour = (rate: number) => (r.per === 'slot' ? Math.round((rate * 60) / Math.max(1, v.session_min)) : rate);
+  if (!r.bands.length && v.slot_mode !== 'custom' && r.per !== 'slot') return hourlyFor(r, day);
   const per = sessionsFor(slotRules(v), day).map((s) => Math.round((priceFor(r, day, s) * 60) / Math.max(1, s.end - s.start)));
-  return per.length ? Math.min(...per) : hourlyFor(r, day);
+  return per.length ? Math.min(...per) : asHour(hourlyFor(r, day));
 }
 
 export const STARTING_DAYS = 7;
@@ -93,7 +97,8 @@ function hourlyFrom7(v: VenueRow) {
  * that have already started today don't count), so it doesn't change from one day to the next.
  *  - Custom sessions (owner prices each session): the cheapest session's own price and its length,
  *    e.g. ৳2,000 for a 120-min session. Never an hourly figure nobody can pay.
- *  - Same-length sessions: the lowest price per hour.
+ *  - Prices per slot (the dashboard's model): the same, the cheapest session and its length.
+ *  - Same-length sessions priced per hour (turfs not saved since): the lowest price per hour.
  * Amounts in poisha.
  */
 export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minutesNowInDhaka()):
@@ -101,7 +106,8 @@ export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minute
   | { per: 'hour'; amount: number } {
   const r = rules(v);
   const sr = slotRules(v);
-  const custom = v.slot_mode === 'custom';
+  // Custom sessions and per-slot prices: the price of one session is what's real.
+  const custom = v.slot_mode === 'custom' || r.per === 'slot';
   let best: { amount: number; minutes: number; hourly: number } | null = null;
   for (let i = 0; i < STARTING_DAYS; i++) {
     const day = addDays(today, i);
@@ -116,7 +122,7 @@ export function startingPrice(v: VenueRow, today = dhakaToday(), nowMin = minute
       if (better) best = { amount, minutes, hourly };
     }
   }
-  if (!best) return { per: 'hour', amount: hourlyFor(r, today) };
+  if (!best) return r.per === 'slot' ? { per: 'session', amount: hourlyFor(r, today), minutes: v.session_min } : { per: 'hour', amount: hourlyFor(r, today) };
   return custom ? { per: 'session', amount: best.amount, minutes: best.minutes } : { per: 'hour', amount: best.hourly };
 }
 

@@ -7,6 +7,8 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
+import { friendlyMessage } from './lib/friendly-errors';
+
 import { cached, cacheBackend, cacheStats, pingCache } from './cache';
 import { config, isProd, missingConfig } from './config';
 import { dbStats, one, q, requestDb } from './db';
@@ -60,9 +62,8 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const r = schema.safeParse(data);
   if (!r.success) {
     const i = r.error.issues[0];
-    // Name the field ("schedule.opens: …") so API clients like Postman see what to fix.
-    const at = i?.path?.length ? `${i.path.join('.')}: ` : '';
-    throw new ApiError('invalid', i ? `${at}${i.message}` : 'Invalid request.');
+    // In words a person understands, naming the field ("Standard price must be a whole number…").
+    throw new ApiError('invalid', i ? friendlyMessage(i, data) : 'Something is missing or not filled in correctly.', i?.path?.length ? i.path.join('.') : undefined);
   }
   return r.data;
 }
