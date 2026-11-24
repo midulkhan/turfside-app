@@ -40,7 +40,14 @@ export function coordsFromMapsUrl(raw: string): Point | null {
   } catch {
     return null;
   }
-  const full = decodeURIComponent(u.pathname + u.search + u.hash).replace(/\+/g, ' ');
+  const raw2 = u.pathname + u.search + u.hash;
+  const full = (() => {
+    try {
+      return decodeURIComponent(raw2);
+    } catch {
+      return raw2; // a stray % in the link: read it as it is
+    }
+  })().replace(/\+/g, ' ');
   const name = /\/place\/([^/@]+)/.exec(full)?.[1]?.trim();
   const placeName = name && !coordsFromText(name) ? name : undefined;
 
@@ -91,13 +98,21 @@ export function coordsFromHtml(html: string): Point | null {
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
-async function get(url: string) {
-  return fetch(url, {
-    redirect: 'manual',
-    headers: { 'User-Agent': UA, 'Accept-Language': 'en', Cookie: 'CONSENT=YES+1' },
-    signal: AbortSignal.timeout(8000),
-  }).catch(() => null);
+/**
+ * One request, never following redirects (each hop is checked to be Google first).
+ *  - 'plain': a simple client. Google answers short links with a straight 302 to the place, whose
+ *    URL carries the pin. Tried first.
+ *  - 'browser': looks like desktop Chrome. Google may answer it with a page instead of a redirect
+ *    (read for links and coordinates). Only if the plain request didn't redirect.
+ */
+async function get(url: string, mode: 'plain' | 'browser') {
+  const headers: Record<string, string> =
+    mode === 'plain'
+      ? { Accept: '*/*', 'Accept-Language': 'en' }
+      : { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'en', Cookie: 'CONSENT=YES+1' };
+  return fetch(url, { redirect: 'manual', headers, signal: AbortSignal.timeout(6000) }).catch(() => null);
 }
+const isRedirect = (r: Response | null) => !!r && r.status >= 300 && r.status < 400 && !!r.headers.get('location');
 
 /** The place a link names when it carries no coordinates (shares from the Google Maps phone app). */
 export function queryFromMapsUrl(raw: string): { query: string; name?: string } | null {
@@ -129,7 +144,13 @@ export function queryFromMapsUrl(raw: string): { query: string; name?: string } 
 function mapsUrlsIn(html: string) {
   const out: string[] = [];
   for (const m of html.matchAll(/https?:(?:\\\/|\/){2}(?:www\.|maps\.)?google\.[a-z.]+(?:\\\/|\/)maps(?:\\\/|[^"'<>\s\\])*/gi)) {
-    out.push(m[0].replace(/\\\//g, '/').replace(/&amp;/g, '&'));
+    out.push(
+      m[0]
+        .replace(/\\\//g, '/')
+        .replace(/\\u003d/gi, '=')
+        .replace(/\\u0026/gi, '&')
+        .replace(/&amp;/g, '&'),
+    );
     if (out.length >= 20) break;
   }
   return out;
@@ -159,6 +180,11 @@ export async function resolveLocation(input: string): Promise<Resolved> {
   if (!isGoogleMapsHost(url.hostname)) throw new ApiError('invalid', 'Use a Google Maps link (Share → Copy link in Google Maps).');
 
   let named: { query: string; name?: string } | null = null;
+  // What Google answered at each hop, logged if no point is found (to see why on the live server).
+  const trace: string[] = [];
+  const fail = () => {
+    console.warn(`[geo] no point in ${link.slice(0, 200)} :: ${trace.join(' → ') || 'no request made'}`);
+  };
   for (let hop = 0; hop < 6; hop++) {
     const found = coordsFromMapsUrl(url.toString());
     if (found) return { ...found, name: found.name ?? named?.name };
@@ -176,7 +202,13 @@ export async function resolveLocation(input: string): Promise<Resolved> {
         /* fall through */
       }
     }
-    const res = await get(url.toString());
+    const plain = await get(url.toString(), 'plain');
+    let res = plain;
+    if (!isRedirect(plain)) {
+      const browser = await get(url.toString(), 'browser');
+      res = isRedirect(browser) || (browser?.ok && !plain?.ok) ? browser : (plain ?? browser);
+      trace.push(`${url.host}${url.pathname.slice(0, 40)} plain:${plain?.status ?? 'error'} browser:${browser?.status ?? 'error'}`);
+    } else trace.push(`${url.host}${url.pathname.slice(0, 40)} plain:${plain!.status}`);
     if (!res) break;
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
@@ -186,7 +218,10 @@ export async function resolveLocation(input: string): Promise<Resolved> {
       } catch {
         break;
       }
-      if (!isGoogleMapsHost(next.hostname)) break;
+      if (!isGoogleMapsHost(next.hostname)) {
+        trace.push(`left Google: ${next.host}`);
+        break;
+      }
       url = next;
       continue;
     }
@@ -201,9 +236,11 @@ export async function resolveLocation(input: string): Promise<Resolved> {
       }
       const p = coordsFromHtml(html);
       if (p) return { ...p, name: named?.name };
+      trace.push(`page without a point: ${html.replace(/\s+/g, ' ').slice(0, 160)}`);
     }
     break;
   }
+  fail();
   if (named) return named;
   throw new ApiError('invalid', 'That link has no location in it. In Google Maps, open the turf itself, tap Share → Copy link, and paste it here.');
 }

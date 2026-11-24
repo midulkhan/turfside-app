@@ -5,6 +5,7 @@ import { ensureCronJobs } from './jobs';
 import { startPushLoop } from './lib/push';
 import { migrate, schema } from './migrations';
 import { reconcile } from './services/payments';
+import { relocateFromLinks } from './services/owner';
 import { invalidateVenue } from './services/venues';
 
 async function main() {
@@ -30,6 +31,8 @@ async function main() {
         await migrate((m) => app.log.info(m));
         await invalidateVenue(); // drop anything cached while the tables were still empty
         await ensureCronJobs((m) => app.log.info(m)).catch((e) => app.log.warn(e, 'could not schedule jobs'));
+        // Turfs saved with a Google Maps link we couldn't read: try them again now (in the background).
+        void relocateFromLinks(200).catch((e) => app.log.warn(e, 'relocate from links'));
       } catch (e) {
         const wait = Math.min(15_000 * attempt, 120_000);
         app.log.error(e, `Migration failed — retrying in ${wait / 1000}s`);

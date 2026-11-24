@@ -107,6 +107,38 @@ describe('links shared from the Google Maps phone app', () => {
     }
   });
 
+  it('the real Baratia Playground link: a plain request gets the redirect even when a browser-looking one gets a page', async () => {
+    const real =
+      'https://www.google.com/maps/place/Baratia+Playground/@24.0473132,90.0711074,17z/data=!3m1!4b1!4m6!3m5!1s0x3755f95541d71fcd:0x8f13c9ba43fbcbbc!8m2!3d24.0473132!4d90.0736823!16s%2Fg%2F11c2k6qv4c!18m1!1e1?entry=tts&g_ep=EgoyMDI2MTExOC4xIOC7DCoASAFQAw%3D%3D&skid=c6ff7ca7-2d18-4393-9945-b7a805f56731';
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+      const browser = !!(init?.headers as Record<string, string> | undefined)?.['User-Agent'];
+      seen.push(browser ? 'browser' : 'plain');
+      if (!String(input).startsWith('https://maps.app.goo.gl/')) throw new Error('offline');
+      return browser ? new Response('<html>Before you continue to Google</html>', { status: 200 }) : new Response('', { status: 302, headers: { location: real } });
+    }) as typeof fetch;
+    try {
+      expect(await resolveLocation('https://maps.app.goo.gl/2m5QmFohHo5xcnkQA')).toEqual({ lat: 24.047313, lng: 90.073682, name: 'Baratia Playground' });
+      expect(seen).toEqual(['plain']);
+    } finally {
+      restore();
+    }
+  });
+
+  it('a page with the place link written in escaped JSON (\\u003d) is read too', async () => {
+    route({
+      'https://maps.app.goo.gl/': {
+        status: 200,
+        body: '{"url":"https:\\/\\/www.google.com\\/maps\\/place\\/Y\\/data\\u003d!3d23.81!4d90.41?entry\\u003dtts"}',
+      },
+    });
+    try {
+      expect(await resolveLocation('https://maps.app.goo.gl/json')).toEqual({ lat: 23.81, lng: 90.41, name: 'Y' });
+    } finally {
+      restore();
+    }
+  });
+
   it('Google unreachable and nothing in the link: a clear error', async () => {
     route({});
     try {

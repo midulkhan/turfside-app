@@ -336,11 +336,11 @@ async function writeDetails(c: import('pg').PoolClient, id: string, v: VenueInpu
  * Coordinates from the owner's Google Maps link, if it carries them (short links are followed).
  * Never fails a save: no point found, or Google too slow, just keeps the coordinates sent.
  */
-async function pointFromMapUrl(url: string | null | undefined) {
+async function pointFromMapUrl(url: string | null | undefined, waitMs = 7000) {
   if (!url) return null;
   const found = await Promise.race([
     resolveLocation(url).catch(() => null),
-    new Promise<null>((r) => setTimeout(() => r(null), 7000)),
+    new Promise<null>((r) => setTimeout(() => r(null), waitMs)),
   ]);
   return found && 'lat' in found ? { lat: found.lat, lng: found.lng } : null;
 }
@@ -348,6 +348,7 @@ async function pointFromMapUrl(url: string | null | undefined) {
 export async function createVenue(ownerId: string, v: VenueInput) {
   const point = await pointFromMapUrl(v.mapUrl);
   if (point) v = { ...v, ...point };
+  else if (v.mapUrl) console.warn(`[geo] new turf "${v.name}": no point read from its link yet; will retry in the background`);
   const id = await tx(async (c) => {
     const count = (await c.query<{ n: number }>("select count(*)::int n from venues where owner_id = $1 and status <> 'suspended'", [ownerId])).rows[0].n;
     if (count >= 25) throw new ApiError('conflict', 'You can list up to 25 turfs. Contact support for more.');
@@ -359,6 +360,7 @@ export async function createVenue(ownerId: string, v: VenueInput) {
     const vid = r.rows[0].id;
     await c.query('insert into pitches (venue_id) values ($1)', [vid]);
     await writeDetails(c, vid, v);
+    if (point) await c.query("update venues set location_source = 'link' where id = $1", [vid]);
     return vid;
   });
   await invalidateVenue(id);
@@ -366,13 +368,22 @@ export async function createVenue(ownerId: string, v: VenueInput) {
 }
 
 export async function updateVenue(ownerId: string, id: string, v: VenueInput) {
-  // A new or changed link: take the coordinates from it. Left out (older dashboards): unchanged.
+  // A new or changed link, or one we couldn't read before: take the coordinates from it.
+  // Left out (older dashboards): unchanged.
+  let source: 'link' | null | undefined; // undefined = leave as is
   if (v.mapUrl !== undefined) {
-    const cur = await one<{ map_url: string | null }>('select map_url from venues where id = $1 and owner_id = $2', [id, ownerId]);
-    if (v.mapUrl && v.mapUrl !== cur?.map_url) {
+    const cur = await one<{ map_url: string | null; location_source: string | null }>(
+      'select map_url, location_source from venues where id = $1 and owner_id = $2',
+      [id, ownerId],
+    );
+    const changed = (v.mapUrl ?? null) !== (cur?.map_url ?? null);
+    if (v.mapUrl && (changed || cur?.location_source !== 'link')) {
       const point = await pointFromMapUrl(v.mapUrl);
-      if (point) v = { ...v, ...point };
-    }
+      if (point) {
+        v = { ...v, ...point };
+        source = 'link';
+      } else if (changed) source = null;
+    } else if (changed) source = null; // link removed
   }
   await tx(async (c) => {
     const r = await c.query(
@@ -383,10 +394,50 @@ export async function updateVenue(ownerId: string, id: string, v: VenueInput) {
       [id, ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status, v.mapUrl !== undefined, v.mapUrl ?? null],
     );
     if (!r.rowCount) throw new ApiError('not_found', 'Turf not found.');
+    if (source !== undefined) await c.query('update venues set location_source = $2 where id = $1', [id, source]);
     await writeDetails(c, id, v);
   });
   await invalidateVenue(id);
   return getOwnerVenue(ownerId, id);
+}
+
+/**
+ * Turfs with a Google Maps link whose pin we haven't read yet (Google was slow, or answered with
+ * a page): read it again and set the coordinates. Runs after each start and with the minute job,
+ * a few turfs at a time. Never fails: a link that still can't be read is tried again later.
+ */
+let relocating = false;
+export async function relocateFromLinks(limit = 10) {
+  if (relocating) return { checked: 0, fixed: 0 };
+  relocating = true;
+  try {
+    const rows = await q<{ id: string; name: string; map_url: string }>(
+      `select id, name, map_url from venues
+        where map_url is not null and location_source is null and status <> 'suspended'
+        order by created_at desc limit $1`,
+      [limit],
+    );
+    let fixed = 0;
+    for (const r of rows) {
+      const point = await pointFromMapUrl(r.map_url, 25_000); // no one is waiting: give Google time
+      if (!point) continue;
+      // Only if the link is still the same one (the owner may have changed it meanwhile).
+      const done = await q("update venues set lat = $2, lng = $3, location_source = 'link' where id = $1 and map_url = $4 returning id", [
+        r.id,
+        point.lat,
+        point.lng,
+        r.map_url,
+      ]);
+      if (done.length) {
+        fixed++;
+        await invalidateVenue(r.id);
+        console.info(`[geo] "${r.name}" located from its link: ${point.lat}, ${point.lng}`);
+      }
+    }
+    return { checked: rows.length, fixed };
+  } finally {
+    relocating = false;
+  }
 }
 
 export const bookingPauseInput = z.object({

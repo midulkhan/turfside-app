@@ -938,6 +938,8 @@ export async function buildApp() {
     if (!config.CRON_SECRET || typeof secret !== 'string' || !safeEqual(secret, config.CRON_SECRET)) throw new ApiError('unauthorized', 'Unauthorized.');
     const out = await payments.reconcile();
     await kickPush(); // anything that piled up while the process was asleep
+    // A few turfs whose Google Maps link couldn't be read yet (in the background; never blocks the job).
+    void owner.relocateFromLinks(5).catch(() => undefined);
     return out;
   });
 

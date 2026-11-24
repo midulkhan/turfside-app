@@ -30,6 +30,7 @@ import m027 from '../db/migrations/027_match_codes.sql';
 import m028 from '../db/migrations/028_ticket_links.sql';
 import m029 from '../db/migrations/029_price_per_slot.sql';
 import m030 from '../db/migrations/030_owner_payouts.sql';
+import m031 from '../db/migrations/031_venue_location_source.sql';
 import m023 from '../db/migrations/023_opponents.sql';
 import m022 from '../db/migrations/022_owner_accounts.sql';
 
@@ -64,6 +65,7 @@ const MIGRATIONS: [string, string][] = [
   ['028_ticket_links', m028],
   ['029_price_per_slot', m029],
   ['030_owner_payouts', m030],
+  ['031_venue_location_source', m031],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */
