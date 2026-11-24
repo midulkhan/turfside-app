@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ApiError } from '../errors';
 import { sendWalkinTicket } from '../services/booking-emails';
 import * as dash from '../services/owner-dash';
+import * as payouts from '../services/payouts';
 import { ticketForOwner } from '../services/tickets';
 import { qrSvgMarkup } from '../lib/ticket-pdf';
 import { resolveLocation } from '../services/geo';
@@ -39,6 +40,15 @@ export function registerOwnerRoutes(app: FastifyInstance, { requireOwner, parse 
     const p = parse(z.object({ venueId: z.string().max(60).optional(), month: z.string().max(7) }), req.query);
     return dash.calendar(me(req), p.venueId, p.month);
   });
+
+  // Earnings and payouts (amounts in poisha). Balance is for all the owner's turfs.
+  app.get('/v1/owner/earnings', owner, async (req) => {
+    const f = parse(payouts.earningsQuery, req.query);
+    return payouts.ownerEarnings(me(req), f, await dash.venueScope(me(req), f.venueId));
+  });
+  app.get('/v1/owner/earnings/entries', owner, async (req) => payouts.ownerEntries(me(req), parse(payouts.entriesQuery, req.query)));
+  app.get('/v1/owner/payouts', owner, async (req) => payouts.ownerPayouts(me(req), parse(payouts.listQuery, req.query)));
+  app.get('/v1/owner/payouts/:id', owner, async (req) => payouts.ownerPayout(me(req), id(req)));
 
   // Bookings
   app.get('/v1/owner/bookings', owner, async (req) => dash.listBookings(me(req), parse(dash.bookingQuery, req.query)));

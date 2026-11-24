@@ -39,7 +39,7 @@ async function audit(c: PoolClient | null, actor: string, action: string, entity
 }
 
 /** The owner's turf ids: one, checked, or all of them. */
-async function venueScope(ownerId: string, venueId?: string) {
+export async function venueScope(ownerId: string, venueId?: string) {
   if (venueId) {
     const v = await one<{ id: string }>("select id from venues where id = $1 and owner_id = $2 and status <> 'suspended'", [
       venueId,
@@ -83,12 +83,21 @@ type BookingRow = {
   guest_phone: string | null;
   guest_email: string | null;
   note: string | null;
+  e_gross?: string | null;
+  e_commission?: string | null;
+  e_net?: string | null;
+  e_rate?: number | null;
+  e_payout?: string | null;
+  e_paid_at?: Date | null;
 };
 const BOOKING_SELECT = `
   select b.id, b.code, b.venue_id, v.name venue_name, b.day::text, b.start_min, b.end_min, b.status, b.source, b.total,
          b.created_at, b.confirmed_at, b.cancelled_at, b.checked_in_at, b.order_id, b.user_id,
-         u.name user_name, u.phone user_phone, b.guest_name, b.guest_phone, b.guest_email, b.note
-    from bookings b join venues v on v.id = b.venue_id left join users u on u.id = b.user_id`;
+         u.name user_name, u.phone user_phone, b.guest_name, b.guest_phone, b.guest_email, b.note,
+         es.gross e_gross, es.commission e_commission, es.net e_net, es.rate_bp e_rate, es.payout_id e_payout,
+         (select paid_at from payouts p where p.id = es.payout_id) e_paid_at
+    from bookings b join venues v on v.id = b.venue_id left join users u on u.id = b.user_id
+    left join owner_earnings es on es.booking_id = b.id and es.kind = 'sale'`;
 
 function bookingOut(b: BookingRow) {
   const ended = instant(b.day, b.end_min).getTime() < Date.now();
@@ -116,6 +125,22 @@ function bookingOut(b: BookingRow) {
           ? { name: b.user_name ?? 'Player', phone: b.user_phone ? `+880${b.user_phone}` : null, email: null, guest: false }
           : { name: b.guest_name ?? 'Walk-in', phone: b.guest_phone, email: b.guest_email, guest: true },
     note: b.note,
+    /**
+     * App bookings: the price, TurfSides' commission and what the owner gets (taka, 2 decimals).
+     * status: pending (in the next payout), paid, or refunded (cancelled: nothing to get).
+     * Null for walk-ins (paid at the turf) and unpaid bookings.
+     */
+    earning:
+      b.e_net == null
+        ? null
+        : {
+            price: taka(b.e_gross),
+            commission: taka(b.e_commission),
+            youGet: taka(b.e_net),
+            commissionPercent: (b.e_rate ?? 0) / 100,
+            status: b.status === 'cancelled' ? ('refunded' as const) : b.e_payout ? ('paid' as const) : ('pending' as const),
+            paidAt: b.e_payout ? (b.e_paid_at ?? null) : null,
+          },
     orderId: b.order_id,
     createdAt: b.created_at,
     confirmedAt: b.confirmed_at,

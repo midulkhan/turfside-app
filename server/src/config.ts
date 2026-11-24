@@ -93,6 +93,11 @@ const schema = z.object({
   OTP_RESEND_SECONDS: z.coerce.number().int().min(0).max(600).default(30),
 
   SERVICE_FEE_POISHA: z.coerce.number().int().min(0).default(0),
+  /**
+   * The TurfSides business dashboard's key for /v1/admin/* (payouts, commission), sent as the
+   * X-Admin-Key header. Unset = the admin API is off. Long and random (at least 32 characters).
+   */
+  ADMIN_API_KEY: z.string().min(32).optional(),
   HOLD_MINUTES: z.coerce.number().int().min(2).max(30).default(5),
   BOOKING_HORIZON_DAYS: z.coerce.number().int().min(1).max(180).default(60),
 });

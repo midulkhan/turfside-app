@@ -34,6 +34,7 @@ import * as owner from './services/owner';
 import * as matches from './services/matches';
 import * as reviews from './services/reviews';
 import * as payments from './services/payments';
+import { registerAdminRoutes } from './routes/admin';
 import { registerOwnerRoutes } from './routes/owner';
 import { allVenueRows, availabilityFor, daySlots, detail, getVenueRow, getVenueRowCached, haversineKm, refLabel, searchMatch, shareUrl, summary } from './services/venues';
 import { PAGE_CSP, turfCard, turfPage, venueByCode } from './services/turf-link';
@@ -538,6 +539,7 @@ export async function buildApp() {
   app.delete('/v1/owner/venues/:id', { preHandler: requireOwner }, async (req) => owner.removeVenue(req.user!.userId, venueId(req)));
   // Owner dashboard: bookings, day sheet, closures, stats, reviews, tournaments, inbox.
   registerOwnerRoutes(app, { requireOwner, parse });
+  registerAdminRoutes(app, { parse });
 
   // ── Photo uploads (Cloudflare R2, direct from the app) ──────────────────────
   app.post('/v1/uploads', { preHandler: requireAnyUser, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {

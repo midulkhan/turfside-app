@@ -77,6 +77,7 @@ jobs:
           PUSH_DRY_RUN: 'true'
           EMAIL_DRY_RUN: 'true'
           RATE_LIMIT_PER_MIN: '10000'
+          ADMIN_API_KEY: ci_admin_key_0123456789abcdefghijklmnop
           # Redis cache through scripts/upstash-local.mjs (same protocol as Upstash)
           UPSTASH_REDIS_REST_URL: http://127.0.0.1:8079
           UPSTASH_REDIS_REST_TOKEN: local-token
