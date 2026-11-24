@@ -64,7 +64,14 @@ export const sessionPrice = (hourly: number, lengthMin: number) => Math.round((h
 export type CustomSlot = { start: number; end: number; price?: number | null };
 /** A saved session set (minutes, poisha). `days` 0 = Sunday; empty = every day no other live set covers. */
 export type SessionSetRow = { id: string; name: string; live: boolean; days?: number[] | null; slots: CustomSlot[] };
-export type SlotRules = SessionRule & { mode?: string | null; custom?: CustomSlot[] | null; sets?: SessionSetRow[] | null };
+export type SlotRules = SessionRule & {
+  mode?: string | null;
+  custom?: CustomSlot[] | null;
+  sets?: SessionSetRow[] | null;
+  /** Time-of-day prices and the price unit: with prices per slot, each time price is a session itself. */
+  bands?: PriceBand[] | null;
+  per?: string | null;
+};
 
 /** Prices for a time of day: `hourly` poisha for sessions starting in [from, to), optionally only on some weekdays (0 = Sunday). */
 export type PriceBand = { from: number; to: number; hourly: number; days?: number[] | null };
@@ -84,7 +91,50 @@ export function sessionsFor(r: SlotRules, day?: string): CustomSlot[] {
     }
     if (r.custom?.length) return norm(r.custom);
   }
+  if (r.per === 'slot' && day && r.bands?.length) return withTimePrices(r, day);
   return generateSessions(r);
+}
+
+/** The time prices that apply on `day` (no days = every day), first start first. */
+export function bandsOn(bands: PriceBand[] | null | undefined, day: string) {
+  const dow = dayOfWeek(day);
+  return (bands ?? []).filter((b) => !b.days?.length || b.days.includes(dow)).sort((a, b) => a.from - b.from);
+}
+
+/**
+ * Same-length sessions with time prices per slot: each time price that applies on `day` is a
+ * session of its own (exactly its start and end, e.g. 7:30–9:30 PM), and the rest of the opening
+ * hours is split into sessions of the set length, back to back (with the break between sessions,
+ * also next to a time-price session). Leftover minutes too short for a session stay unbookable.
+ */
+function withTimePrices(r: SlotRules, day: string): CustomSlot[] {
+  const own: CustomSlot[] = [];
+  for (const b of bandsOn(r.bands, day)) {
+    if (b.to <= b.from || own.some((x) => b.from < x.end && x.start < b.to)) continue; // overlaps are refused on save
+    own.push({ start: b.from, end: b.to, price: null });
+  }
+  if (!own.length) return generateSessions(r);
+  own.sort((a, b) => a.start - b.start);
+  const len = r.lengthMin;
+  const brk = r.breakMin;
+  const out: CustomSlot[] = [...own];
+  // The gaps in the opening hours that time-price sessions leave free.
+  let at = r.openMin;
+  let afterOwn = false;
+  const fill = (from: number, to: number, beforeOwn: boolean) => {
+    if (len <= 0) return;
+    const end = to - (beforeOwn ? brk : 0);
+    for (let s = from + (afterOwn ? brk : 0); s + len <= end; s += len + brk) out.push({ start: s, end: s + len, price: null });
+  };
+  for (const x of own) {
+    if (x.start > at) fill(at, Math.min(x.start, r.closeMin), x.start <= r.closeMin);
+    if (x.end > at) {
+      at = x.end;
+      afterOwn = true;
+    }
+  }
+  if (at < r.closeMin) fill(at, r.closeMin, false);
+  return out.sort((a, b) => a.start - b.start);
 }
 
 /**

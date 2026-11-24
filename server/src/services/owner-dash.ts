@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
-import { addDays, dhakaToday, instant, isDayKey, priceFor, sessionsFor, type SessionSetRow } from '../lib/time';
+import { addDays, dhakaToday, instant, isDayKey, priceFor, sessionsFor, type PriceBand, type SessionSetRow } from '../lib/time';
 
 import { sendWalkinTicket } from './booking-emails';
 import { ticketBookingIds } from './bookings';
@@ -800,7 +800,12 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
       slot_mode: string;
       custom_slots: { start: number; end: number }[] | null;
       slot_sets: SessionSetRow[] | null;
-    }>('select open_min, close_min, session_min, break_min, slot_mode, custom_slots, slot_sets from venue_schedule where venue_id = any($1::text[])', [
+      bands: PriceBand[] | null;
+      price_per: string | null;
+    }>(
+      `select s.open_min, s.close_min, s.session_min, s.break_min, s.slot_mode, s.custom_slots, s.slot_sets, p.bands, p.price_per
+         from venue_schedule s join venue_pricing p on p.venue_id = s.venue_id where s.venue_id = any($1::text[])`,
+      [
       venues,
     ]),
   ]);
@@ -828,6 +833,8 @@ export async function stats(ownerId: string, f: z.infer<typeof statsQuery>) {
         mode: s.slot_mode,
         custom: s.custom_slots,
         sets: s.slot_sets,
+        bands: s.bands,
+        per: s.price_per,
       };
       let t = 0;
       for (let i = 0; i < days; i++) t += sessionsFor(r, addDays(a, i)).reduce((u, x) => u + (x.end - x.start), 0);

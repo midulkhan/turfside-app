@@ -157,12 +157,26 @@ function sessionSetsJson(v: VenueInput) {
 
 function bandsJson(v: VenueInput) {
   const open = toMin(v.schedule.opens);
-  return (v.priceBands ?? []).map((b) => {
+  const out = (v.priceBands ?? []).map((b) => {
     const from = dayMin(b.from, open);
     let to = toMin(b.to);
     while (to <= from) to += 1440;
     return { from, to, hourly: b.hourly * 100, days: b.days.map((d) => DAYS.indexOf(d)) };
   });
+  // Per slot, each time price is a session of its own: a sensible length, and no two on the same day overlap.
+  if (v.pricing.per === 'slot') {
+    const label = (x: { from: number; to: number }) => `${fromMin(x.from)}–${fromMin(x.to)}`;
+    for (const [i, x] of out.entries()) {
+      if (x.to - x.from < 15 || x.to - x.from > 360) throw new ApiError('invalid', `Time-of-day price ${label(x)}: a session must be 15 minutes to 6 hours long.`, `priceBands.${i}.to`);
+      for (const [j, y] of out.entries()) {
+        if (j >= i) break;
+        const sameDay = !x.days.length || !y.days.length || x.days.some((d) => y.days.includes(d));
+        if (sameDay && x.from < y.to && y.from < x.to)
+          throw new ApiError('invalid', `Time-of-day prices ${label(y)} and ${label(x)} overlap on the same day. Change the times or the days.`, `priceBands.${i}.from`);
+      }
+    }
+  }
+  return out;
 }
 
 function scheduleMinutes(s: VenueInput['schedule']) {

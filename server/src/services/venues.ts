@@ -74,6 +74,8 @@ export const slotRules = (v: VenueRow): SlotRules => ({
   mode: v.slot_mode,
   custom: v.custom_slots,
   sets: v.slot_sets,
+  bands: v.bands ?? [],
+  per: v.price_per === 'slot' ? 'slot' : 'hour',
 });
 /** Lowest price per hour on `day` (poisha). Kept for `hourlyFrom`, which older app builds show. */
 export function hourlyFromFor(v: VenueRow, day: string) {
