@@ -225,6 +225,7 @@ type OwnerRow = {
   short_code: string;
   ref_no: number;
   map_url: string | null;
+  location_source: string | null;
   photos: string[] | null;
 };
 
@@ -232,7 +233,7 @@ const OWNER_SELECT = `
   select v.id, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about,
          v.cancellation_policy, v.status, v.rating, v.review_count,
          s.open_min, s.close_min, s.session_min, s.break_min, p.standard_hourly, p.weekday_hourly, p.special_dates, p.price_per,
-         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url,
+         s.slot_mode, s.custom_slots, p.bands, s.slot_sets, v.booking_paused, v.booking_notice, v.short_code, v.ref_no, v.map_url, v.location_source,
          (select array_agg(url order by position) from venue_photos ph where ph.venue_id = v.id) photos
     from venues v join venue_schedule s on s.venue_id = v.id join venue_pricing p on p.venue_id = v.id`;
 
@@ -251,6 +252,8 @@ function shape(r: OwnerRow) {
     lat: r.lat,
     lng: r.lng,
     mapUrl: r.map_url,
+    /** 'link' = lat/lng were read from mapUrl (exact pin). null = not yet (the API keeps retrying). */
+    locationSource: r.location_source === 'link' ? ('link' as const) : null,
     formats: r.formats,
     floodlit: r.floodlit,
     amenities: r.amenities,
