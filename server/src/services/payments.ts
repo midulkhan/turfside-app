@@ -3,6 +3,7 @@ import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
 import * as bkash from '../lib/bkash';
 import { randomToken } from '../lib/crypto';
+import { PARTIAL_PER_SLOT, payNow } from '../lib/partial';
 
 import { HOLDING, expireUnpaid } from './matches';
 import { refreshDays } from './venues';
@@ -45,7 +46,7 @@ export function safeReturnUrl(url?: string) {
   return ok ? url : null;
 }
 
-export async function startPayment(userId: string, holdId: string, idemKey: string, returnUrl?: string, note?: string) {
+export async function startPayment(userId: string, holdId: string, idemKey: string, returnUrl?: string, note?: string, mode: 'full' | 'partial' = 'full') {
   if (!bkash.bkashEnabled()) throw new ApiError('not_configured', 'Payments are not available yet.');
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(idemKey)) throw new ApiError('invalid', 'Missing or invalid Idempotency-Key header.');
 
@@ -67,14 +68,18 @@ export async function startPayment(userId: string, holdId: string, idemKey: stri
     ).rows[0];
     if (!o) throw new ApiError('not_found', 'Your hold was not found. Please pick the slot again.');
     if (o.status !== 'held' || new Date(o.hold_expires_at) < new Date()) throw new ApiError('hold_expired', 'Your hold expired. Please pick the slot again.');
-    const first = (await c.query<{ id: string }>('select id from bookings where order_id = $1 order by day, start_min limit 1', [o.id])).rows[0];
+    const slots = (await c.query<{ id: string; total: string }>('select id, total from bookings where order_id = $1 order by day, start_min', [o.id])).rows;
+    const first = slots[0];
     if (!first) throw new ApiError('hold_expired', 'Your hold expired. Please pick the slot again.');
+    // Partial only makes a difference when a slot costs more than 500 tk; otherwise it's a full payment.
+    const partial = mode === 'partial' && slots.some((x) => Number(x.total) > PARTIAL_PER_SLOT);
+    const amount = slots.reduce((t, x) => t + payNow(Number(x.total), partial ? 'partial' : 'full'), 0);
     const invoice = `TS${Date.now().toString(36).toUpperCase()}${randomToken(3).toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
     const p = (
       await c.query<PaymentRow>(
         `insert into payments (booking_id, order_id, user_id, amount, status, idempotency_key, invoice) values ($1,$2,$3,$4,'initiated',$5,$6)
          returning ${P_COLS}`,
-        [first.id, o.id, userId, o.total, idemKey, invoice],
+        [first.id, o.id, userId, amount, idemKey, invoice],
       )
     ).rows[0];
     // Keep every slot in the order locked while the user is on the bKash page.
@@ -82,6 +87,11 @@ export async function startPayment(userId: string, holdId: string, idemKey: stri
     await c.query("update bookings set status = 'pending', hold_expires_at = now() + make_interval(mins => $2) where order_id = $1 and status = 'held'", [o.id, PAYMENT_WINDOW_MIN()]);
     // The customer's note goes on every slot of the order (or is cleared if they removed it).
     await c.query('update bookings set note = $2 where order_id = $1', [o.id, note ?? null]);
+    // How each slot is paid: all of it now, or 500 tk now and the rest at the turf.
+    await c.query(
+      `update bookings set pay_mode = $2, paid_online = case when $2 = 'partial' then least(total, $3) else total end where order_id = $1`,
+      [o.id, partial ? 'partial' : 'full', PARTIAL_PER_SLOT],
+    );
     return p;
   });
   // The hold now lasts the whole payment window: without this, a cached copy would show
@@ -126,45 +136,12 @@ async function openCheckout(payment: PaymentRow, userId: string, returnUrl: stri
   }
 }
 
-const newInvoice = () => `TS${Date.now().toString(36).toUpperCase()}${randomToken(3).toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
-
-/**
- * Pay your share of a match you were accepted into. Only the accepted player, only while their
- * spot is reserved; the amount is the match's fixed share. Idempotent per key, like bookings.
- */
+/** Retired: joining a squad or challenging a team has no payment in the app any more. */
 export async function startSharePayment(userId: string, matchId: string, idemKey: string, returnUrl?: string) {
-  if (!bkash.bkashEnabled()) throw new ApiError('not_configured', 'Payments are not available yet.');
-  if (!/^[A-Za-z0-9_-]{8,100}$/.test(idemKey)) throw new ApiError('invalid', 'Missing or invalid Idempotency-Key header.');
-  const existing = await one<PaymentRow & { checkout_url: string | null }>(
-    `select ${P_COLS}, last_response->>'bkashURL' checkout_url from payments where idempotency_key = $1`,
-    [idemKey],
-  );
-  if (existing) {
-    if (existing.user_id !== userId) throw new ApiError('conflict', 'This request key was already used.');
-    return { paymentId: existing.id, checkoutUrl: existing.checkout_url };
-  }
-  const payment = await tx(async (c) => {
-    const m = (
-      await c.query<{ status: string; pay_by: Date | null; share: number; spots: number; booking_id: string; r_status: string }>(
-        `select m.status, m.pay_by, r.share, m.spots, r.booking_id, r.status r_status
-           from player_request_members m join player_requests r on r.id = m.request_id
-          where m.request_id = $1 and m.user_id = $2 for update of m`,
-        [matchId, userId],
-      )
-    ).rows[0];
-    if (!m || m.r_status === 'cancelled') throw new ApiError('not_found', 'This match is no longer available.');
-    if (m.status === 'paid') throw new ApiError('conflict', "You've already paid. You're in the squad.");
-    if (m.status !== 'accepted' || !m.pay_by || new Date(m.pay_by) < new Date())
-      throw new ApiError('hold_expired', 'Your reserved spot has expired. Ask to join again if spots are left.');
-    return (
-      await c.query<PaymentRow>(
-        `insert into payments (kind, match_id, booking_id, user_id, amount, status, idempotency_key, invoice) values ('share',$1,$2,$3,$4,'initiated',$5,$6)
-         returning ${P_COLS}`,
-        [matchId, m.booking_id, userId, m.share * m.spots, idemKey, newInvoice()],
-      )
-    ).rows[0];
-  });
-  return openCheckout(payment, userId, returnUrl, async () => {});
+  // Squads and opponents pay the host at the turf now; nothing is paid in the app. Older apps
+  // that still offer "Pay" get this message (accepting already confirmed them).
+  void userId; void matchId; void idemKey; void returnUrl;
+  throw new ApiError('forbidden', "No payment needed: you're confirmed once the host accepts. Pay your share to the host at the turf.");
 }
 
 /** A share payment went through: put the player in the squad (or flag a refund if the spot is gone). */
@@ -310,12 +287,17 @@ export async function finalize(paymentId: string): Promise<{ status: string; boo
     }
     if (confirmed) {
       await c.query("update bookings set status = 'confirmed', confirmed_at = now(), hold_expires_at = null where id = any($1::uuid[])", [ids]);
+      const due = Number(
+        (await c.query<{ due: string }>('select coalesce(sum(total - coalesce(paid_online, total)), 0) due from bookings where id = any($1::uuid[])', [ids])).rows[0].due,
+      );
       if (p.order_id) await c.query("update orders set status = 'confirmed', confirmed_at = now(), hold_expires_at = null where id = $1", [p.order_id]);
       await c.query(
         "insert into notifications (user_id, kind, title, body) values ($1, 'payment', 'Payment received', $2)",
         [
           p.user_id,
-          `৳${Math.round(p.amount / 100).toLocaleString('en-IN')} via bKash. ${ids.length > 1 ? `Your ${ids.length} slots are` : 'Your booking is'} confirmed.`,
+          `৳${Math.round(p.amount / 100).toLocaleString('en-IN')} via bKash. ${ids.length > 1 ? `Your ${ids.length} slots are` : 'Your booking is'} confirmed.${
+            due > 0 ? ` Pay the remaining ৳${Math.round(due / 100).toLocaleString('en-IN')} at the turf.` : ''
+          }`,
         ],
       );
     } else {

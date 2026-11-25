@@ -29,7 +29,6 @@ export type MatchType = 'players' | 'opponent';
 export const OPPONENT_PERCENTS = [50, 40, 30] as const;
 
 const CLOSE_BEFORE_MIN = 30; // requests and payments stop this long before kick-off
-const PAY_WINDOW_MIN = 5; // an accepted player has this long to pay (never past CLOSE_BEFORE_MIN)
 /** How long a bKash checkout started inside the pay window keeps the spots held. */
 const CHECKOUT_GRACE_MIN = 15;
 
@@ -467,23 +466,30 @@ export async function decide(userId: string, id: string, memberId: string, accep
           : 'All spots are taken right now. Someone may still be paying; try again in a few minutes.',
       );
     if (m.spots > free) throw new ApiError('conflict', `This request is for ${m.spots} spots but only ${free} ${free === 1 ? 'is' : 'are'} free right now.`);
-    const payBy = new Date(Math.min(Date.now() + PAY_WINDOW_MIN * 60_000, start - CLOSE_BEFORE_MIN * 60_000));
-    await c.query("update player_request_members set status = 'accepted', decided_at = now(), pay_by = $3 where request_id = $1 and user_id = $2", [id, memberId, payBy]);
-    const by = payBy.toLocaleTimeString('en-GB', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit', hour12: true });
+    // No payment in the app: accepting confirms the player (or team) straight away. They pay their
+    // share to the host at the turf. ('paid' is the confirmed-member status the app understands.)
+    await c.query(
+      "update player_request_members set status = 'paid', decided_at = now(), paid_at = now(), pay_by = null where request_id = $1 and user_id = $2",
+      [id, memberId],
+    );
+    await c.query(
+      "update player_requests set spots_filled = $2, status = case when $2 >= spots_total and status = 'open' then 'full' else status end, updated_at = now() where id = $1",
+      [id, taken + m.spots],
+    );
     if (r.type === 'opponent')
       await notify(
         c,
         memberId,
-        'Challenge accepted! Pay to confirm',
-        `${r.team_name ?? 'The host'} will play you at ${venue}, ${timeLabel(r.day, r.start_min)}. Pay your team's ${taka(r.share)} by ${by} (${PAY_WINDOW_MIN} minutes) to lock in the game.`,
+        'Game on!',
+        `${r.team_name ?? 'The host'} accepted your challenge: ${venue}, ${timeLabel(r.day, r.start_min)}. Your team pays ${taka(r.share)} to the host at the turf.`,
         { type: 'match_accepted', matchId: id },
       );
     else
       await notify(
         c,
         memberId,
-        "You're in! Pay to confirm",
-        `${venue}, ${timeLabel(r.day, r.start_min)}. Pay ${taka(r.share * m.spots)} by ${by} (${PAY_WINDOW_MIN} minutes) to keep your ${m.spots === 1 ? 'spot' : `${m.spots} spots`}.`,
+        "You're in the squad",
+        `${venue}, ${timeLabel(r.day, r.start_min)}. Pay ${taka(r.share * m.spots)} to the host at the turf. See you on the pitch.`,
         { type: 'match_accepted', matchId: id },
       );
   });
@@ -543,16 +549,46 @@ export async function requestToJoin(
   return getMatch(userId, id);
 }
 
-/** Leave before paying (a pending request, or an accepted spot you no longer want). */
+/**
+ * Leave a game: a pending request, or a confirmed spot (nothing was paid in the app, so the spot
+ * just goes back to the squad and the host is told). Spots paid in the app before payments were
+ * removed stay: ask the organiser.
+ */
 export async function withdraw(userId: string, id: string) {
-  const res = await q<{ status: string }>(
-    "update player_request_members set status = 'withdrawn' where request_id = $1 and user_id = $2 and status in ('pending', 'accepted') returning status",
-    [id, userId],
-  );
-  if (!res.length) {
-    const m = await one<{ status: string }>('select status from player_request_members where request_id = $1 and user_id = $2', [id, userId]);
-    if (m?.status === 'paid') throw new ApiError('forbidden', "You've paid for this game. Ask the organiser if you can't make it.");
-  }
+  await tx(async (c) => {
+    const m = (
+      await c.query<{ status: string; spots: number; payment_id: string | null; team_name: string | null }>(
+        'select status, spots, payment_id, team_name from player_request_members where request_id = $1 and user_id = $2 for update',
+        [id, userId],
+      )
+    ).rows[0];
+    if (!m) return;
+    if (m.status === 'pending' || m.status === 'accepted') {
+      await c.query("update player_request_members set status = 'withdrawn' where request_id = $1 and user_id = $2", [id, userId]);
+      return;
+    }
+    if (m.status !== 'paid') return;
+    if (m.payment_id) throw new ApiError('forbidden', "You've paid for this game. Ask the organiser if you can't make it.");
+    const r = (
+      await c.query<{ user_id: string; title: string; type: MatchType; day: string; start_min: number; status: string }>(
+        'select r.user_id, r.title, r.type, b.day::text, b.start_min, r.status from player_requests r join bookings b on b.id = r.booking_id where r.id = $1 for update of r',
+        [id],
+      )
+    ).rows[0];
+    if (!r || r.status === 'cancelled') return;
+    if (kickoff(r) <= Date.now()) throw new ApiError('forbidden', 'This game has already started.');
+    await c.query("update player_request_members set status = 'withdrawn' where request_id = $1 and user_id = $2", [id, userId]);
+    const filled = (await c.query<{ n: number }>("select coalesce(sum(spots), 0)::int n from player_request_members where request_id = $1 and status = 'paid'", [id])).rows[0].n;
+    await c.query("update player_requests set spots_filled = $2, status = case when status = 'full' then 'open' else status end, updated_at = now() where id = $1", [id, filled]);
+    const who = (await c.query<{ name: string }>('select name from users where id = $1', [userId])).rows[0]?.name ?? 'A player';
+    await notify(
+      c,
+      r.user_id,
+      r.type === 'opponent' ? 'Your opponent pulled out' : 'A player left',
+      r.type === 'opponent' ? `${m.team_name ?? who} can't play "${r.title}" any more. Your post is open again.` : `${who} left "${r.title}". The spot is open again.`,
+      { type: 'match_member_left', matchId: id },
+    );
+  });
   return getMatch(userId, id);
 }
 

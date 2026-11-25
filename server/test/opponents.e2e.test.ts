@@ -1,7 +1,8 @@
 /**
  * Find an opponent, end to end: a host posts their booking as "looking for an opponent team" →
- * captains challenge with their team → the host accepts one → that captain pays the team's
- * share (simulated bKash) → the game is set and the post leaves the opponents feed.
+ * captains challenge with their team → the host accepts one → the game is set straight away
+ * (no payment in the app: the team pays its share to the host at the turf) and the post leaves
+ * the opponents feed.
  *   API_URL=… (BKASH_MODE=simulate) npm test
  */
 import { randomUUID } from 'node:crypto';
@@ -101,7 +102,7 @@ d('find an opponent', () => {
     expect((await card.arrayBuffer()).byteLength).toBeGreaterThan(20_000);
   });
 
-  it('captains challenge with their team; the host accepts one; that captain pays; the game is set', async () => {
+  it('captains challenge with their team; the host accepts one; the game is set (no payment in the app)', async () => {
     // A challenge needs the team's name and a size that fits one side.
     expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true, teamSize: 5 }, capA.accessToken)).status).toBe(400);
     expect((await call('POST', `/v1/matches/${matchId}/join`, { sharePhone: true, teamName: 'Uttara Kings', teamSize: 40 }, capA.accessToken)).status).toBe(400);
@@ -114,15 +115,14 @@ d('find an opponent', () => {
     const notes = (await call('GET', '/v1/me/notifications', undefined, host.accessToken)).json;
     expect(notes[0].title).toBe('New challenge');
 
-    // Accept one team: the other can't be accepted while it pays.
+    // Accept one team: it's confirmed at once, so the other can't be accepted too.
     expect((await call('POST', `/v1/matches/${matchId}/requests/${capA.user.id}/accept`, undefined, host.accessToken)).status).toBe(200);
     expect((await call('POST', `/v1/matches/${matchId}/requests/${capB.user.id}/accept`, undefined, host.accessToken)).status).toBe(409);
-    expect((await call('GET', '/v1/me/notifications', undefined, capA.accessToken)).json[0].title).toBe('Challenge accepted! Pay to confirm');
-
-    const pay = await call('POST', `/v1/matches/${matchId}/pay`, {}, capA.accessToken, { 'Idempotency-Key': randomUUID() });
-    expect(pay.status, JSON.stringify(pay.json)).toBe(200);
-    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
-    expect((await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, capA.accessToken)).json.status).toBe('confirmed');
+    const got = (await call('GET', '/v1/me/notifications', undefined, capA.accessToken)).json[0];
+    expect(got.title).toBe('Game on!');
+    expect(got.body).toContain('to the host at the turf');
+    // Nothing to pay in the app.
+    expect((await call('POST', `/v1/matches/${matchId}/pay`, {}, capA.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(403);
 
     // Game set: the captain sees the host's pass and the opponent; the post leaves the feed.
     const seen = (await call('GET', `/v1/matches/${matchId}`, undefined, capA.accessToken)).json;
@@ -130,8 +130,49 @@ d('find an opponent', () => {
     expect(seen.opponent).toEqual({ teamName: 'Uttara Kings', size: 5 });
     expect(seen.pass?.passToken).toBeTruthy();
     expect(seen.playersIn).toBe(seen.playersTotal);
-    expect((await call('GET', '/v1/me/notifications', undefined, host.accessToken)).json[0].title).toBe('Opponent confirmed');
     const feed = (await call('GET', '/v1/matches?type=opponent&limit=20', undefined, capB.accessToken)).json.items.map((m: Json) => m.id);
     expect(feed).not.toContain(matchId);
+
+    // Nothing was paid in the app, so the team can pull out: the host is told and the post reopens.
+    expect((await call('DELETE', `/v1/matches/${matchId}/join`, undefined, capA.accessToken)).json.my).toBe('withdrawn');
+    expect((await call('GET', '/v1/me/notifications', undefined, host.accessToken)).json[0].title).toBe('Your opponent pulled out');
+    const reopened = (await call('GET', `/v1/matches/${matchId}`, undefined, capB.accessToken)).json;
+    expect(reopened).toMatchObject({ status: 'open', spotsLeft: 1, opponent: null });
+  });
+});
+
+d('partial payment at checkout', () => {
+  it('pays 500 tk per slot now, shows the rest as due at the turf', async () => {
+    const u = await newUser('Partial Payer');
+    const slots = ((await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(9)}`)).json.slots as Json[]).filter((s) => s.status === 'available');
+    const two = slots.slice(-2).map((s) => s.id);
+    const hold = await call('POST', '/v1/holds', { slotIds: two }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(hold.status, JSON.stringify(hold.json)).toBe(200);
+    const total = hold.json.total as number;
+    // The hold quotes both ways to pay.
+    expect(hold.json.partial).toEqual({ available: true, perSlot: 50_000, now: 100_000, atTurf: total - 100_000 });
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId, mode: 'partial' }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    expect(pay.status, JSON.stringify(pay.json)).toBe(200);
+    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    const st = (await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, u.accessToken)).json;
+    expect(st.status).toBe('confirmed');
+    const b = (await call('GET', `/v1/bookings/${st.bookingId}`, undefined, u.accessToken)).json;
+    const perTicket = b.slotCount as number; // back-to-back slots are one ticket
+    expect(b).toMatchObject({ payMode: 'partial', amountPaid: 50_000 * perTicket });
+    expect(b.dueAtVenue).toBe(b.total - 50_000 * perTicket);
+    const note = ((await call('GET', '/v1/me/notifications', undefined, u.accessToken)).json as Json[]).find((x) => x.title === 'Payment received');
+    expect(note?.body).toContain('৳1,000 via bKash');
+    expect(note?.body).toContain('at the turf');
+  });
+
+  it('full payment (and older apps that send no mode) pay everything', async () => {
+    const u = await newUser('Full Payer');
+    const slot = ((await call('GET', `/v1/venues/v_kickoff_uttara/slots?day=${dayIn(10)}`)).json.slots as Json[]).filter((s) => s.status === 'available').at(-1)!;
+    const hold = await call('POST', '/v1/holds', { slotId: slot.id }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    const pay = await call('POST', '/v1/payments', { holdId: hold.json.holdId }, u.accessToken, { 'Idempotency-Key': randomUUID() });
+    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
+    const st = (await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, u.accessToken)).json;
+    const b = (await call('GET', `/v1/bookings/${st.bookingId}`, undefined, u.accessToken)).json;
+    expect(b).toMatchObject({ payMode: 'full', amountPaid: hold.json.total, total: hold.json.total, dueAtVenue: 0 });
   });
 });

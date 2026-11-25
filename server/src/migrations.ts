@@ -33,6 +33,7 @@ import m030 from '../db/migrations/030_owner_payouts.sql';
 import m031 from '../db/migrations/031_venue_location_source.sql';
 import m023 from '../db/migrations/023_opponents.sql';
 import m022 from '../db/migrations/022_owner_accounts.sql';
+import m032 from '../db/migrations/032_partial_payment.sql';
 
 const MIGRATIONS: [string, string][] = [
   ['001_init', m001],
@@ -66,6 +67,7 @@ const MIGRATIONS: [string, string][] = [
   ['029_price_per_slot', m029],
   ['030_owner_payouts', m030],
   ['031_venue_location_source', m031],
+  ['032_partial_payment', m032],
 ];
 
 /** Reported on /health: 'pending' until migrations have run on this process. */

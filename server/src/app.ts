@@ -794,16 +794,18 @@ export async function buildApp() {
   app.get('/v1/me/holds', { preHandler: requireUser }, async (req) => bookings.listHolds(req.user!.userId));
 
   app.post('/v1/payments', { preHandler: requireUser, config: { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: perSession } } }, async (req) => {
-    const { holdId, returnUrl, note } = parse(
+    const { holdId, returnUrl, note, mode } = parse(
       z.object({
         holdId: z.string().uuid(),
         returnUrl: z.string().max(300).optional(),
         // A note for the turf (e.g. "bringing our own bibs"); the owner sees it with the booking.
         note: z.string().trim().max(300, 'Keep your note under 300 characters.').optional(),
+        // 'partial': pay 500 tk per slot now, the rest at the turf. Older apps send nothing: full.
+        mode: z.enum(['full', 'partial']).optional(),
       }),
       req.body,
     );
-    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl, note || undefined);
+    return payments.startPayment(req.user!.userId, holdId, idem(req) ?? '', returnUrl, note || undefined, mode ?? 'full');
   });
   app.get('/v1/payments/:id', { preHandler: requireUser }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
@@ -898,9 +900,17 @@ export async function buildApp() {
       ['bookingId' in pass ? pass.bookingId : pass.code],
     );
     if (!b || b.owner_id !== ownerId) throw new ApiError('forbidden', 'This pass is for another venue.');
-    return { b, ticket: 'ticket' in pass ? pass.ticket : null };
+    // Partial payments: what reception still has to collect for the whole ticket.
+    const ids = await bookings.ticketBookingIds(b.id);
+    const m = await one<{ total: string; paid: string; partial: boolean }>(
+      `select sum(total) total, sum(case when source = 'walkin' then total else coalesce(paid_online, total) end) paid, bool_or(pay_mode = 'partial') partial
+         from bookings where id = any($1::uuid[])`,
+      [ids],
+    );
+    const money = { total: Number(m?.total ?? b.total), paid: Number(m?.paid ?? b.total), partial: !!m?.partial };
+    return { b: { ...b, ...money }, ticket: 'ticket' in pass ? pass.ticket : null };
   };
-  const passView = (b: { id: string; code: string; status: string; day: string; start_min: number; end_min: number; total: number; venue_id: string; name: string; phone: string }) => ({
+  const passView = (b: { id: string; code: string; status: string; day: string; start_min: number; end_min: number; total: number; paid: number; partial: boolean; venue_id: string; name: string; phone: string }) => ({
     bookingId: b.id,
     code: b.code,
     status: b.status, // confirmed = can check in; checked_in = already used; cancelled/expired = refuse
@@ -908,7 +918,11 @@ export async function buildApp() {
     day: b.day,
     start: b.start_min,
     end: b.end_min,
-    paid: b.total,
+    paid: b.paid,
+    /** Partial payments: the ticket's price and what to collect at the gate (poisha). */
+    total: b.total,
+    dueAtVenue: Math.max(0, b.total - b.paid),
+    payMode: b.partial ? 'partial' : 'full',
     holder: { name: b.name, phone: b.phone },
   });
   const tokenBody = z.object({ token: z.string().max(1200) });

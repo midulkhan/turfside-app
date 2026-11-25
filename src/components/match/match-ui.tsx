@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2, Swords, UsersRound } from 'lucide-react-native';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck, Clock3, Eye, MapPin, Minus, Plus, RotateCcw, Settings2, Swords, UsersRound } from 'lucide-react-native';
 import { memo, useState, type ReactNode } from 'react';
 import { Keyboard, Pressable, View } from 'react-native';
 
@@ -130,7 +130,6 @@ function Faces({ m }: { m: Match }) {
 export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m: Match) => void; compact?: boolean; fill?: boolean }) {
   const leave = useLeaveMatch();
   const full = m.spotsLeft === 0;
-  const total = m.share * (m.mySpots ?? 1);
 
   const withdraw = () =>
     Alert.alert('Withdraw your request?', 'You can ask again later if spots are still open.', [
@@ -164,16 +163,8 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
           onPress={withdraw}
         />
       );
+    // No payment in the app: accepted (older servers) means the same as confirmed.
     case 'accepted':
-      return (
-        <Button
-          small={compact}
-          label={compact ? `Pay ${formatTaka(total)}` : `Pay ${formatTaka(total)} to confirm`}
-          trailingIcon={ArrowRight}
-          style={grow}
-          onPress={() => router.push({ pathname: '/checkout', params: { match: m.id } })}
-        />
-      );
     case 'paid':
       return state(opp ? 'Game On' : "You're in the squad", true);
     default: {
@@ -191,9 +182,8 @@ export function MatchAction({ m, onJoin, compact, fill }: { m: Match; onJoin: (m
 export function statusPill(m: Match) {
   switch (m.my) {
     case 'paid':
-      return "You're in";
     case 'accepted':
-      return 'Pay now';
+      return "You're in";
     case 'pending':
       return isOpponent(m) ? 'Challenged' : 'Requested';
     case 'declined':
@@ -408,7 +398,7 @@ function ChallengeSheet({ match, visible, onClose }: { match: Match; visible: bo
         <View style={styles.note}>
           <Check size={16} color={colors.limeText} strokeWidth={2.4} />
           <Text variant="label" color={colors.textMuted} style={styles.flex}>
-            Your team pays {formatTaka(match.share)} only if the host accepts your challenge. You then have 5 minutes to pay.
+            If the host accepts your challenge, your team is confirmed and pays {formatTaka(match.share)} to the host at the turf.
           </Text>
         </View>
         <PhoneConsent role="captain" checked={sharePhone} onChange={setSharePhone}>
@@ -477,9 +467,8 @@ function PlayerJoinSheet({ match, spots = 1, onClose }: { match: Match | null; s
             <Check size={16} color={colors.limeText} strokeWidth={2.4} />
             <Text variant="label" color={colors.textMuted} style={styles.flex}>
               {spots === 1
-                ? `You pay ${formatTaka(match.share)} only if the organiser accepts you.`
-                : `You pay ${formatTaka(match.share * spots)} for ${spots} spots only if the organiser accepts you.`}{' '}
-              You then have 5 minutes to pay.
+                ? `If the organiser accepts you, you're in. You pay ${formatTaka(match.share)} to them at the turf.`
+                : `If the organiser accepts you, your ${spots} spots are confirmed. You pay ${formatTaka(match.share * spots)} to them at the turf.`}
             </Text>
           </View>
           <PhoneConsent role="player" checked={sharePhone} onChange={setSharePhone}>

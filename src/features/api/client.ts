@@ -160,10 +160,11 @@ export const getMyHolds = (signal?: AbortSignal) => request<Hold[]>('GET', '/v1/
  * `returnUrl` is where the server sends the browser back to (validated server-side).
  */
 /** `note`: the customer's note to the turf (up to 300 characters); the owner sees it with the booking. */
-export const startPayment = (holdId: string, idempotencyKey: string, returnUrl?: string, note?: string) =>
+/** `mode`: 'partial' pays 500 tk per slot now and the rest at the turf. */
+export const startPayment = (holdId: string, idempotencyKey: string, returnUrl?: string, note?: string, mode: 'full' | 'partial' = 'full') =>
   request<{ paymentId: string; checkoutUrl: string | null }>('POST', '/v1/payments', {
     auth: 'required',
-    body: { holdId, returnUrl, ...(note ? { note } : {}) },
+    body: { holdId, returnUrl, mode, ...(note ? { note } : {}) },
     idempotencyKey,
     timeoutMs: 30_000,
   });

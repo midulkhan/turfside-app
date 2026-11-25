@@ -128,31 +128,23 @@ d('find players', () => {
     expect(n.some((x) => x.data?.type === 'match_request' && x.data.matchId === matchId)).toBe(true);
   });
 
-  it('accept → notification with pay → pay share via bKash → in the squad', async () => {
+  it('accept → in the squad straight away (no payment in the app; they pay the host at the turf)', async () => {
     const acc = await call('POST', `/v1/matches/${matchId}/requests/${p1.user.id}/accept`, undefined, org.accessToken);
     expect(acc.status, JSON.stringify(acc.json)).toBe(200);
-    expect(acc.json.squad[0]).toMatchObject({ name: 'Tanvir Ahmed', paid: false, spots: 2 });
+    expect(acc.json.squad[0]).toMatchObject({ name: 'Tanvir Ahmed', paid: true, spots: 2, payBy: null });
     const note = ((await call('GET', '/v1/me/notifications', undefined, p1.accessToken)).json as Json[]).find((x) => x.data?.type === 'match_accepted');
     expect(note?.data.matchId).toBe(matchId);
-    const mine = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
-    expect(mine.my).toBe('accepted');
-    expect(mine.payBy).toBeGreaterThan(Date.now());
-    expect(mine.payBy).toBeLessThanOrEqual(Date.now() + 5 * 60_000 + 5_000); // 5-minute pay window
-    // Held spots are off the market for everyone else, and the release time is public.
-    const other = (await call('GET', `/v1/matches/${matchId}`, undefined, p3.accessToken)).json;
-    expect(other.spotsLeft).toBe(1);
-    expect(other.reservedUntil).toBe(mine.payBy);
-    // Only the accepted player can pay, only their share.
-    expect((await call('POST', `/v1/matches/${matchId}/pay`, {}, p2.accessToken, { 'Idempotency-Key': randomUUID() })).status).toBe(410);
+    expect(note?.body).toContain('at the turf');
+    // Nothing to pay in the app: older apps that still offer "Pay" are told so.
     const pay = await call('POST', `/v1/matches/${matchId}/pay`, {}, p1.accessToken, { 'Idempotency-Key': randomUUID() });
-    expect(pay.status, JSON.stringify(pay.json)).toBe(200);
-    await fetch(`${API}/v1/payments/simulate/${pay.json.paymentId}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=pay' });
-    const st = (await call('GET', `/v1/payments/${pay.json.paymentId}`, undefined, p1.accessToken)).json;
-    expect(st).toMatchObject({ status: 'confirmed', kind: 'share', matchId });
+    expect(pay.status).toBe(403);
+    expect(pay.json.message ?? pay.json.error?.message ?? JSON.stringify(pay.json)).toContain('No payment needed');
     const after = (await call('GET', `/v1/matches/${matchId}`, undefined, p1.accessToken)).json;
     expect(after.my).toBe('paid');
+    expect(after.payBy).toBeNull();
     expect(after.playersIn).toBe(after.playersTotal - 1);
     expect(after.spotsLeft).toBe(1);
+    expect((await call('GET', `/v1/matches/${matchId}`, undefined, p3.accessToken)).json.spotsLeft).toBe(1);
     // It's listed with their bookings, with the spots they paid for; not for others.
     const mineJoined = (await call('GET', '/v1/matches/joined', undefined, p1.accessToken)).json as Json[];
     expect(mineJoined.find((x) => x.id === matchId)).toMatchObject({ my: 'paid', mySpots: 2 });
@@ -181,7 +173,6 @@ d('find players', () => {
     expect(managed.squad.find((x: Json) => x.userId === p1.user.id).phone).toBe('+8801899000222'); // the number they chose
     expect(JSON.stringify(managed)).not.toContain(p1.user.phone);
     expect(JSON.stringify(managed.requests)).not.toContain(p2.user.phone); // asked, not paid: hidden
-    expect(((await call('GET', '/v1/me/notifications', undefined, org.accessToken)).json as Json[]).some((x) => x.data?.type === 'match_member_paid')).toBe(true);
   });
 
   it('decline, pause and the last spot', async () => {

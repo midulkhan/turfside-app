@@ -71,6 +71,8 @@ type BookingRow = {
   status: string;
   source: string;
   total: string;
+  pay_mode: string | null;
+  paid_online: string | null;
   created_at: Date;
   confirmed_at: Date | null;
   cancelled_at: Date | null;
@@ -92,7 +94,7 @@ type BookingRow = {
 };
 const BOOKING_SELECT = `
   select b.id, b.code, b.venue_id, v.name venue_name, b.day::text, b.start_min, b.end_min, b.status, b.source, b.total,
-         b.created_at, b.confirmed_at, b.cancelled_at, b.checked_in_at, b.order_id, b.user_id,
+         b.pay_mode, b.paid_online, b.created_at, b.confirmed_at, b.cancelled_at, b.checked_in_at, b.order_id, b.user_id,
          u.name user_name, u.phone user_phone, b.guest_name, b.guest_phone, b.guest_email, b.note,
          es.gross e_gross, es.commission e_commission, es.net e_net, es.rate_bp e_rate, es.payout_id e_payout,
          (select paid_at from payouts p where p.id = es.payout_id) e_paid_at
@@ -111,6 +113,15 @@ function bookingOut(b: BookingRow) {
     status: b.status === 'confirmed' && ended ? 'completed' : b.status,
     source: b.source as 'app' | 'link' | 'walkin',
     amount: taka(b.total),
+    /**
+     * How the player paid (taka): 'full' in the app, or 'partial' = 500 tk per slot in the app and
+     * `dueAtVenue` to collect at the turf. Walk-ins: everything at the turf, nothing due here.
+     */
+    payment: {
+      mode: (b.source === 'walkin' ? 'full' : (b.pay_mode ?? 'full')) as 'full' | 'partial',
+      paidOnline: b.source === 'walkin' ? 0 : taka(b.paid_online ?? b.total),
+      dueAtVenue: b.source === 'walkin' ? 0 : taka(Number(b.total) - Number(b.paid_online ?? b.total)),
+    },
     // Walk-ins keep the name, phone and email the turf took, even when they matched a player's
     // account (guest: false = the booking is also in that player's app).
     customer:

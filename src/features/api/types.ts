@@ -90,6 +90,8 @@ export type Hold = {
   end: number;
   lines: QuoteLine[];
   total: Poisha;
+  /** "Partial payment" at checkout: 500 tk per slot now (`now`), the rest at the turf. Older servers omit it. */
+  partial?: { available: boolean; perSlot: Poisha; now: Poisha; atTurf: Poisha };
   cancellationPolicy: string;
 };
 
@@ -105,6 +107,10 @@ export type Booking = {
   start: number;
   end: number;
   amountPaid: Poisha;
+  /** The ticket's full price, and what's left to pay at the turf (partial payment; older servers omit them). */
+  total?: Poisha;
+  dueAtVenue?: Poisha;
+  payMode?: 'full' | 'partial';
   method: 'bKash';
   status: BookingStatus;
   /** Opaque signed token issued by the server; the QR encodes this, never raw ids. */

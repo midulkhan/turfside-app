@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Ticket, X } from 'lucide-react-native';
+import { ArrowRight, Banknote, CalendarDays, Check, ChevronRight, Clock3, Maximize2, MapPin, Ticket, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
@@ -216,6 +216,20 @@ export default function BookingTicket() {
               </Text>
             </View>
           ) : null}
+          {/* Partial payment: the rest is paid at the turf (not shown once cancelled). */}
+          {b && (b.dueAtVenue ?? 0) > 0 && b.status !== 'cancelled' ? (
+            <View style={styles.due}>
+              <Banknote size={20} color={colors.warningText} strokeWidth={2} />
+              <View style={styles.flex}>
+                <Text variant="bodyStrong" color={colors.warningText}>
+                  Pay {formatTaka(b.dueAtVenue!)} at the turf
+                </Text>
+                <Text variant="label" color={colors.textMuted}>
+                  {b.total ? `Booking total ${formatTaka(b.total)} · show this ticket at reception` : 'Show this ticket at reception'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
 
           {b.otherTickets?.length ? <OtherTickets tickets={b.otherTickets} /> : null}
 
@@ -382,6 +396,15 @@ const styles = createStyles(() => ({
     borderRadius: radius.lg,
     paddingHorizontal: space[4],
     height: 56,
+  },
+  due: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
+    borderRadius: radius.lg,
+    backgroundColor: colors.warningSoft,
   },
   actions: { flexDirection: 'row', gap: space[3] },
   tip: { flexDirection: 'row', alignItems: 'center', gap: space[4], paddingVertical: space[4] },

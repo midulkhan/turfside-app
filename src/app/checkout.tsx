@@ -50,6 +50,31 @@ import { createStyles } from '@/theme/styles';
 
 const POLL_ATTEMPTS = 8;
 
+/** One of the two ways to pay: a radio card with the amount on the right. */
+function PayOption({ title, amount, caption, selected, onPress }: { title: string; amount: string; caption: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${title}, ${amount}. ${caption}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.mode, selected && styles.modeOn, pressed && styles.modePressed]}>
+      <View style={[styles.radio, selected && styles.radioSel]}>{selected ? <View style={styles.radioDot} /> : null}</View>
+      <View style={styles.flex}>
+        <View style={styles.modeHead}>
+          <Text variant="labelStrong" style={styles.flex} numberOfLines={2}>
+            {title}
+          </Text>
+          <Text variant="labelStrong">{amount}</Text>
+        </View>
+        <Text variant="label" color={colors.textMuted}>
+          {caption}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function useCountdown(expiresAt?: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -147,6 +172,17 @@ export default function Checkout() {
   // Optional note for the turf (switch on → a text box). Sent with the payment; owners see it.
   const [noteOn, setNoteOn] = useState(false);
   const [note, setNote] = useState('');
+  // Full payment, or partial: 500 tk per slot now and the rest at the turf (when the turf costs more).
+  const [mode, setMode] = useState<'full' | 'partial'>('full');
+  const part = !isShare && hold.data?.partial?.available ? hold.data.partial : null;
+  const partial = mode === 'partial' && !!part;
+  const payNow = h ? (partial ? part!.now : h.total) : 0;
+  const pickMode = (next: 'full' | 'partial') => {
+    if (next === mode || paying) return;
+    haptic.select();
+    setMode(next);
+    payKey.current = newIdempotencyKey(); // a different amount is a different payment
+  };
   const scroller = useRef<ScrollViewInstance>(null);
   const noteY = useRef(0);
   // Bring the note box up near the top, clear of the keyboard, once it's open.
@@ -216,7 +252,7 @@ export default function Checkout() {
       const returnUrl = Linking.createURL('payment-return');
       const { paymentId, checkoutUrl } = isShare
         ? await api.startSharePayment(matchId!, payKey.current, returnUrl)
-        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl, noteOn ? note.trim() || undefined : undefined);
+        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl, noteOn ? note.trim() || undefined : undefined, partial ? 'partial' : 'full');
       let cancelled = false;
       if (checkoutUrl) {
         // bKash hosted checkout. The redirect back is NOT proof of payment —
@@ -441,6 +477,31 @@ export default function Checkout() {
             </View>
           )}
 
+          {/* How to pay: everything now, or 500 tk per slot now and the rest at the turf */}
+          {part && h ? (
+            <>
+              <Text variant="title" style={[styles.section, styles.sectionTitle]}>
+                How do you want to pay?
+              </Text>
+              <View style={styles.modes} accessibilityRole="radiogroup">
+                <PayOption
+                  title="Full payment"
+                  amount={formatTaka(h.total)}
+                  caption="Pay everything now. Nothing to pay at the turf."
+                  selected={mode === 'full'}
+                  onPress={() => pickMode('full')}
+                />
+                <PayOption
+                  title={h.slots.length > 1 ? `Partial payment · ${formatTaka(part.perSlot)} per slot` : 'Partial payment'}
+                  amount={formatTaka(part.now)}
+                  caption={`Pay ${formatTaka(part.now)} now to book. Pay the remaining ${formatTaka(part.atTurf)} at the turf.`}
+                  selected={mode === 'partial'}
+                  onPress={() => pickMode('partial')}
+                />
+              </View>
+            </>
+          ) : null}
+
           {/* Price details — all amounts come from the server quote */}
           <Text variant="title" style={[styles.section, styles.sectionTitle]}>
             Price details
@@ -481,12 +542,32 @@ export default function Checkout() {
                 <Plus size={18} color={colors.ink} strokeWidth={1.7} />
               </Pressable>
             )}
+            {partial && h ? (
+              <>
+                <View style={styles.line}>
+                  <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
+                    Booking total
+                  </Text>
+                  <Text variant="labelStrong" style={styles.lineText}>
+                    {formatTaka(h.total)}
+                  </Text>
+                </View>
+                <View style={styles.line}>
+                  <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
+                    Pay at the turf
+                  </Text>
+                  <Text variant="labelStrong" style={styles.lineText}>
+                    {formatTaka(part!.atTurf)}
+                  </Text>
+                </View>
+              </>
+            ) : null}
             <View style={styles.total}>
               <Text variant="labelStrong" style={styles.whenMain}>
-                Total payable
+                {partial ? 'Pay now' : 'Total payable'}
               </Text>
               <Text variant="h2" style={styles.totalAmount}>
-                {h ? formatTaka(h.total) : '—'}
+                {h ? formatTaka(payNow) : '—'}
               </Text>
             </View>
           </Card>
@@ -544,7 +625,7 @@ export default function Checkout() {
           .
         </Text>
         <SlideToPay
-          label={h ? `Slide to pay ${formatTaka(h.total)}` : 'Slide to pay'}
+          label={h ? `Slide to pay ${formatTaka(payNow)}` : 'Slide to pay'}
           onComplete={pay}
           busy={paying}
           disabled={!h || expired}
@@ -601,6 +682,23 @@ const styles = createStyles(() => ({
   sectionTitle: { marginTop: space[3] },
   details: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   noteCard: { marginTop: space[3] },
+  modes: { gap: space[3] },
+  mode: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[3],
+    padding: space[4],
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  modeOn: { borderColor: colors.ink },
+  modePressed: { opacity: 0.85 },
+  modeHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space[3], marginBottom: 2 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.textSubtle, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  radioSel: { borderColor: colors.ink },
+  radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: colors.ink },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   noteBox: { marginTop: space[3] },
   noteCount: { textAlign: 'right', marginTop: space[1] },

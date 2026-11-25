@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Plus, ShieldCheck, Share2, Swords, Timer, Undo2 } from 'lucide-react-native';
+import { CalendarDays, CircleCheck, Clock3, MapPin, Minus, Plus, ShieldCheck, Share2, Swords, Banknote } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,7 +46,6 @@ export default function GameDetails() {
   // Live: the organiser's answer, other players' requests and payments arrive as they happen.
   useLiveMatch(id);
   // A held spot (yours or someone else's) is released when its 5-minute window ends.
-  useRefreshAt(m?.payBy, q.refetch);
   useRefreshAt(m?.reservedUntil, q.refetch);
 
   // Never ask for more than is open (others may have just taken some).
@@ -243,14 +242,13 @@ function Body({ m, canAsk, spots, onSpots }: { m: Match; canAsk: boolean; spots:
           <Point icon={ShieldCheck} text="The turf is already booked and paid for by the host." />
           {isOpponent(m) ? (
             <>
-              <Point icon={Swords} text="The host picks one team to play. Your team pays its share only if you're picked." />
-              <Point icon={Clock3} text="Once accepted, you have 5 minutes to pay for your team. After that the host can pick another team." />
-              <Point icon={Undo2} text="If the host cancels, your team's payment is refunded in full." />
+              <Point icon={Swords} text="The host picks one team to play. Once they accept, your team is confirmed." />
+              <Point icon={Banknote} text="No payment in the app: your team pays its share to the host at the turf." />
             </>
           ) : (
             <>
-              <Point icon={Clock3} text="Once you're accepted, you have 5 minutes to pay. After that the spots go back to the game." />
-              <Point icon={Undo2} text="If the organiser cancels, your share is refunded in full." />
+              <Point icon={Clock3} text="Once the organiser accepts you, you're in the squad." />
+              <Point icon={Banknote} text="No payment in the app: you pay your share to the organiser at the turf." />
             </>
           )}
         </View>
@@ -297,46 +295,37 @@ function Point({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   );
 }
 
-/** Price (for the chosen spots) and the viewer's next step, pinned to the bottom. */
+/**
+ * Price (for the chosen spots) and the viewer's next step, pinned to the bottom. No payment in
+ * the app: the price is what they'll pay the host at the turf once accepted.
+ */
 function PriceBar({ m, spots, bottom, onJoin }: { m: Match; spots: number; bottom: number; onJoin: (m: Match) => void }) {
-  const left = useCountdown(m.my === 'accepted' ? m.payBy : null);
   const opp = isOpponent(m);
-  const hint =
-    m.my === 'accepted' && left !== null
-      ? null
-      : opp
-        ? m.my === 'pending'
-          ? "Challenge sent. You'll be notified when the host answers."
-          : m.my === 'declined'
-            ? 'The host picked another team. Plenty more teams want a game.'
-            : m.my === 'expired'
-              ? 'The 5 minutes to pay ran out. Challenge again if the game is still open.'
-              : m.my === 'none' || m.my === 'withdrawn'
-                ? 'Your team pays only after the host accepts.'
-                : null
+  const amount = formatTaka(opp ? m.share : m.share * spots);
+  const confirmed = m.my === 'paid' || m.my === 'accepted';
+  const hint = confirmed
+    ? `Pay ${amount} to the host at the turf.`
+    : opp
+      ? m.my === 'pending'
+        ? "Challenge sent. You'll be notified when the host answers."
+        : m.my === 'declined'
+          ? 'The host picked another team. Plenty more teams want a game.'
+          : m.my === 'none' || m.my === 'withdrawn' || m.my === 'expired'
+            ? 'No payment in the app. Your team pays the host at the turf.'
+            : null
       : m.my === 'pending'
         ? `Request sent for ${spots === 1 ? '1 spot' : `${spots} spots`}. You'll be notified when the organiser answers.`
         : m.my === 'declined'
           ? "The organiser couldn't fit you in. You can ask again."
-          : m.my === 'expired'
-            ? 'The 5 minutes to pay ran out. Ask again if spots are open.'
-            : m.my === 'none' || m.my === 'withdrawn'
-              ? 'Pay only after the organiser accepts you.'
-              : null;
+          : m.my === 'none' || m.my === 'withdrawn' || m.my === 'expired'
+            ? 'No payment in the app. You pay the organiser at the turf.'
+            : null;
   return (
     <View style={[styles.bar, { paddingBottom: bottom + space[3] }]}>
-      {m.my === 'accepted' && left !== null ? (
-        <View style={[styles.timer, left < 60_000 && styles.timerUrgent]}>
-          <Timer size={16} color={left < 60_000 ? colors.danger : colors.limeText} strokeWidth={2.2} />
-          <Text variant="labelStrong" color={left < 60_000 ? colors.danger : colors.limeText} style={styles.flex}>
-            {opp ? `Accepted! Pay within ${mmss(left)} to lock in the game` : `Accepted! Pay within ${mmss(left)} to keep your ${spots === 1 ? 'spot' : `${spots} spots`}`}
-          </Text>
-        </View>
-      ) : null}
       <View style={styles.barRow}>
         <View style={styles.price}>
           <Text variant="h3" style={styles.priceText}>
-            {formatTaka(opp ? m.share : m.share * spots)}
+            {amount}
           </Text>
           <Text variant="caption" color={colors.textMuted}>
             {opp ? 'for your team' : spots === 1 ? 'per player' : `${spots} spots · ${formatTaka(m.share)} each`}
@@ -355,21 +344,6 @@ function PriceBar({ m, spots, bottom, onJoin }: { m: Match; spots: number; botto
     </View>
   );
 }
-
-/** Milliseconds until `to`, ticking every second (null when there's nothing to count down to). */
-function useCountdown(to: number | null) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!to) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [to]);
-  return to ? Math.max(0, to - now) : null;
-}
-const mmss = (ms: number) => {
-  const s = Math.ceil(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
 
 function Loading() {
   return (

@@ -48,6 +48,8 @@ export type BookingMail = {
   venue: { name: string; area: string; city: string; address: string; lat: number | null; lng: number | null; format: string; mapUrl?: string | null };
   tickets: Ticket[];
   paid: number; // taka, what the player paid
+  /** Partial payment: taka still to pay at the turf (0 or absent = fully paid). */
+  due?: number;
   trxId: string | null;
   note: string | null;
   bookedAt: Date;
@@ -114,6 +116,7 @@ export async function sendBookingEmails(paymentId: string) {
       venue: { name: v.venue, area: v.area ?? '', city: v.city ?? '', address: v.address ?? '', lat: v.lat, lng: v.lng, mapUrl: v.map_url, format: v.formats?.[0] ?? '' },
       tickets,
       paid: Math.round(p.amount / 100),
+      due: Math.max(0, Math.round(rows.reduce((n, r) => n + Number(r.total), 0) / 100) - Math.round(p.amount / 100)),
       trxId: p.trx_id,
       note: rows.find((r) => r.note)?.note ?? null,
       bookedAt: new Date(),
@@ -270,6 +273,7 @@ export function playerEmail(m: BookingMail) {
     walkin
       ? ['Amount', `${taka(m.paid)} <span style="color:${C.faint};font-weight:400">· booked at the turf</span>`]
       : ['Paid', `${taka(m.paid)} <span style="color:${C.faint};font-weight:400">via bKash</span>`],
+    ...(m.due ? [['Due at the turf', `<strong>${taka(m.due)}</strong> <span style="color:${C.faint};font-weight:400">· pay at the turf before you play</span>`] as [string, string]] : []),
     ...(m.trxId ? [['Transaction ID', `<span style="font-family:Menlo,Consolas,monospace;font-size:13px">${esc(m.trxId)}</span>`] as [string, string]] : []),
     ...(m.note && !walkin ? [['Your note', esc(m.note)] as [string, string]] : []),
   ];
@@ -331,6 +335,7 @@ ${ticketLinks(m.tickets)}
     `Address: ${fullAddress(v)}`,
     `Directions: ${mapsUrl(v)}`,
     walkin ? `Amount: ${taka(m.paid)} (booked at the turf)` : `Paid: ${taka(m.paid)} via bKash${m.trxId ? ` (transaction ${m.trxId})` : ''}`,
+    ...(m.due ? [`Due at the turf: ${taka(m.due)} (pay at the turf before you play)`] : []),
     ...(m.note && !walkin ? [`Your note: ${m.note}`] : []),
     ...(links.length ? ['', ...links] : []),
     '',
@@ -361,11 +366,12 @@ export function ownerEmail(m: BookingMail, ownerName: string) {
     ['Pitch', esc([t0.pitch, v.format].filter(Boolean).join(' · '))],
     ['Booking code', `<span style="font-family:Menlo,Consolas,monospace;font-size:13px">${esc(m.tickets.map((x) => x.code).join(', '))}</span>`],
     ['Paid', `${taka(m.paid)} <span style="color:${C.faint};font-weight:400">via bKash${m.trxId ? ` · ${esc(m.trxId)}` : ''}</span>`],
+    ...(m.due ? [['Collect at the turf', `<strong>${taka(m.due)}</strong> <span style="color:${C.faint};font-weight:400">· the player paid 500 tk per slot in the app</span>`] as [string, string]] : []),
     ['Booked', esc(dhakaStamp(m.bookedAt))],
     ...(m.note ? [['Customer note', esc(m.note)] as [string, string]] : []),
   ];
 
-  const body = `${headline('Congrats, you got a new booking', `${esc(first(m.player.name))} booked ${esc(v.name)} in the TurfSides app. It’s paid, and the time is now closed to other players.`)}
+  const body = `${headline('Congrats, you got a new booking', `${esc(first(m.player.name))} booked ${esc(v.name)} in the TurfSides app. ${m.due ? `${esc(taka(m.paid))} is paid in the app; collect ${esc(taka(m.due))} at the turf. The time` : 'It’s paid, and the time'} is now closed to other players.`)}
 <tr><td class="px" style="padding:24px 28px 0">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${C.line};border-radius:20px">
     <tr><td class="cardpad" style="padding:22px 22px 18px;border-bottom:1px solid ${C.line}">
@@ -398,7 +404,7 @@ export function ownerEmail(m: BookingMail, ownerName: string) {
 </td></tr>`;
 
   const html = shell({
-    preheader: `${m.player.name} booked ${longDay(t0.day)}, ${timeRange(t0.start, t0.end)}. Paid ${taka(m.paid)}.`,
+    preheader: `${m.player.name} booked ${longDay(t0.day)}, ${timeRange(t0.start, t0.end)}. Paid ${taka(m.paid)}${m.due ? `, ${taka(m.due)} to collect at the turf` : ''}.`,
     body,
     footer: `Sent to ${esc(first(ownerName))} as the owner of ${esc(v.name)}.`,
   });
@@ -406,7 +412,7 @@ export function ownerEmail(m: BookingMail, ownerName: string) {
   const text = [
     'Congrats, you got a new booking!',
     '',
-    `${m.player.name} booked ${v.name} in the TurfSides app. It's paid, and the time is now closed to other players.`,
+    `${m.player.name} booked ${v.name} in the TurfSides app. ${m.due ? `${taka(m.paid)} is paid in the app; collect ${taka(m.due)} at the turf. The time` : "It's paid, and the time"} is now closed to other players.`,
     '',
     `Customer: ${m.player.name}`,
     `Phone: ${phone}`,
@@ -414,6 +420,7 @@ export function ownerEmail(m: BookingMail, ownerName: string) {
     `Duration: ${duration(totalMinutes(m.tickets))}`,
     `Pitch: ${[t0.pitch, v.format].filter(Boolean).join(' · ')}`,
     `Paid: ${taka(m.paid)} via bKash${m.trxId ? ` (transaction ${m.trxId})` : ''}`,
+    ...(m.due ? [`Collect at the turf: ${taka(m.due)} (the player paid 500 tk per slot in the app)`] : []),
     `Booked: ${dhakaStamp(m.bookedAt)}`,
     ...(m.note ? [`Customer note: ${m.note}`] : []),
     '',

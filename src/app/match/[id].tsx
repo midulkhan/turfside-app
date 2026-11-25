@@ -5,7 +5,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Share, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
-import { SquadBar, Tag, VersusCard, VsTag, clockLabel, isOpponent, matchTitle, levelLabel, positionLabel, shareMatchContent, versusLabel, whenLabel } from '@/components/match/match-ui';
+import { SquadBar, Tag, VersusCard, VsTag, isOpponent, matchTitle, levelLabel, positionLabel, shareMatchContent, versusLabel, whenLabel } from '@/components/match/match-ui';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -184,7 +184,7 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
             left={{ name: m.teamName ?? 'Your team', caption: 'Your team', avatar: m.faces[0] }}
             right={
               opponentTeam
-                ? { name: opponentTeam.teamName ?? opponentTeam.name, caption: opponentTeam.paid ? `Captain ${opponentTeam.name}` : 'Paying now…', avatar: opponentTeam }
+                ? { name: opponentTeam.teamName ?? opponentTeam.name, caption: `Captain ${opponentTeam.name}`, avatar: opponentTeam }
                 : { name: 'Opponent?', caption: m.requests.length ? `${m.requests.length} challenge${m.requests.length === 1 ? '' : 's'} waiting` : 'Waiting for challenges', muted: true }
             }
           />
@@ -274,8 +274,8 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
         <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
         <Text variant="label" color={colors.textMuted} style={styles.flex}>
           {opp
-            ? 'The team you accept has 5 minutes to pay. If they don’t, you can accept another.'
-            : 'Accepted players have 5 minutes to pay. If they don’t, the spots open up again.'}
+            ? 'The team you accept is confirmed straight away. They pay their share to you at the turf.'
+            : 'Players you accept are confirmed straight away. They pay their share to you at the turf.'}
         </Text>
       </View>
 
@@ -305,10 +305,10 @@ function Body({ m, onEditTitle, onPause, pausing }: { m: MatchManage; onEditTitl
               <View style={styles.memberFoot}>
                 <View style={[styles.state, p.paid ? styles.statePaid : styles.stateWaiting]}>
                   <Text variant="caption" color={p.paid ? colors.limeText : colors.warningText}>
-                    {p.paid ? 'Paid' : p.payBy ? `Paying · until ${clockLabel(p.payBy)}` : 'Paying now'}
+                    {p.paid ? `Confirmed · pays ${formatTaka(m.share * (p.teamName ? 1 : (p.spots ?? 1)))} at the turf` : 'Confirming…'}
                   </Text>
                 </View>
-                {/* Their number appears once they've paid (they agreed when asking). Only you see it. */}
+                {/* Their number appears once you accept them (they agreed when asking). Only you see it. */}
                 {p.phone ? (
                   <Pressable
                     accessibilityRole="button"

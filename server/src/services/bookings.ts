@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { config } from '../config';
 import { one, q, tx } from '../db';
 import { ApiError } from '../errors';
+import { partialQuote } from '../lib/partial';
 import { addDays, dhakaToday, instant, isDayKey, minutesNowInDhaka, priceFor, sessionsFor } from '../lib/time';
 import { signPass, signPass2 } from '../lib/tokens';
 
@@ -12,10 +13,12 @@ import { onBookingCancelled } from './matches';
 import { getVenueRow, getVenueRowExact, invalidateDay, photoUrl, refreshDays, rules, slotRules } from './venues';
 
 const BOOKING_COLS = `id, code, user_id, venue_id, day::text, start_min, end_min, status, hold_expires_at, price_lines, total, order_id, note, source,
+  pay_mode, paid_online,
   (select name from pitches pi where pi.id = bookings.pitch_id) as pitch_name`;
 
 /** One slot of a booking made of several (same order / payment). */
-type Slot = { id: string; code: string; day: string; start: number; end: number; status: string; amountPaid: number };
+/** amountPaid: what came through the app; total: the slot's price (the rest is paid at the turf). */
+type Slot = { id: string; code: string; day: string; start: number; end: number; status: string; amountPaid: number; total: number };
 const VISIBLE = "status in ('confirmed','checked_in','completed','cancelled')";
 
 /**
@@ -28,8 +31,8 @@ async function runsFor(userId: string, rows: { id: string; order_id?: string | n
   const byId = new Map<string, Slot[]>();
   const byOrder = new Map<string, Slot[][]>();
   if (!orders.length) return { byId, byOrder };
-  const all = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number; order_id: string }>(
-    `select id, code, day::text, start_min, end_min, status, total, order_id from bookings
+  const all = await q<{ id: string; code: string; day: string; start_min: number; end_min: number; status: string; total: number; paid: number; order_id: string }>(
+    `select id, code, day::text, start_min, end_min, status, total, coalesce(paid_online, total) paid, order_id from bookings
       where order_id = any($1::uuid[]) and user_id = $2 and ${VISIBLE} order by order_id, day, start_min`,
     [orders, userId],
   );
@@ -41,7 +44,8 @@ async function runsFor(userId: string, rows: { id: string; order_id?: string | n
       start: x.start_min,
       end: x.end_min,
       status: x.status === 'confirmed' && instant(x.day, x.end_min).getTime() < Date.now() ? 'completed' : x.status,
-      amountPaid: x.total,
+      amountPaid: Number(x.paid),
+      total: Number(x.total),
     };
     const runs = byOrder.get(x.order_id) ?? [];
     const last = runs.at(-1)?.at(-1);
@@ -107,6 +111,10 @@ type BookingRow = {
   hold_expires_at: Date | null;
   price_lines: { label: string; detail?: string; amount: number }[];
   total: number;
+  /** 'partial': 500 tk per slot paid in the app, the rest at the turf. */
+  pay_mode?: 'full' | 'partial' | null;
+  /** Paid through TurfSides (null = all of it). */
+  paid_online?: number | string | null;
 };
 
 const clock = (m: number) => {
@@ -175,6 +183,8 @@ async function holdShape(o: OrderRow) {
     end: first?.end_min ?? 0,
     lines: o.price_lines,
     total: o.total,
+    /** Checkout's "Partial payment" option: 500 tk per slot now, the rest at the turf. */
+    partial: partialQuote(slots.map((b) => Number(b.total))),
     cancellationPolicy: v.cancellation_policy,
   };
 }
@@ -390,7 +400,9 @@ export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] =
   const merged = run.length > 1;
   const start = merged ? run[0].start : b.start_min;
   const end = merged ? run.at(-1)!.end : b.end_min;
-  const paid = merged ? run.reduce((t, x) => t + x.amountPaid, 0) : b.total;
+  const total = merged ? run.reduce((t, x) => t + x.total, 0) : Number(b.total);
+  // Walk-ins never go through the app: what the turf charged is what's shown.
+  const paid = b.source === 'walkin' ? total : merged ? run.reduce((t, x) => t + x.amountPaid, 0) : Number(b.paid_online ?? b.total);
   const v = await getVenueRow(b.venue_id).catch(() => null);
   const endAt = instant(b.day, end).getTime();
   const status = b.status === 'confirmed' && endAt < Date.now() ? 'completed' : b.status;
@@ -404,6 +416,10 @@ export async function bookingShape(b: BookingRow, holder?: Holder, run: Slot[] =
     start,
     end,
     amountPaid: paid,
+    /** The ticket's full price; `dueAtVenue` is what's left to pay at the turf (partial payment). */
+    total,
+    dueAtVenue: Math.max(0, total - paid),
+    payMode: (b.pay_mode ?? 'full') as 'full' | 'partial',
     // Walk-ins were booked (and paid, if at all) at the turf: the app shows "via the turf".
     method: (b.source === 'walkin' ? 'the turf' : 'bKash') as 'bKash',
     status,
@@ -506,6 +522,9 @@ function shapeTicket(r: BookingRow, holder: Holder, runs: Awaited<ReturnType<typ
 }
 
 /** Player cancellation: allowed until 24 h before kick-off; the payment is flagged for refund. */
+/** Players can cancel up to 6 hours before kick-off; what they paid in the app is refunded. */
+export const CANCEL_BEFORE_MS = 6 * 3600_000;
+
 export async function cancelBooking(userId: string, id: string) {
   if (!isUuid(id)) throw new ApiError('not_found', 'Booking not found.');
   const res = await tx(async (c) => {
@@ -516,7 +535,7 @@ export async function cancelBooking(userId: string, id: string) {
     const run = (await runsFor(userId, [b])).byId.get(b.id) ?? [];
     const ids = run.length ? run.filter((x) => x.status === 'confirmed').map((x) => x.id) : [id];
     const first = run[0] ?? { day: b.day, start: b.start_min };
-    if (instant(first.day, first.start).getTime() - Date.now() < 24 * 3600_000) throw new ApiError('forbidden', 'Bookings can be cancelled up to 24 hours before kick-off.');
+    if (instant(first.day, first.start).getTime() - Date.now() < CANCEL_BEFORE_MS) throw new ApiError('forbidden', 'Bookings can be cancelled up to 6 hours before kick-off.');
     await c.query("update bookings set status = 'cancelled', cancelled_at = now() where id = any($1::uuid[]) and status = 'confirmed'", [ids]);
     await c.query("update payments set status = 'refund_required', updated_at = now() where booking_id = any($1::uuid[]) and status = 'completed'", [ids]);
     for (const x of ids) await c.query("insert into audit_log(actor_id, action, entity, entity_id) values ($1, 'booking.cancel', 'booking', $2)", [userId, x]);

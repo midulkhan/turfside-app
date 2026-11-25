@@ -357,7 +357,7 @@ export async function createVenue(ownerId: string, v: VenueInput) {
     if (count >= 25) throw new ApiError('conflict', 'You can list up to 25 turfs. Contact support for more.');
     const r = await c.query<{ id: string }>(
       `insert into venues (owner_id, name, area, city, address, lat, lng, formats, floodlit, amenities, rules, about, cancellation_policy, status, map_url)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,coalesce($13, 'Free cancellation up to 24 hours before kick-off.'),$14,$15) returning id`,
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,coalesce($13, 'Free cancellation up to 6 hours before kick-off.'),$14,$15) returning id`,
       [ownerId, v.name, v.area, v.city, v.address, v.lat, v.lng, v.formats, v.floodlit, v.amenities, v.rules, v.about, v.cancellationPolicy ?? null, v.status, v.mapUrl ?? null],
     );
     const vid = r.rows[0].id;

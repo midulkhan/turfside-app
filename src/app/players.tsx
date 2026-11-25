@@ -116,7 +116,7 @@ export default function FindPlayers() {
               <View style={styles.note}>
                 <Info size={16} color={colors.textMuted} strokeWidth={1.8} />
                 <Text variant="label" color={colors.textMuted} style={styles.flex}>
-                  Players pay the same fair share; an opponent team pays the part you choose. Whoever you accept has 5 minutes to pay.
+                  Players pay the same fair share; an opponent team pays the part you choose. Whoever you accept is confirmed straight away and pays you at the turf.
                 </Text>
               </View>
             </>
