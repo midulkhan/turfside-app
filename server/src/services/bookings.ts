@@ -306,11 +306,11 @@ export async function createHold(userId: string, slotIds: string[]) {
   return holdShape(result.order);
 }
 
-/** One price line per slot ("Sat 7 Nov · 9:00–10:30 AM") plus the service fee. */
+/** One price line per slot ("Sat 7 Nov · 9:00–10:30 AM"), plus the service fee only when there is one. */
 function priceOf(slots: { day: string; start: number; end: number; price: number }[]) {
   const lines = [
     ...slots.map((p) => ({ label: `${dayLabel(p.day)} · ${timeRange(p.start, p.end)}`, amount: p.price })),
-    { label: 'Service fee', amount: config.SERVICE_FEE_POISHA },
+    ...(config.SERVICE_FEE_POISHA > 0 ? [{ label: 'Service fee', amount: config.SERVICE_FEE_POISHA }] : []),
   ];
   return { lines, total: slots.reduce((n, p) => n + p.price, 0) + config.SERVICE_FEE_POISHA };
 }

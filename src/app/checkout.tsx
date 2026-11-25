@@ -11,7 +11,6 @@ import {
   FileText,
   Lock,
   MapPin,
-  MessageSquareText,
   Pencil,
   Plus,
   TicketPercent,
@@ -20,14 +19,12 @@ import {
   X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Alert } from '@/components/ui/dialog';
 import { TicketDivider, TicketSurface } from '@/components/ticket/notch';
 import { Avatar } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Card, Divider } from '@/components/ui/card';
 import { ScreenHeader } from '@/components/ui/headers';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
@@ -169,9 +166,6 @@ export default function Checkout() {
   const [paying, setPaying] = useState(false);
   // One idempotency key per hold: a retry after a network drop can never charge twice.
   const payKey = useRef(newIdempotencyKey());
-  // Optional note for the turf (switch on → a text box). Sent with the payment; owners see it.
-  const [noteOn, setNoteOn] = useState(false);
-  const [note, setNote] = useState('');
   // Full payment, or partial: 500 tk per slot now and the rest at the turf (when the turf costs more).
   const [mode, setMode] = useState<'full' | 'partial'>('full');
   const part = !isShare && hold.data?.partial?.available ? hold.data.partial : null;
@@ -183,10 +177,6 @@ export default function Checkout() {
     setMode(next);
     payKey.current = newIdempotencyKey(); // a different amount is a different payment
   };
-  const scroller = useRef<ScrollViewInstance>(null);
-  const noteY = useRef(0);
-  // Bring the note box up near the top, clear of the keyboard, once it's open.
-  const showNote = () => setTimeout(() => scroller.current?.scrollTo({ y: Math.max(0, noteY.current - space[6]), animated: true }), 300);
   const paid = useRef(false);
 
   // No cart: leaving checkout without paying gives the slots straight back, so they're free
@@ -252,7 +242,7 @@ export default function Checkout() {
       const returnUrl = Linking.createURL('payment-return');
       const { paymentId, checkoutUrl } = isShare
         ? await api.startSharePayment(matchId!, payKey.current, returnUrl)
-        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl, noteOn ? note.trim() || undefined : undefined, partial ? 'partial' : 'full');
+        : await api.startPayment(hold.data!.holdId, payKey.current, returnUrl, undefined, partial ? 'partial' : 'full');
       let cancelled = false;
       if (checkoutUrl) {
         // bKash hosted checkout. The redirect back is NOT proof of payment —
@@ -330,7 +320,6 @@ export default function Checkout() {
         <ErrorState message={loadError.message} onRetry={() => router.back()} />
       ) : (
         <ScrollView
-          ref={scroller}
           onScroll={scrolled.onScroll}
           scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
@@ -435,48 +424,6 @@ export default function Checkout() {
             </Pressable>
           </Card>
 
-          {/* Note for the turf (not for split-payment shares: the booking is the host's). */}
-          {isShare ? null : (
-            <View
-              onLayout={(e) => {
-                noteY.current = e.nativeEvent.layout.y;
-              }}>
-              <Card style={styles.noteCard}>
-                <View style={styles.noteRow}>
-                  <MessageSquareText size={20} color={colors.ink} strokeWidth={1.6} />
-                  <View style={styles.flex}>
-                    <Text variant="labelStrong">Add a note for the turf</Text>
-                    <Text variant="label" color={colors.textMuted}>
-                      The turf sees it with your booking
-                    </Text>
-                  </View>
-                  <Switch
-                    value={noteOn}
-                    accessibilityLabel="Add a note for the turf"
-                    onValueChange={setNoteOn}
-                  />
-                </View>
-                {noteOn ? (
-                  <View style={styles.noteBox}>
-                    <Input
-                      autoFocus
-                      multiline
-                      value={note}
-                      onChangeText={setNote}
-                      onFocus={showNote}
-                      maxLength={300}
-                      placeholder="E.g. we’ll bring our own ball, arriving 10 minutes early…"
-                      accessibilityLabel="Note for the turf"
-                    />
-                    <Text variant="caption" color={colors.textSubtle} style={styles.noteCount}>
-                      {note.length}/300
-                    </Text>
-                  </View>
-                ) : null}
-              </Card>
-            </View>
-          )}
-
           {/* How to pay: everything now, or 500 tk per slot now and the rest at the turf */}
           {part && h ? (
             <>
@@ -509,7 +456,7 @@ export default function Checkout() {
           <Card padded={false}>
             <View style={styles.lines}>
               {h
-                ? h.lines.map((l, i) => (
+                ? h.lines.filter((l) => !(l.label === 'Service fee' && l.amount === 0)).map((l, i) => (
                     <View key={`${i}:${l.label}`} style={styles.line}>
                       {/* Label wraps in its own column; the amount keeps its width on the right. */}
                       <View style={styles.lineLabel}>
@@ -528,6 +475,27 @@ export default function Checkout() {
                     </View>
                   ))
                 : [0, 1].map((i) => <Skeleton key={i} height={18} />)}
+              {/* Partial payment: the whole price, and what's left for the turf. */}
+              {partial && h ? (
+                <View style={styles.split}>
+                  <View style={styles.line}>
+                    <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
+                      Booking total
+                    </Text>
+                    <Text variant="labelStrong" style={[styles.lineText, styles.lineAmount]}>
+                      {formatTaka(h.total)}
+                    </Text>
+                  </View>
+                  <View style={styles.line}>
+                    <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
+                      Pay at the turf
+                    </Text>
+                    <Text variant="labelStrong" style={[styles.lineText, styles.lineAmount]}>
+                      {formatTaka(part!.atTurf)}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
             </View>
             <Divider />
             {isShare ? null : (
@@ -542,26 +510,6 @@ export default function Checkout() {
                 <Plus size={18} color={colors.ink} strokeWidth={1.7} />
               </Pressable>
             )}
-            {partial && h ? (
-              <>
-                <View style={styles.line}>
-                  <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
-                    Booking total
-                  </Text>
-                  <Text variant="labelStrong" style={styles.lineText}>
-                    {formatTaka(h.total)}
-                  </Text>
-                </View>
-                <View style={styles.line}>
-                  <Text variant="body" color={colors.textMuted} style={[styles.flex, styles.lineText]}>
-                    Pay at the turf
-                  </Text>
-                  <Text variant="labelStrong" style={styles.lineText}>
-                    {formatTaka(part!.atTurf)}
-                  </Text>
-                </View>
-              </>
-            ) : null}
             <View style={styles.total}>
               <Text variant="labelStrong" style={styles.whenMain}>
                 {partial ? 'Pay now' : 'Total payable'}
@@ -681,7 +629,6 @@ const styles = createStyles(() => ({
   vrTall: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
   sectionTitle: { marginTop: space[3] },
   details: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  noteCard: { marginTop: space[3] },
   modes: { gap: space[3] },
   mode: {
     flexDirection: 'row',
@@ -699,11 +646,9 @@ const styles = createStyles(() => ({
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.textSubtle, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   radioSel: { borderColor: colors.ink },
   radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: colors.ink },
-  noteRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  noteBox: { marginTop: space[3] },
-  noteCount: { textAlign: 'right', marginTop: space[1] },
   edit: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: space[1], minHeight: 44 },
   lines: { padding: space[4], gap: space[3] },
+  split: { gap: space[3], paddingTop: space[3], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: space[4] },
   lineLabel: { flex: 1, minWidth: 0, gap: 2 },
   lineAmount: { flexShrink: 0, textAlign: 'right' },

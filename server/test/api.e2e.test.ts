@@ -417,7 +417,7 @@ d('cart: one order, one turf, many slots', () => {
     expect(one.json.released).toBe(false);
     expect(one.json.hold.slots.map((s: Json) => s.id)).toEqual([s2.id]);
     expect(one.json.hold.total).toBe(s2.price);
-    expect(one.json.hold.lines).toHaveLength(2); // one slot + service fee
+    expect(one.json.hold.lines).toHaveLength(1); // one slot (no service-fee line while the fee is 0)
     const seen = (await call('GET', `/v1/venues/v_gulshan_goal/slots?day=${day}`, undefined, b.accessToken)).json.slots as Json[];
     expect(seen.find((s) => s.id === s1.id)!.status).toBe('available');
     expect(seen.find((s) => s.id === s2.id)!.status).toBe('held');
