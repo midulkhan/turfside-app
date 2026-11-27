@@ -1,4 +1,4 @@
-import { cacheDel, cacheGet, cacheIncr, cacheSet, cached, sharedReadable, singleflight } from '../cache';
+import { cacheDel, cacheGet, cacheIncr, cacheSet, cached, MAX_TTL_S, sharedReadable, singleflight } from '../cache';
 import { config } from '../config';
 import { one, q } from '../db';
 import { ApiError } from '../errors';
@@ -197,10 +197,11 @@ export async function getOwnedVenueRow(ownerId: string, id: string) {
 /**
  * The turf page and its slots: one Redis key per turf (`venue:<id>`), filled from Postgres on
  * the first request and served from Redis after that. A save in the owner dashboard deletes the
- * key (invalidateVenue), so the next request rebuilds it once with the new data. Nothing expires
- * it on a timer; the 24 h TTL only bounds edits made outside the API (e.g. straight in SQL).
+ * key (invalidateVenue), so the next request rebuilds it once with the new data. The 1 h TTL is
+ * only a safety net (edits made straight in SQL); it must never exceed MAX_TTL_S, the window the
+ * cache stops reading Redis after a failed write, or a missed delete could be served for longer.
  */
-const TURF_TTL_S = 24 * 3600;
+const TURF_TTL_S = MAX_TTL_S;
 const turfKey = (id: string) => `venue:${id}`;
 /** `version`: when this copy was built. Apps compare it to know their saved turf is out of date. */
 export const getVenueRowCached = (id: string) =>

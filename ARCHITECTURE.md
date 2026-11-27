@@ -4,6 +4,9 @@
 > It describes what exists today, the rules that keep the apps from breaking each other,
 > and the plan for the owner dashboard (web + mobile) and the company dashboard.
 > Last updated: November 2026.
+>
+> **Newer detail (27 Nov 2026): `docs/WEBSITE-GUIDE.md`** — current product rules (guests browse, partial
+> payment, squads without payment, 6-hour cancel), the full API by feature, caching, and the website plan.
 
 ---
 

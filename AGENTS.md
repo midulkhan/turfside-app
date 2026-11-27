@@ -1,5 +1,7 @@
 **TurfSides: read `ARCHITECTURE.md` first** — how the apps, API and database fit together, the non-negotiable product rules, and the never-break rules for adding the owner and company dashboards.
 
+**Website work (turfsides.com): read `docs/WEBSITE-GUIDE.md` first** — current product rules, every feature's API, caching, auth on the web, testing and the rules for not breaking the app, API or owner dashboard. It is newer than ARCHITECTURE.md where they differ.
+
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
 ## Expo has changed — do not trust your training data
