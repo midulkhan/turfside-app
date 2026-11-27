@@ -10,6 +10,7 @@ import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { ApiError } from '@/features/api/types';
 import { errorMessage, pendingSignup, sentToLabel } from '@/features/session/pending-signup';
+import { finishAuth } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, font, gutter, radius, space } from '@/theme/tokens';
@@ -52,7 +53,7 @@ export default function Verify() {
       haptic.success();
       if (!isLogin) pendingSignup.clear();
       await signIn(auth);
-      router.replace('/explore');
+      finishAuth(); // back to where they were, or Explore
     } catch (e) {
       haptic.error();
       const tooMany = e instanceof ApiError && e.code === 'rate_limited';

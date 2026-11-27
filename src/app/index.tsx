@@ -1,16 +1,13 @@
 import { Redirect } from 'expo-router';
 
-import { pendingTurfLink } from '@/features/session/pending-link';
 import { useSession } from '@/features/session/session';
 
-/** Entry point: send people to onboarding, sign in, or straight into the app. */
+/**
+ * Entry point: the intro slides on the very first open, then straight into the app. No sign-in
+ * here: guests browse turfs and slots, and sign in when they book (see auth-gate).
+ */
 export default function Index() {
-  const { onboarded, user } = useSession();
-  if (user) {
-    // A turf link opened before signing in: open that turf now.
-    const code = pendingTurfLink.take();
-    return <Redirect href={code ? `/t/${code}` : '/explore'} />;
-  }
+  const { onboarded } = useSession();
   if (!onboarded) return <Redirect href="/onboarding" />;
-  return <Redirect href="/sign-in" />;
+  return <Redirect href="/explore" />;
 }

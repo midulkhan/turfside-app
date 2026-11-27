@@ -1,9 +1,11 @@
+import { Heart } from 'lucide-react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { router, useScrollToTop } from 'expo-router';
 import { useRef } from 'react';
-import { Heart } from 'lucide-react-native';
 import { RefreshControl, View } from 'react-native';
 
+import { GuestTab } from '@/components/navigation/guest-tab';
+import { useSession } from '@/features/session/session';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { EmptyState, ErrorState } from '@/components/ui/states';
@@ -19,7 +21,23 @@ import { createStyles } from '@/theme/styles';
 // FlashList v2 keeps an anchor item in view by default, which makes the page jump when data changes.
 const NO_ANCHOR = { disabled: true };
 
-export default function Saved() {
+/** Guests see a sign-in prompt; members see their saved. */
+export default function SavedTab() {
+  const { user } = useSession();
+  if (!user)
+    return (
+      <GuestTab
+        title="Saved turfs"
+        icon={Heart}
+        heading="Keep your favourite turfs"
+        body="Sign in to save turfs and find them here in one tap."
+        why="Sign in to see your saved turfs"
+      />
+    );
+  return <Saved />;
+}
+
+function Saved() {
   const listRef = useRef<FlashListRef<VenueSummary>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const scrolled = useScrolled();

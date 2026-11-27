@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/text';
 import { prefetchVenue, useToggleSaved } from '@/features/api/queries';
 import { useIsSaved } from '@/features/api/saved-store';
 import type { VenueSummary } from '@/features/api/types';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { haptic } from '@/lib/haptics';
 import { formatDistance } from '@/lib/geo';
 import { formatTaka, priceUnit, startingPriceOf } from '@/lib/money';
@@ -22,6 +23,7 @@ import { createStyles } from '@/theme/styles';
 export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummary }) {
   const qc = useQueryClient();
   const toggle = useToggleSaved();
+  const { requireAuth } = useAuthGate();
   const saved = useIsSaved(venue.id, venue.isSaved);
   const from = startingPriceOf(venue);
   const open = () => router.push({ pathname: '/venue/[id]', params: { id: venue.id } });
@@ -99,7 +101,7 @@ export const VenueCard = memo(function VenueCard({ venue }: { venue: VenueSummar
         scaleTo={0.85}
         onPress={() => {
           haptic.select();
-          toggle.mutate({ venueId: venue.id, value: !saved });
+          requireAuth('Sign in to save this turf', () => toggle.mutate({ venueId: venue.id, value: !saved }));
         }}
         style={styles.heart}>
         <Heart size={20} color={saved ? colors.danger : colors.ink} fill={saved ? colors.danger : 'transparent'} strokeWidth={2} />

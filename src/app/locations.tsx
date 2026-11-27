@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Briefcase, Check, House, LocateFixed, MapPin, Pencil, Plus, X } from 'lucide-react-native';
+import { Briefcase, Check, House, LocateFixed, MapPin, MapPinned, Pencil, Plus, X } from 'lucide-react-native';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { usePlaces } from '@/features/api/queries';
 import type { SavedPlace } from '@/features/api/types';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { useLocate } from '@/features/session/use-locate';
 import { haptic } from '@/lib/haptics';
@@ -27,9 +28,10 @@ const placeLine = (p: Pick<SavedPlace, 'name' | 'city' | 'address'>) => p.addres
 export default function Locations() {
   const scrolled = useScrolled();
   const insets = useSafeAreaInsets();
-  const { place, setPlace } = useSession();
+  const { place, setPlace, user } = useSession();
+  const { requireAuth } = useAuthGate();
   const { locate, locating } = useLocate();
-  const places = usePlaces();
+  const places = usePlaces(!!user);
 
   const useLive = async () => {
     if (await locate()) router.back();
@@ -68,73 +70,86 @@ export default function Locations() {
             onPress={useLive}
           />
           <ActionRow
-            icon={Plus}
-            title="Add new location"
-            detail="Pick it on the map and save it"
+            icon={user ? Plus : MapPinned}
+            title={user ? 'Add new location' : 'Choose on the map'}
+            detail={user ? 'Pick it on the map and save it' : 'Pick an area to see turfs near it'}
             onPress={() => router.push({ pathname: '/pick-location', params: { mode: 'new' } })}
           />
         </View>
 
-        <View style={styles.overline}>
-          <Overline>Saved locations</Overline>
-        </View>
-        {places.isPending ? (
-          <View style={styles.list}>
-            <Skeleton height={76} r={radius.lg} />
-            <Skeleton height={76} r={radius.lg} />
-          </View>
-        ) : places.isError ? (
-          <Pressable accessibilityRole="button" onPress={() => places.refetch()} style={styles.empty}>
+        {/* Saved places belong to an account. */}
+        {!user ? (
+          <Pressable accessibilityRole="button" onPress={() => requireAuth('Sign in to save your places')} style={styles.empty}>
             <Text variant="body" color={colors.textMuted} align="center">
-              Couldn’t load your saved locations. Tap to try again.
+              Sign in to save Home, Work and the places you usually play.
             </Text>
           </Pressable>
-        ) : places.data.length === 0 ? (
-          <View style={styles.empty}>
-            <Text variant="body" color={colors.textMuted} align="center">
-              No saved locations yet. Add Home, Work or anywhere you usually play.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {places.data.map((p) => {
-              const Icon = placeIcon(p.label);
-              const active = place.savedId === p.id;
-              return (
-                <View key={p.id} style={[styles.place, active && styles.placeActive]}>
-                  <Pressable
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={`${p.label}, ${placeLine(p)}`}
-                    onPress={() => choose(p)}
-                    style={({ pressed }) => [styles.placeMain, pressed && styles.pressed]}>
-                    <View style={[styles.icon, active && styles.iconActive]}>
-                      <Icon size={20} color={colors.ink} strokeWidth={2} />
+        ) : null}
+
+        {!user ? null : (
+          <>
+            <View style={styles.overline}>
+              <Overline>Saved locations</Overline>
+            </View>
+            {places.isPending ? (
+              <View style={styles.list}>
+                <Skeleton height={76} r={radius.lg} />
+                <Skeleton height={76} r={radius.lg} />
+              </View>
+            ) : places.isError ? (
+              <Pressable accessibilityRole="button" onPress={() => places.refetch()} style={styles.empty}>
+                <Text variant="body" color={colors.textMuted} align="center">
+                  Couldn’t load your saved locations. Tap to try again.
+                </Text>
+              </Pressable>
+            ) : places.data.length === 0 ? (
+              <View style={styles.empty}>
+                <Text variant="body" color={colors.textMuted} align="center">
+                  No saved locations yet. Add Home, Work or anywhere you usually play.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.list}>
+                {places.data.map((p) => {
+                  const Icon = placeIcon(p.label);
+                  const active = place.savedId === p.id;
+                  return (
+                    <View key={p.id} style={[styles.place, active && styles.placeActive]}>
+                      <Pressable
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`${p.label}, ${placeLine(p)}`}
+                        onPress={() => choose(p)}
+                        style={({ pressed }) => [styles.placeMain, pressed && styles.pressed]}>
+                        <View style={[styles.icon, active && styles.iconActive]}>
+                          <Icon size={20} color={colors.ink} strokeWidth={2} />
+                        </View>
+                        <View style={styles.flex}>
+                          <View style={styles.labelRow}>
+                            <Text variant="bodyStrong" numberOfLines={1}>
+                              {p.label}
+                            </Text>
+                            {active ? <Check size={16} color={colors.limeText} strokeWidth={3} /> : null}
+                          </View>
+                          <Text variant="label" color={colors.textMuted} numberOfLines={2}>
+                            {placeLine(p)}
+                          </Text>
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${p.label}`}
+                        hitSlop={8}
+                        onPress={() => router.push({ pathname: '/pick-location', params: { mode: 'edit', id: p.id } })}
+                        style={styles.edit}>
+                        <Pencil size={18} color={colors.ink} strokeWidth={1.9} />
+                      </Pressable>
                     </View>
-                    <View style={styles.flex}>
-                      <View style={styles.labelRow}>
-                        <Text variant="bodyStrong" numberOfLines={1}>
-                          {p.label}
-                        </Text>
-                        {active ? <Check size={16} color={colors.limeText} strokeWidth={3} /> : null}
-                      </View>
-                      <Text variant="label" color={colors.textMuted} numberOfLines={2}>
-                        {placeLine(p)}
-                      </Text>
-                    </View>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Edit ${p.label}`}
-                    hitSlop={8}
-                    onPress={() => router.push({ pathname: '/pick-location', params: { mode: 'edit', id: p.id } })}
-                    style={styles.edit}>
-                    <Pencil size={18} color={colors.ink} strokeWidth={1.9} />
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </View>

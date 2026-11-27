@@ -24,6 +24,7 @@ import { installDeviceLabel } from '@/lib/device-label';
 import { installNavGuard } from '@/lib/nav-guard';
 import { DialogHost } from '@/components/ui/dialog';
 import { PushManager } from '@/features/notifications/push';
+import { AuthGateProvider } from '@/features/session/auth-gate';
 import { SessionProvider, useSession } from '@/features/session/session';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { colors, palettes } from '@/theme/tokens';
@@ -84,24 +85,27 @@ function RootNavigator() {
           <Stack.Screen name="onboarding" options={{ animation: 'fade', statusBarStyle: 'light' }} />
           {/* Turf share links: open for everyone; it holds the link while a signed-out person signs in. */}
           <Stack.Screen name="t/[code]" options={{ animation: 'fade' }} />
-          <Stack.Protected guard={!user} redirectTo="/">
-            <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-          </Stack.Protected>
-          <Stack.Protected guard={!!user} redirectTo="/">
-            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-            {/* iOS: a quick crossfade. Android: the same native slide as every other screen, so
-                both screens stay fully drawn the whole way (no see-through or blank frame). */}
-            <Stack.Screen name="venue/[id]" options={Platform.OS === 'android' ? {} : { animation: 'fade', animationDuration: 180 }} />
+          {/* Sign in / sign up: opened from the sign-in drawer (or the menu); they return the person to
+              where they were (finishAuth), so they're not tied to being signed out. */}
+          <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+          {/* Open to guests: browse turfs and their slots, search, the map and the location. */}
+          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+          {/* iOS: a quick crossfade. Android: the same native slide as every other screen, so
+              both screens stay fully drawn the whole way (no see-through or blank frame). */}
+          <Stack.Screen name="venue/[id]" options={Platform.OS === 'android' ? {} : { animation: 'fade', animationDuration: 180 }} />
+          <Stack.Screen name="search" options={Platform.OS === 'android' ? {} : { animation: 'fade' }} />
+          <Stack.Screen name="locations" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+          <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
+          {/* Members only: booking, tickets, squads, notifications and the account. Guests reach
+              these through the sign-in drawer (useAuthGate), so the redirect is only a safety net. */}
+          <Stack.Protected guard={!!user} redirectTo="/explore">
             <Stack.Screen name="checkout" />
             <Stack.Screen name="booking/[id]" options={{ gestureEnabled: false, ...(Platform.OS === 'android' ? {} : { animation: 'fade_from_bottom' }) }} />
-            <Stack.Screen name="search" options={Platform.OS === 'android' ? {} : { animation: 'fade' }} />
             <Stack.Screen name="notifications" />
             <Stack.Screen name="join" />
             <Stack.Screen name="players" />
             <Stack.Screen name="match/[id]" />
             <Stack.Screen name="game/[id]" />
-            <Stack.Screen name="locations" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-            <Stack.Screen name="pick-location" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="payment-return" options={{ animation: 'none' }} />
             <Stack.Screen name="privacy" />
             <Stack.Screen name="edit-profile" />
@@ -109,7 +113,7 @@ function RootNavigator() {
         </Stack>
       ) : null}
       {appReady ? <OfflineBanner key={scheme} /> : null}
-      {appReady && user ? <PushManager /> : null}
+      {appReady && user && Platform.OS !== 'web' ? <PushManager /> : null}
       {!splashDone ? <VideoSplash appReady={appReady} onDone={finishSplash} /> : null}
     </>
   );
@@ -164,7 +168,9 @@ export default function RootLayout() {
               <ThemedRoot>
                 {/* whole app = Android blur source; full-screen overlays render above it */}
                 <OverlayProvider>
-                  <RootNavigator />
+                  <AuthGateProvider>
+                    <RootNavigator />
+                  </AuthGateProvider>
                 </OverlayProvider>
               </ThemedRoot>
               {/* The app's own popups (replaces the system alert), above everything. */}

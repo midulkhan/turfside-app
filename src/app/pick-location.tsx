@@ -38,8 +38,10 @@ const PRESETS = ['Home', 'Work'] as const;
 export default function PickLocation() {
   const insets = useSafeAreaInsets();
   const { mode = 'new', id } = useLocalSearchParams<{ mode?: 'new' | 'edit'; id?: string }>();
-  const { place, setPlace } = useSession();
-  const existing = usePlaces().data?.find((p) => p.id === id);
+  const { place, setPlace, user } = useSession();
+  // Guests pick an area to browse from; saving it as Home / Work needs an account.
+  const guest = !user;
+  const existing = usePlaces(!guest).data?.find((p) => p.id === id);
   const editing = mode === 'edit' && !!existing;
   const save = useSavePlace();
   const remove = useDeletePlace();
@@ -122,6 +124,13 @@ export default function PickLocation() {
   };
 
   const confirm = () => {
+    if (guest) {
+      if (!label) return;
+      haptic.success();
+      setPlace({ name: label.name, city: label.city, lat: round3(center.latitude), lng: round3(center.longitude), source: 'map' });
+      router.dismissTo('/explore');
+      return;
+    }
     if (!label || !labelText) return;
     const input = {
       label: labelText,
@@ -247,29 +256,31 @@ export default function PickLocation() {
               </Text>
             </View>
           </View>
-          <View style={styles.labels}>
-            <Text variant="labelStrong">Save as</Text>
-            <View style={styles.chips}>
-              {[...PRESETS, 'Other'].map((p) => (
-                <Chip key={p} label={p} active={preset === p} onPress={() => setPreset(p)} style={styles.chip} />
-              ))}
+          {guest ? null : (
+            <View style={styles.labels}>
+              <Text variant="labelStrong">Save as</Text>
+              <View style={styles.chips}>
+                {[...PRESETS, 'Other'].map((p) => (
+                  <Chip key={p} label={p} active={preset === p} onPress={() => setPreset(p)} style={styles.chip} />
+                ))}
+              </View>
+              {preset === 'Other' ? (
+                <Input
+                  placeholder="Name this place, e.g. Friend’s house"
+                  value={custom}
+                  onChangeText={setCustom}
+                  maxLength={30}
+                  autoFocus={!editing}
+                  returnKeyType="done"
+                />
+              ) : null}
             </View>
-            {preset === 'Other' ? (
-              <Input
-                placeholder="Name this place, e.g. Friend’s house"
-                value={custom}
-                onChangeText={setCustom}
-                maxLength={30}
-                autoFocus={!editing}
-                returnKeyType="done"
-              />
-            ) : null}
-          </View>
+          )}
           <Button
-            label={editing ? 'Save changes' : 'Save location'}
+            label={guest ? 'Use this location' : editing ? 'Save changes' : 'Save location'}
             onPress={confirm}
             loading={save.isPending}
-            disabled={!label || resolving || !labelText}
+            disabled={!label || resolving || (!guest && !labelText)}
           />
         </View>
       </KeyboardAvoidingView>

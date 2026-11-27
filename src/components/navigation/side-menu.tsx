@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { ChevronRight, CircleHelp, LogOut, UserPlus, UsersRound, X, type LucideIcon } from 'lucide-react-native';
+import { ChevronRight, CircleHelp, LogIn, LogOut, UserPlus, UsersRound, X, type LucideIcon } from 'lucide-react-native';
 import { useRef } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,17 +9,19 @@ import { Wordmark } from '@/components/brand/logo';
 import { IconButton } from '@/components/ui/icon-button';
 import { Sheet } from '@/components/ui/sheet';
 import { Text } from '@/components/ui/text';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { colors, getScheme, gutter, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
 
-type Item = { icon: LucideIcon; label: string; href: Href };
+/** `members`: needs an account (guests get the sign-in drawer first). */
+type Item = { icon: LucideIcon; label: string; href: Href; members?: string };
 
 // Bookings, saved turfs, notifications and the profile live in the tab bar and header.
 const ITEMS: Item[] = [
-  { icon: UserPlus, label: 'Join a squad', href: '/join' },
-  { icon: UsersRound, label: 'Find players', href: '/players' },
+  { icon: UserPlus, label: 'Join a squad', href: '/join', members: 'Sign in to join a squad' },
+  { icon: UsersRound, label: 'Find players', href: '/players', members: 'Sign in to find players' },
   { icon: CircleHelp, label: 'Help & support', href: '/profile' },
 ];
 
@@ -27,7 +29,8 @@ const ITEMS: Item[] = [
 export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { signOut } = useSession();
+  const { signOut, user } = useSession();
+  const { requireAuth } = useAuthGate();
   const pending = useRef<(() => void) | null>(null);
 
   const go = (fn: () => void) => {
@@ -39,7 +42,7 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
   const Row = ({ item }: { item: Item }) => (
     <Pressable
       accessibilityRole="button"
-      onPress={() => go(() => router.push(item.href))}
+      onPress={() => go(() => (item.members ? requireAuth(item.members, () => router.push(item.href)) : router.push(item.href)))}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
       <item.icon size={22} color={colors.ink} strokeWidth={1.7} />
       <Text variant="bodyStrong" style={styles.flex}>
@@ -85,14 +88,28 @@ export function SideMenu({ visible, onClose }: { visible: boolean; onClose: () =
 
         {/* Pinned to the bottom, set apart by a hairline. */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + space[4] }]}>
-          <Pressable accessibilityRole="button" onPress={askLogout} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-            <View style={styles.logoutIcon}>
-              <LogOut size={17} color="#FFFFFF" strokeWidth={2} />
-            </View>
-            <Text variant="bodyStrong" style={styles.flex}>
-              Logout
-            </Text>
-          </Pressable>
+          {user ? (
+            <Pressable accessibilityRole="button" onPress={askLogout} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+              <View style={styles.logoutIcon}>
+                <LogOut size={17} color="#FFFFFF" strokeWidth={2} />
+              </View>
+              <Text variant="bodyStrong" style={styles.flex}>
+                Logout
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => go(() => requireAuth('Sign in to TurfSides'))}
+              style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+              <View style={styles.signInIcon}>
+                <LogIn size={17} color={colors.charcoal} strokeWidth={2.2} />
+              </View>
+              <Text variant="bodyStrong" style={styles.flex}>
+                Sign in or create an account
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </Sheet>
@@ -133,5 +150,14 @@ const styles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: -5, // wider than a 22px icon: centred on the icon column, label stays aligned
+  },
+  signInIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: colors.lime,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: -5,
   },
 }));

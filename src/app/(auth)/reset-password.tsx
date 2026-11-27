@@ -11,6 +11,7 @@ import { Input, PasswordInput } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { errorMessage } from '@/features/session/pending-signup';
+import { finishAuth } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword } from '@/lib/validation';
@@ -41,7 +42,7 @@ export default function ResetPassword() {
       const auth = await api.resetVerify(phone, code, password);
       haptic.success();
       await signIn(auth);
-      router.replace('/explore');
+      finishAuth(); // back to where they were, or Explore
     } catch (e) {
       haptic.error();
       Alert.alert('Couldn’t reset password', errorMessage(e));

@@ -1,4 +1,4 @@
-import { ArrowUpRight } from 'lucide-react-native';
+import { ArrowUpRight, X } from 'lucide-react-native';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
@@ -7,6 +7,7 @@ import Svg, { Path } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
 
 import { Wordmark } from '@/components/brand/logo';
+import { closeAuth } from '@/features/session/auth-gate';
 import { Text } from '@/components/ui/text';
 import { colors, gutter, palettes, radius, space } from '@/theme/tokens';
 import { createStyles } from '@/theme/styles';
@@ -45,6 +46,10 @@ export function AuthShell({ title, subtitle, corner, badge, children, wave = 'a'
         <StatusBar style="dark" />
         <View style={[styles.top, { paddingTop: insets.top + space[5] }]}>
           <View style={styles.topRow}>
+            {/* Guests open these from the sign-in drawer: × takes them back, nothing lost. */}
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={closeAuth} style={styles.close}>
+              <X size={22} color={HEAD.ink} strokeWidth={2.2} />
+            </Pressable>
             <View style={styles.brand}>
               <Wordmark height={30} fill={HEAD.ink} />
               {badge ? (
@@ -88,7 +93,7 @@ const styles = createStyles(() => ({
   grow: { flexGrow: 1, backgroundColor: colors.deep },
   top: { backgroundColor: colors.authTop, paddingHorizontal: gutter, paddingBottom: space[3] },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  brand: { gap: space[1] },
+  brand: { flex: 1, gap: space[1] },
   badge: {
     alignSelf: 'flex-start',
     borderWidth: 1.5,
@@ -99,6 +104,7 @@ const styles = createStyles(() => ({
   },
   badgeText: { fontFamily: 'Geist_800ExtraBold', letterSpacing: 1 },
   corner: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
+  close: { width: 36, height: 44, justifyContent: 'center', marginLeft: -4 },
   heading: { gap: space[1], marginBottom: space[2] },
   wave: { backgroundColor: colors.authTop, marginTop: -1 },
   dark: { flex: 1, backgroundColor: colors.deep, paddingHorizontal: gutter, gap: space[4], marginTop: -1 },

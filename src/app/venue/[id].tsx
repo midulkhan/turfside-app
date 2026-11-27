@@ -75,6 +75,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useTransitionSettled } from '@/lib/use-transition-settled';
 import { ApiError, type Slot, type VenueDetail } from '@/features/api/types';
 import { useIsSaved } from '@/features/api/saved-store';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { formatDistance } from '@/lib/geo';
 import { haptic } from '@/lib/haptics';
@@ -126,6 +127,7 @@ export default function VenueScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { place } = useSession();
+  const { requireAuth } = useAuthGate();
   const qc = useQueryClient();
   const today = dhakaToday();
 
@@ -231,7 +233,8 @@ export default function VenueScreen() {
     (s: Slot) => {
       // A booked slot with a squad recruiting opens that squad (the organiser gets Manage).
       if (s.status === 'booked' && s.squad) {
-        router.push(s.squad.host ? `/match/${s.squad.id}` : `/game/${s.squad.id}`);
+        const to = s.squad.host ? (`/match/${s.squad.id}` as const) : (`/game/${s.squad.id}` as const);
+        requireAuth('Sign in to see this squad', () => router.push(to));
         return;
       }
       setPicked((cur) => {
@@ -245,7 +248,7 @@ export default function VenueScreen() {
         return [...cur, { ...s, day: (s.id.split(':')[1] as DayKey) ?? day }];
       });
     },
-    [day],
+    [day, requireAuth],
   );
   const distance = v ? formatDistance(haversineKm(place.lat, place.lng, v.latitude, v.longitude)) : '';
 
@@ -570,7 +573,8 @@ export default function VenueScreen() {
               onPress={() => {
                 if (!v) return;
                 haptic.select();
-                toggle.mutate({ venueId: v.id, value: !isSaved });
+                // A guest signs in first; then the turf is saved (it can't have been saved before).
+                requireAuth('Sign in to save this turf', () => toggle.mutate({ venueId: v.id, value: !isSaved }));
               }}
             />
           </View>
@@ -583,7 +587,9 @@ export default function VenueScreen() {
         bottomInset={insets.bottom}
         loading={hold.isPending}
         onContinue={() => {
-          if (chosen.length) hold.mutate(chosen);
+          if (!chosen.length) return;
+          // Guests sign in here; the picked slots wait on this screen and checkout opens after.
+          requireAuth(chosen.length > 1 ? 'Sign in to book these slots' : 'Sign in to book this slot', () => hold.mutate(chosen));
         }}
       />
 

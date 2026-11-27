@@ -159,8 +159,15 @@ export async function buildApp() {
   await app.register(cors, { origin: config.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean), methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
   await app.register(rateLimit, { max: config.RATE_LIMIT_PER_MIN, timeWindow: '1 minute', keyGenerator: (r) => r.ip });
   // Per signed-in session rather than per IP: many players can share one carrier IP, and rate
-  // limiting runs before auth, so the bearer token is the session key (IP for signed-out users).
-  const perSession = (r: { headers: { authorization?: string }; ip: string }) => r.headers.authorization ?? r.ip;
+  // limiting runs before auth, so the bearer token is the session key. Guests (browsing without
+  // an account) send their app install id instead; anything else falls back to the IP. The
+  // global per-IP limit above still caps any one address.
+  const INSTALL_ID = /^[0-9a-f-]{36}$/i;
+  const perSession = (r: { headers: { authorization?: string; 'x-install-id'?: string | string[] }; ip: string }) => {
+    if (r.headers.authorization) return r.headers.authorization;
+    const id = r.headers['x-install-id'];
+    return typeof id === 'string' && INSTALL_ID.test(id) ? `install:${id}` : r.ip;
+  };
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) return reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.field ? { field: err.field } : {}) } });

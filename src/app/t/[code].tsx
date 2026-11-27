@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, MapPinOff } from 'lucide-react-native';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -10,7 +10,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import { ApiError } from '@/features/api/types';
-import { pendingTurfLink } from '@/features/session/pending-link';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { colors, gutter, space } from '@/theme/tokens';
 
@@ -19,17 +19,19 @@ const CODE = /^[A-HJ-NP-Z2-9]{7}$/;
 /**
  * A share link (turfsides.com/FDJV346 → /t/FDJV346): looks the code up and opens the turf, or the
  * player/opponent request, it belongs to.
- * Signed out: keeps the code while they sign in or sign up, then the start screen brings them here.
+ * Guests see turfs straight away; a game link asks them to sign in first (over Explore), then
+ * opens the game.
  */
 export default function TurfLink() {
   const params = useLocalSearchParams<{ code: string }>();
   const code = String(params.code ?? '').toUpperCase();
   const { user } = useSession();
+  const { requireAuth } = useAuthGate();
   const valid = CODE.test(code);
   const look = useQuery({
     queryKey: ['link', code],
     queryFn: ({ signal }) => api.getLink(code, signal),
-    enabled: !!user && valid,
+    enabled: valid,
     retry: (n, e) => !(e instanceof ApiError && e.code === 'not_found') && n < 2,
     staleTime: 60_000,
   });
@@ -38,18 +40,20 @@ export default function TurfLink() {
   useEffect(() => {
     if (!look.data) return;
     const to = look.data.kind === 'match' ? (`/game/${look.data.id}` as const) : (`/venue/${look.data.id}` as const);
+    // Games are for members: a guest gets Explore with the sign-in drawer, then the game.
+    if (look.data.kind === 'match' && !user) {
+      router.replace('/explore');
+      setTimeout(() => requireAuth('Sign in to see this game', () => router.push(to)), 300);
+      return;
+    }
     // Opened from a link: put Explore underneath so back (button or swipe) lands somewhere useful.
     if (router.canGoBack()) router.replace(to);
     else {
       router.replace('/explore');
       router.push(to);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per resolved link
   }, [look.data]);
-
-  if (!user) {
-    if (valid) pendingTurfLink.set(code);
-    return <Redirect href="/" />;
-  }
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/explore'));
   const notFound = !valid || (look.error instanceof ApiError && look.error.code === 'not_found');

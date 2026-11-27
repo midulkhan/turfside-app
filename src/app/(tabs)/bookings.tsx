@@ -1,10 +1,12 @@
+import { CalendarDays, Clock3, QrCode, RotateCcw, UsersRound } from 'lucide-react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useScrollToTop } from 'expo-router';
-import { CalendarDays, Clock3, QrCode, RotateCcw, UsersRound } from 'lucide-react-native';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
+import { GuestTab } from '@/components/navigation/guest-tab';
+import { useSession } from '@/features/session/session';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -145,7 +147,23 @@ function SquadRow({ m, today }: { m: Match; today: string }) {
   );
 }
 
-export default function Bookings() {
+/** Guests see a sign-in prompt; members see their bookings. */
+export default function BookingsTab() {
+  const { user } = useSession();
+  if (!user)
+    return (
+      <GuestTab
+        title="Bookings"
+        icon={CalendarDays}
+        heading="Your bookings live here"
+        body="Sign in to see your tickets, upcoming games and the squads you've joined."
+        why="Sign in to see your bookings"
+      />
+    );
+  return <Bookings />;
+}
+
+function Bookings() {
   const listRef = useRef<FlashListRef<Booking | Match>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const scrolled = useScrolled();

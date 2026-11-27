@@ -7,6 +7,15 @@ export function setDeviceLabel(label: string) {
   DEVICE = encodeURIComponent(label.slice(0, 60));
 }
 
+/**
+ * A random id for this install (kept on the phone, see lib/device-label). Guests have no session,
+ * so the server rate-limits them by this instead of by IP: many phones share one carrier IP.
+ */
+let INSTALL = '';
+export function setInstallId(id: string) {
+  INSTALL = id;
+}
+
 /** Set EXPO_PUBLIC_API_URL in .env to point the app at another server (e.g. a local one). */
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://api.turfsides.com').replace(/\/+$/, '');
 
@@ -72,6 +81,7 @@ async function send<T>(method: string, path: string, o: Options): Promise<T> {
   // ASCII (Android's HTTP stack rejects the whole request otherwise, e.g. for "·" or an
   // accented device name).
   headers['X-Device'] = DEVICE;
+  if (INSTALL) headers['X-Install-Id'] = INSTALL;
   if (o.auth && o.auth !== 'none') {
     await tokens.load();
     if (tokens.access) headers.Authorization = `Bearer ${tokens.access}`;

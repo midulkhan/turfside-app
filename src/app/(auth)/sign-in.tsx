@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/text';
 import * as api from '@/features/api/client';
 import type { AuthResult } from '@/features/api/types';
 import { errorMessage, sentToLabel } from '@/features/session/pending-signup';
+import { finishAuth } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { haptic } from '@/lib/haptics';
 import { isStrongPassword, normaliseIdentifier } from '@/lib/validation';
@@ -44,7 +45,7 @@ export default function SignIn() {
         // Older server without two-step sign-in.
         haptic.success();
         await signIn(res as unknown as AuthResult);
-        router.replace('/explore');
+        finishAuth(); // back to where they were, or Explore
         return;
       }
       // Password accepted: a code was emailed. Enter it on the code screen.

@@ -119,7 +119,7 @@ function Dot({ index, x, width }: { index: number; x: SharedValue<number>; width
   return <Animated.View style={[styles.dot, style]} />;
 }
 
-/** First run: four full-screen photos you swipe through, then straight to sign in. */
+/** First run: four full-screen photos you swipe through, then straight into the app (no sign-in needed to browse). */
 export default function Onboarding() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -137,7 +137,7 @@ export default function Onboarding() {
   const finish = () => {
     if (preview && router.canGoBack()) return router.back();
     completeOnboarding();
-    router.replace('/sign-in');
+    router.replace('/explore');
   };
   const next = () => {
     if (last) return finish();

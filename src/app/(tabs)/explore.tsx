@@ -20,6 +20,7 @@ import { VenueCardSkeleton } from '@/components/venue/venue-card-skeleton';
 import { useExploreFeed } from '@/features/api/queries';
 import { useLiveExplore } from '@/features/api/realtime';
 import type { VenueSummary } from '@/features/api/types';
+import { useAuthGate } from '@/features/session/auth-gate';
 import { useSession } from '@/features/session/session';
 import { dhakaToday } from '@/lib/time';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
@@ -37,7 +38,8 @@ export default function Explore() {
   const listRef = useRef<FlashListRef<Row>>(null);
   useScrollToTop(listRef as never); // tap the active tab again → back to top
   const bottom = useTabBarSpace();
-  const { place, radiusKm, setRadiusKm } = useSession(); // distance is remembered (tabs, restarts)
+  const { place, radiusKm, setRadiusKm, user } = useSession(); // distance is remembered (tabs, restarts)
+  const { requireAuth } = useAuthGate();
   const day = dhakaToday(); // Explore shows today's availability; the turf page picks other days
   const [sheet, setSheet] = useState<null | 'menu' | 'distance'>(null);
   const scrolled = useScrolled();
@@ -141,7 +143,13 @@ export default function Explore() {
             </View>
           </Pressable>
           <View style={styles.actions}>
-            <IconButton icon={Bell} label="Notifications" badge size={HEADER_BTN} onPress={() => router.push('/notifications')} />
+            <IconButton
+              icon={Bell}
+              label="Notifications"
+              badge={!!user}
+              size={HEADER_BTN}
+              onPress={() => requireAuth('Sign in to see your notifications', () => router.push('/notifications'))}
+            />
           </View>
         </View>
       </StickyHeader>

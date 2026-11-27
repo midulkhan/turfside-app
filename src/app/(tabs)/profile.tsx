@@ -22,6 +22,7 @@ import { ActivityIndicator, Pressable, ScrollView, View, type ScrollViewInstance
 
 import { Alert } from '@/components/ui/dialog';
 import { LogoMark } from '@/components/brand/logo';
+import { GuestTab } from '@/components/navigation/guest-tab';
 import { useTabBarSpace } from '@/components/navigation/tab-bar';
 import { StickyHeader, useScrolled } from '@/components/ui/sticky-header';
 import { Avatar } from '@/components/ui/avatar';
@@ -91,7 +92,23 @@ const THEMES: { value: ThemePref; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
-export default function Profile() {
+/** Guests see a sign-in prompt; members see their profile. */
+export default function ProfileTab() {
+  const { user } = useSession();
+  if (!user)
+    return (
+      <GuestTab
+        title="Profile"
+        icon={UserRound}
+        heading="Your TurfSides account"
+        body="Sign in to manage your profile, places, notifications and security."
+        why="Sign in to your account"
+      />
+    );
+  return <Profile />;
+}
+
+function Profile() {
   const scrollRef = useRef<ScrollViewInstance>(null);
   useScrollToTop(scrollRef as never);
   const scrolled = useScrolled();

@@ -243,8 +243,9 @@ export function useCancelBooking() {
 }
 
 /** Saved locations: persisted so the location screen opens instantly. */
-export function usePlaces() {
-  return useQuery({ queryKey: qk.places, queryFn: ({ signal }) => api.getPlaces(signal), staleTime: 5 * 60_000 });
+/** Saved places (Home, Work…): members only, so off for guests. */
+export function usePlaces(enabled = true) {
+  return useQuery({ queryKey: qk.places, queryFn: ({ signal }) => api.getPlaces(signal), staleTime: 5 * 60_000, enabled });
 }
 
 export function useSavePlace() {
